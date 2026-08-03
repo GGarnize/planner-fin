@@ -14,13 +14,16 @@
 - Não fazer refatorações não solicitadas.
 - Em caso de ambiguidade, parar e relatar antes de implementar.
 - Não alterar decisões arquiteturais silenciosamente.
+- Seguir o ciclo e o controle de mudanças definidos em [docs/specs/README.md](docs/specs/README.md).
 
 ## Git
 
-- Nunca trabalhar diretamente na branch main.
-- Criar uma branch por SPEC.
-- Um pull request por SPEC.
-- Não misturar correções ou melhorias não relacionadas.
+- Nunca trabalhar diretamente na branch `main`.
+- Toda tarefa que altera o repositório deve usar branch própria.
+- Implementações devem usar uma branch por SPEC.
+- Documentação, pesquisa e ADR devem usar uma branch por unidade documental.
+- Usar um pull request por unidade de trabalho e não misturar assuntos não relacionados.
+- Seguir integralmente [docs/process/GIT-WORKFLOW.md](docs/process/GIT-WORKFLOW.md).
 - Commits devem explicar a intenção da alteração.
 
 ## Qualidade
@@ -35,6 +38,8 @@ Antes de concluir uma implementação:
 - informar comandos e resultados;
 - apresentar resumo dos arquivos alterados;
 - apresentar limitações e riscos encontrados.
+
+Os critérios de passagem entre etapas estão em [docs/quality/DEFINITION-OF-DONE.md](docs/quality/DEFINITION-OF-DONE.md). Os níveis, riscos e evidências de teste estão em [docs/quality/TEST-STRATEGY.md](docs/quality/TEST-STRATEGY.md).
 
 ## Segurança
 
@@ -53,3 +58,5 @@ Antes de concluir uma implementação:
 
 - O produto é inicialmente um sistema financeiro pessoal.
 - Não implementar recursos bancários regulados, movimentação de dinheiro ou aconselhamento financeiro automatizado.
+
+
