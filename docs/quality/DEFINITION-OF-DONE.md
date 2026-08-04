@@ -46,13 +46,14 @@ Esta Definition of Done define os critérios mínimos de passagem entre etapas. 
 - [ ] Todos os comentários bloqueantes foram resolvidos.
 - [ ] Os critérios de aceite foram automatizados quando viável e todos foram verificados.
 - [ ] As verificações automatizadas aplicáveis estão aprovadas.
-- [ ] O teste de aceitação humano foi concluído e registrado.
+- [ ] O teste de aceitação humano foi concluído e registrado quando exigido pela SPEC, pelo risco ou pela natureza da mudança; caso contrário, a não aplicabilidade está justificada.
 - [ ] Riscos residuais e limitações estão visíveis no pull request.
 - [ ] Plano de rollback está executável e compatível com eventuais migrations.
 - [ ] Documentação e evidências estão completas.
 - [ ] A branch está compatível com a `main` atual ou qualquer divergência foi aceita explicitamente.
-- [ ] Uma pessoa autorizou o merge.
-- [ ] O agente confirmou que não realizou o merge.
+- [ ] Não existem decisões funcionais, financeiras, arquiteturais, destrutivas, de segurança ou privacidade pendentes.
+- [ ] O merge automático por agente está autorizado quando todos os critérios objetivos estiverem atendidos e não houver bloqueio humano.
+- [ ] Quando houver bloqueio humano, uma pessoa autorizada registrou o aceite antes do merge.
 
 ## 4. Pronto para release
 

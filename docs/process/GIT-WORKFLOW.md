@@ -7,14 +7,17 @@ Este documento define o fluxo obrigatório para qualquer alteração no reposit�
 ## Princípios obrigatórios
 
 - Nunca trabalhar diretamente na `main`.
+- Nunca usar force push na `main`.
 - Usar uma branch por unidade de trabalho.
 - Abrir um pull request por unidade de trabalho.
 - Não misturar assuntos não relacionados na mesma branch, commit ou pull request.
 - Todo pull request deve iniciar como draft.
-- Agentes não podem fazer merge.
-- O merge depende de validação humana explícita.
+- Pull requests continuam obrigatórios mesmo quando o merge automático por agente estiver autorizado.
+- Após concluir trabalho, revisão própria e validações obrigatórias, o agente pode marcar o pull request como pronto e mesclar quando não houver bloqueios humanos.
+- Não exigir aprovação humana separada apenas para a autorização mecânica de merge quando a unidade estiver claramente autorizada, dentro do escopo, sem dúvidas bloqueantes e com todas as verificações obrigatórias aprovadas.
 - Preferir **Squash and merge** para manter uma alteração lógica por entrada no histórico da `main`.
 - Excluir a branch remota após o merge.
+- Registrar o hash final produzido na `main`.
 - Antes de iniciar nova tarefa, partir da versão mais recente da `main`.
 - Interromper o trabalho se forem encontradas alterações locais, arquivos inesperados ou divergências não explicadas em relação à `main`.
 
@@ -82,8 +85,33 @@ docs: definir fundação do processo SDD
 4. Relacionar a tarefa, SPEC, documento de pesquisa ou ADR correspondente.
 5. Informar arquivos alterados, verificações executadas, evidências, riscos e rollback.
 6. Manter o pull request em draft enquanto houver trabalho ou validações obrigatórias pendentes.
-7. Solicitar revisão humana quando a unidade estiver pronta conforme a Definition of Done aplicável.
-8. Não fazer merge por conta própria, mesmo que todas as verificações estejam aprovadas.
+7. Revisar o próprio diff e os arquivos alterados antes de marcar o pull request como pronto.
+8. Quando não houver bloqueio humano, marcar o pull request como pronto após todas as validações aplicáveis passarem.
+9. Fazer **Squash and merge** quando o merge automático estiver autorizado.
+10. Excluir a branch após o merge.
+11. Informar o hash final da `main` e o procedimento de rollback por `git revert <hash>`.
+
+## Bloqueios que exigem decisão humana
+
+O agente não pode fazer merge e deve interromper a unidade de trabalho quando houver:
+
+- dúvida que altere comportamento financeiro;
+- regra de negócio não aprovada;
+- ampliação de escopo;
+- necessidade de alterar uma SPEC aprovada;
+- conflito entre documentos ou ADRs;
+- escolha arquitetural não coberta por ADR aprovado;
+- migration destrutiva;
+- perda, transformação irreversível ou exclusão em massa de dados;
+- mudança relevante de autenticação, autorização ou privacidade;
+- inclusão de credencial, segredo ou acesso de produção;
+- contratação ou ativação de serviço pago;
+- publicação em produção ou em loja pública sem autorização específica;
+- testes, lint, typecheck ou build obrigatórios falhando;
+- vulnerabilidade conhecida sem tratamento;
+- arquivos inesperados ou alterações anteriores reaplicadas;
+- conflito de merge que altere premissas;
+- qualquer situação explicitamente marcada na tarefa ou SPEC como dependente de aceite humano.
 
 ## Atualização e divergências
 
@@ -95,11 +123,11 @@ docs: definir fundação do processo SDD
 
 ## Encerramento
 
-Após validação humana e merge:
+Após merge automático autorizado ou merge realizado por pessoa responsável:
 
 1. confirmar o resultado do merge;
-2. excluir a branch da unidade de trabalho;
-3. atualizar a `main` local ou a referência de trabalho;
-4. iniciar a próxima tarefa em uma branch nova.
-
-
+2. registrar o hash final presente na `main`;
+3. confirmar que o rollback pode ser feito por `git revert <hash>` sem reescrever a história;
+4. excluir a branch da unidade de trabalho;
+5. atualizar a `main` local ou a referência de trabalho;
+6. iniciar a próxima tarefa em uma branch nova.

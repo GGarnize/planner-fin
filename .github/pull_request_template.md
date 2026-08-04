@@ -82,6 +82,11 @@
 ## Controle de merge
 
 - [ ] Este pull request foi aberto como draft.
-- [ ] O agente não realizou merge.
-- [ ] O merge depende de validação humana.
+- [ ] Todas as verificações aplicáveis foram aprovadas.
+- [ ] Não existem decisões pendentes.
+- [ ] Merge automático por agente autorizado.
+- [ ] Bloqueio humano necessário.
+- Motivo do bloqueio humano, quando existir: <!-- detalhe ou Não aplicável -->
+- Estratégia de merge: <!-- Squash and merge preferencial ou justificativa -->
+- Commit final após o merge: <!-- hash na main após o merge -->
 

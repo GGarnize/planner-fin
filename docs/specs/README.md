@@ -13,14 +13,14 @@ Toda funcionalidade ou correção deve seguir esta sequência:
 1. **Investigação** — reunir evidências do comportamento atual, contexto, impacto e restrições.
 2. **Esclarecimento de dúvidas** — resolver ambiguidades que alterem escopo, regra ou critério de aceite.
 3. **Criação da SPEC** — documentar comportamento desejado, limites, riscos, testes e critérios de aceite.
-4. **Revisão e aprovação humana** — somente uma SPEC explicitamente aprovada pode autorizar implementação.
+4. **Aprovação da decisão funcional** — somente uma SPEC explicitamente aprovada, uma decisão já presente na `main` ou uma autorização rastreável na tarefa atual pode autorizar implementação.
 5. **Implementação** — alterar apenas o escopo e os arquivos autorizados pela SPEC.
-6. **Revisão independente** — uma pessoa ou agente diferente verifica aderência, riscos e regressões.
+6. **Revisão técnica** — uma pessoa, agente diferente ou o próprio agente, quando autorizado pelo fluxo Git, verifica aderência, riscos e regressões.
 7. **Testes automatizados** — executar os níveis aplicáveis e registrar comandos, resultados e evidências.
-8. **Teste de aceitação humano** — validar o comportamento contra os critérios aprovados.
-9. **Merge** — realizado somente após validação humana e atendimento da Definition of Done.
+8. **Aceitação humana, quando exigida** — validar o comportamento contra os critérios aprovados quando a SPEC, o risco ou a natureza da mudança assim determinar.
+9. **Merge** — realizado após atendimento da Definition of Done, podendo ser automático por agente quando não houver bloqueios humanos.
 
-Nenhuma funcionalidade pode ser implementada sem uma SPEC aprovada.
+Nenhuma funcionalidade pode ser implementada sem uma SPEC aprovada. A aprovação da decisão funcional, a revisão técnica e a autorização mecânica de merge são etapas distintas: a decisão funcional pode estar previamente aprovada na `main`, na própria SPEC ou na tarefa atual, sem exigir uma segunda aprovação do mesmo conteúdo no pull request.
 
 ## Controle de mudança
 
@@ -28,6 +28,7 @@ Nenhuma funcionalidade pode ser implementada sem uma SPEC aprovada.
 - Uma necessidade não prevista deve interromper a implementação quando afetar comportamento, escopo, dados, segurança, dependências ou critérios de aceite.
 - A necessidade nova deve ser registrada como dúvida, decisão ou revisão da SPEC e submetida a aprovação humana.
 - Mudanças aprovadas devem constar no histórico de decisões da SPEC, com data, responsável e justificativa.
+- A ausência de aprovação humana manual de um pull request não autoriza o agente a escolher sozinho alternativas funcionais ou arquiteturais relevantes.
 - Implementação e documentação devem permanecer rastreáveis ao mesmo identificador de SPEC.
 
 ## Status da SPEC
