@@ -187,7 +187,91 @@ flowchart LR
 
 ### 4.7 Investimentos
 
-1. **Finalidade** — **[Fato observado]** Controlar entradas, saídas e saldo líqu…3404 tokens truncated…vado]** Agregações usam o período selecionado e, em vários pontos, apenas status pago; gasto real por categoria combina base principal e compras no crédito.
+1. **Finalidade** — **[Fato observado]** Controlar entradas, saídas e saldo líquido de Reserva, Renda Fixa e Renda Variável entre 2024 e 2028.
+2. **Campos editáveis pelo usuário** — **[Fato observado]** Por mês, entradas e saídas nas colunas `C:D`, `F:G` e `I:J` para as três classes.
+3. **Campos calculados** — **[Fato observado]** Balanço por classe (`E`, `H`, `K`), totais de entrada/saída/balanço (`L:N`), totais anuais e resumo por classe.
+4. **Fórmulas relevantes** — **[Fato observado]** `Balanço da classe = Entrada - Saída`; `Entrada total = C+F+I`; `Saída total = D+G+J`; `Balanço total = Entrada total - Saída total`. O resumo soma os totais anuais de cada classe.
+5. **Dependências com outras abas** — **[Fato observado]** Não depende de transações ou contas. Seu total é lido por `Home` e `Help`.
+6. **Entidades de negócio identificadas** — **[Fato observado]** Investimento, reserva, renda fixa, renda variável, aporte, retirada, saldo e período.
+7. **Regras de negócio implícitas** — **[Fato observado]** O saldo é apenas fluxo líquido acumulado pelos totais anuais; não há rendimento, valorização, imposto ou preço de ativo.
+8. **Possíveis inconsistências** — **[Fato observado]** O nome “total investido” representa entradas menos saídas informadas manualmente, não uma avaliação de mercado. As colunas automáticas têm comentários cujo autor está vazio no pacote.
+9. **Recursos aparentemente duplicados** — **[Fato observado]** A mesma estrutura mensal se repete por três classes e cinco anos; totais anuais e resumo reagrupam os mesmos fluxos.
+10. **Limitações** — **[Fato observado]** Horizonte fixo 2024–2028; nenhuma integração com `Lançamentos`; nenhuma identificação de instituição, conta, ativo ou rentabilidade; sem validações de entrada.
+
+### 4.8 Balanço
+
+1. **Finalidade** — **[Fato observado]** Relatório mensal e anual de receitas, despesas e resultado líquido.
+2. **Campos editáveis pelo usuário** — **[Fato observado]** Nenhum campo de entrada ou validação foi identificado; a aba é um relatório.
+3. **Campos calculados** — **[Fato observado]** Receitas pagas, despesas pagas, balanço mensal e totais anuais.
+4. **Fórmulas relevantes** — **[Fato observado]** `SUMIFS` em `Lançamentos(fx)` filtra status `✅ Pago`, mês e ano; `Balanço = Receitas - Despesas`; o total anual soma janeiro a dezembro.
+5. **Dependências com outras abas** — **[Fato observado]** Depende somente de `Lançamentos(fx)`.
+6. **Entidades de negócio identificadas** — **[Fato observado]** Receita, despesa, resultado/balanço, mês e ano.
+7. **Regras de negócio implícitas** — **[Fato observado]** Só lançamentos pagos entram no relatório. Compras individuais de cartão não entram diretamente; elas só seriam refletidas se a fatura também for lançada na base principal.
+8. **Possíveis inconsistências** — **[Fato observado]** A sequência de anos exibida é `2024, 2026, 2026, 2027, 2028, 2029, 2030`: 2025 está ausente e 2026 aparece duas vezes.
+9. **Recursos aparentemente duplicados** — **[Fato observado]** As mesmas agregações de receita/despesa por mês também aparecem em `Help` e no painel `Home`.
+10. **Limitações** — **[Fato observado]** Anos fixos; ausência de saldo inicial e saldo acumulado; dependência de uma consulta oculta com erro no cache. **[Hipótese]** Apesar do nome, o relatório representa fluxo/resultado, não um balanço patrimonial contábil.
+
+### 4.9 Lançamentos(fx) — oculta
+
+1. **Finalidade** — **[Fato observado]** Transformar a base de `Lançamentos` em uma matriz normalizada para consumo dos relatórios, acrescentando mês e ano derivados.
+2. **Campos editáveis pelo usuário** — **[Fato observado]** Nenhum; é uma aba técnica oculta.
+3. **Campos calculados** — **[Fato observado]** Cópia filtrada de datas, descrição, flag de fixo, conta, categoria, natureza, valor e status, mais mês e ano.
+4. **Fórmulas relevantes** — **[Fato observado]** Em `A1`, uma única `QUERY` matricial lê `Lançamentos!B5:K38996`, elimina linhas sem data e acrescenta `MONTH(data)+1` e `YEAR(data)`. No XLSX, a fórmula aparece como `DUMMYFUNCTION` e o valor em cache é `#VALUE!`.
+5. **Dependências com outras abas** — **[Fato observado]** Depende de `Lançamentos`; alimenta `Orçamento`, `Balanço`, `Calendário`, `Help` e `Vencimentos`.
+6. **Entidades de negócio identificadas** — **[Fato observado]** Mesmas entidades de `Lançamentos`, acrescidas de mês e ano analíticos.
+7. **Regras de negócio implícitas** — **[Fato observado]** Só linhas com data de lançamento preenchida entram na base derivada; a primeira linha da origem é tratada como cabeçalho.
+8. **Possíveis inconsistências** — **[Fato observado]** A origem se estende até 38.996, embora a tela de entrada esteja preparada até 9.996. A matriz auxiliar está pré-alocada até cerca de 5.000 linhas, menor que a origem possível.
+9. **Recursos aparentemente duplicados** — **[Fato observado]** Reproduz quase toda a base de `Lançamentos`, adicionando somente duas colunas derivadas.
+10. **Limitações** — **[Fato observado]** Ponto único de falha para vários relatórios; incompatibilidade de `QUERY` no cache Excel; capacidade auxiliar menor que a faixa de origem declarada.
+
+### 4.10 Calendário
+
+1. **Finalidade** — **[Fato observado]** Exibir compromissos financeiros por mês, incluindo receitas/despesas pendentes, faturas de cartão e dívidas.
+2. **Campos editáveis pelo usuário** — **[Fato observado]** Ano em `B4`, com lista de `2024` a `2035`.
+3. **Campos calculados** — **[Fato observado]** Listas mensais de compromissos nas colunas de janeiro a dezembro e uma lista auxiliar de despesas.
+4. **Fórmulas relevantes** — **[Fato observado]** Doze fórmulas matriciais combinam `FILTER`/literais de matriz sobre lançamentos sem status pago, dados de fatura em `Help` e dívidas dentro do intervalo do mês. As fórmulas estão encapsuladas em `DUMMYFUNCTION`.
+5. **Dependências com outras abas** — **[Fato observado]** Depende de `Lançamentos(fx)`, `Help` e `Dívidas`.
+6. **Entidades de negócio identificadas** — **[Fato observado]** Compromisso, receita pendente, despesa pendente, fatura, dívida, vencimento, mês e ano.
+7. **Regras de negócio implícitas** — **[Fato observado]** Lançamento pendente é identificado por status vazio; itens são incluídos conforme sua data cair no intervalo mensal. O texto da aba indica que dívidas e faturas podem continuar visíveis mesmo quando pagas.
+8. **Possíveis inconsistências** — **[Fato observado]** Fevereiro está grafado como “Fervereiro”. O critério de pendência por célula vazia não distingue atrasado, agendado ou cancelado. A planilha se estende a mais de 3.900 linhas por causa das áreas de resultado.
+9. **Recursos aparentemente duplicados** — **[Fato observado]** Reagrupa dados já consolidados em `Lançamentos(fx)`, `Help` e `Dívidas`; parte do mesmo domínio aparece também em `Vencimentos`.
+10. **Limitações** — **[Fato observado]** Não é uma grade de calendário por dia, mas 12 listas mensais; depende de matrizes do Google Sheets e de áreas auxiliares potencialmente truncáveis.
+
+### 4.11 Dívidas
+
+1. **Finalidade** — **[Fato observado]** Cadastrar dívidas, acompanhar parcelas e consolidar total, saldo devedor, saldo pago e quantidade por status.
+2. **Campos editáveis pelo usuário** — **[Fato observado]** Descrição, credor, valor inicial, início/fim, número de parcelas, valor da parcela, parcelas pagas, taxa de juros, status e observações. O status aceita `Em aberto`, `Finalizado` ou `Sem Negociação`.
+3. **Campos calculados** — **[Fato observado]** Saldo devedor na coluna `E`, totais de resumo e contagens por status. Colunas técnicas `N:T` têm rótulos de mês/ano/datas, mas não possuem fórmulas preenchidas nas linhas inspecionadas.
+4. **Fórmulas relevantes** — **[Fato observado]** `Saldo devedor = Valor inicial - (Parcelas pagas × Valor da parcela)`. Os totais usam `SUBTOTAL`; “Saldo Pago” é `Total Dívidas - Saldo Devedor`; os cartões de status usam `COUNTIF`.
+5. **Dependências com outras abas** — **[Fato observado]** Não referencia outras abas. `Calendário` e `Vencimentos` referenciam suas colunas de datas/estado.
+6. **Entidades de negócio identificadas** — **[Fato observado]** Dívida, credor, principal, saldo devedor, parcela, juros, negociação, status e vencimento.
+7. **Regras de negócio implícitas** — **[Fato observado]** O saldo diminui linearmente pelo valor das parcelas marcadas como pagas; a taxa de juros não participa do cálculo. A quantidade paga é digitada manualmente.
+8. **Possíveis inconsistências** — **[Fato observado]** O cartão de resumo usa o rótulo “Finalizadas”, mas a validação usa “Finalizado”. A validação termina na linha 50, enquanto os totais alcançam a linha 52. As colunas técnicas necessárias a `Calendário`/`Vencimentos` estão vazias no exemplo e sem fórmulas observadas. A taxa de juros do registro de exemplo está armazenada como texto/formato geral.
+9. **Recursos aparentemente duplicados** — **[Fato observado]** Informações de vencimento são novamente projetadas em `Calendário` e `Vencimentos`; o saldo pago pode ser derivado tanto do total quanto das parcelas.
+10. **Limitações** — **[Fato observado]** Juros não afetam saldo, parcela ou prazo; não há geração automática de parcelas; não há vínculo com pagamentos em `Lançamentos`; faixas de dados e validação não coincidem.
+
+### 4.12 Cadastro
+
+1. **Finalidade** — **[Fato observado]** Centralizar categorias, cartões, contas bancárias, saldos iniciais, preferências de notificação, categorias de receita e catálogo de ícones/imagens.
+2. **Campos editáveis pelo usuário** — **[Fato observado]** Descrição/tipo da categoria, tipo de gasto (`Essencial`/`Não Essencial`), cartões e seus dias/limites, contas e saldos iniciais, nome e preferências de notificação, e-mail, categorias de receita e URLs/identificadores de imagens. O arquivo contém dados pessoais de exemplo, não reproduzidos aqui.
+3. **Campos calculados** — **[Fato observado]** Lista unificada de categorias, orçamento do mês por categoria, ícone/atributo de conta e saldo atual de cada conta.
+4. **Fórmulas relevantes** — **[Fato observado]** A lista de categorias usa `UNIQUE(FILTER(...))` sobre categorias de orçamento, categorias especiais e receitas; o orçamento por categoria usa `INDEX/MATCH` conforme o mês da `Home`; o saldo atual é `Saldo inicial + Receitas pagas - Despesas pagas` por conta. Fórmulas `IMAGE` carregam ícones externos.
+5. **Dependências com outras abas** — **[Fato observado]** Depende de `Home` para período, de `Orçamento` para valores planejados e de `Lançamentos` para saldos. Alimenta praticamente todas as telas de entrada e várias abas auxiliares.
+6. **Entidades de negócio identificadas** — **[Fato observado]** Categoria, tipo de movimento, tipo de gasto, cartão, limite, fechamento, vencimento, conta, saldo inicial, usuário, preferência de notificação e ícone.
+7. **Regras de negócio implícitas** — **[Fato observado]** Categoria pode ser Entrada ou Saída e gasto pode ser Essencial ou Não Essencial; saldo de conta considera somente lançamentos com status pago; configurações booleanas habilitam notificações de faturas, acordos/dívidas e despesas.
+8. **Possíveis inconsistências** — **[Fato observado]** A lista dinâmica depende de funções do Google Sheets e pode não se expandir no Excel. Não há regra explícita para transferências entre contas no cálculo do saldo. Os controles booleanos não aparecem como validações de dados no pacote analisado.
+9. **Recursos aparentemente duplicados** — **[Fato observado]** Preferências de notificação se sobrepõem a `NotificaFin`; ícones existem tanto como catálogo em células quanto como mídia incorporada; categorias de receita participam de uma lista unificada com categorias de despesa.
+10. **Limitações** — **[Fato observado]** Faixas máximas fixas; dependência de imagens externas; centralização cria alto acoplamento; categorias e contas podem ficar sem validação de unicidade; valores sensíveis residem no próprio arquivo.
+
+### 4.13 Help — oculta
+
+1. **Finalidade** — **[Fato observado]** Concentrar cálculos de apoio, parâmetros, agregações por categoria, fontes de gráficos e tabelas dinâmicas usadas principalmente pela `Home` e pelo `Calendário`.
+2. **Campos editáveis pelo usuário** — **[Fato observado]** Nenhum; é uma aba técnica oculta.
+3. **Campos calculados** — **[Fato observado]** Parâmetros de mês/ano, totais mensais, saldos, planejado x realizado por categoria, percentuais, dados de fatura, limites e fontes de gráficos/pivôs.
+4. **Fórmulas relevantes** — **[Fato observado]** `SUMIFS` agregam receitas/despesas pagas; 47 fórmulas combinam lançamentos e crédito por categoria; consultas `QUERY` montam listas de pendências/faturas; percentuais dividem realizado pelo orçamento. Três âncoras de `QUERY` estão com `#VALUE!` no cache.
+5. **Dependências com outras abas** — **[Fato observado]** Depende de `Cadastro`, `Crédito(fx)`, `Home`, `Investimentos`, `Lançamentos` e `Lançamentos(fx)`; alimenta `Home`, `Calendário`, `Vencimentos` e `Help Crédito (fx)`.
+6. **Entidades de negócio identificadas** — **[Fato observado]** Período, saldo, receita/despesa, categoria, orçamento, fatura, cartão, limite e compromisso.
+7. **Regras de negócio implícitas** — **[Fato observado]** Agregações usam o período selecionado e, em vários pontos, apenas status pago; gasto real por categoria combina base principal e compras no crédito.
 8. **Possíveis inconsistências** — **[Fato observado]** Há 2 `#REF!`, 3 `#VALUE!` e 4 `#DIV/0!` em cache. Os dois caches de tabela dinâmica têm relacionamentos XML inválidos e estão marcados para atualização. Uma segmentação possui nome definido `#N/A`.
 9. **Recursos aparentemente duplicados** — **[Fato observado]** Mantém múltiplos blocos de agregação sobre as mesmas bases e duas tabelas dinâmicas; vários números reaparecem na `Home` e em `Help Crédito (fx)`.
 10. **Limitações** — **[Fato observado]** É o maior ponto de acoplamento oculto; mistura parâmetros, consultas, pivôs e fontes de gráfico; contém erros em cache e funções não nativas do Excel; difícil de auditar pela interface normal.
@@ -382,4 +466,3 @@ O inventário abaixo apenas consolida conceitos já presentes na planilha; não 
 **[Fato observado]** A planilha funciona como um planejador financeiro integrado por cinco bases/configurações visíveis (`Cadastro`, `Lançamentos`, `Crédito`, `Orçamento`, `Investimentos`/`Dívidas`) e cinco abas técnicas ocultas que transformam e agregam dados para `Home`, `Balanço`, `Calendário` e notificações. O comportamento depende fortemente de fórmulas de matriz e consulta originadas no Google Sheets.
 
 **[Hipótese]** O XLSX analisado preserva principalmente a apresentação e parte dos valores em cache, mas não é uma reprodução executável confiável do comportamento original em Google Sheets. Essa hipótese precisa ser confirmada no ambiente original antes que as regras observadas sejam tratadas como especificação definitiva.
-
