@@ -24,6 +24,9 @@
 - Documentação, pesquisa e ADR devem usar uma branch por unidade documental.
 - Usar um pull request por unidade de trabalho e não misturar assuntos não relacionados.
 - Seguir integralmente [docs/process/GIT-WORKFLOW.md](docs/process/GIT-WORKFLOW.md).
+- Agentes podem fazer merge somente nas condições descritas no fluxo Git.
+- Decisões bloqueantes continuam exigindo intervenção humana antes do merge.
+- Nunca usar force push na `main`.
 - Commits devem explicar a intenção da alteração.
 
 ## Qualidade
