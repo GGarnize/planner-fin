@@ -29,6 +29,8 @@ Classificações usadas:
 - categorias de receitas e despesas;
 - informações necessárias ao uso de cartões e dívidas.
 
+**[Decisão aprovada]** A configuração inicial será feita totalmente de forma manual no aplicativo e abrangerá contas, saldos iniciais, categorias, cartões, dívidas, orçamento e os demais dados necessários ao primeiro uso. A planilha legada não será usada como fonte de dados.
+
 **[Decisão aprovada]** Cada registro deve ter uma fonte de verdade identificável, sem duplicar bases apenas para produzir relatórios.
 
 ### 2.3 Lançamentos e transferências
@@ -67,15 +69,7 @@ Classificações usadas:
 - dashboard mensal;
 - consolidações rastreáveis de contas, receitas, despesas, cartões, dívidas e orçamento incluídos no MVP.
 
-### 2.7 Importação inicial
-
-- importação inicial controlada da planilha;
-- revisão de inconsistências sem reproduzir automaticamente fórmulas, erros ou limitações do legado;
-- indicação do que foi importado e do que requer intervenção.
-
-**[Dúvida]** Ainda deve ser decidido se a importação abrangerá o histórico completo ou somente a posição inicial necessária para começar o uso.
-
-### 2.8 Plataformas do MVP
+### 2.7 Plataformas do MVP
 
 - aplicação Android para teste interno;
 - versão web responsiva;
@@ -92,7 +86,6 @@ Classificações usadas:
 - calendário financeiro;
 - notificações locais;
 - anexos e comprovantes;
-- melhorias de importação;
 - publicação mais ampla na Play Store.
 
 **[Dúvida]** O proprietário do produto ainda deve validar se metas, investimentos ou notificações precisam ser antecipados para o MVP.
@@ -106,6 +99,8 @@ Classificações usadas:
 - funcionamento offline completo e sincronização;
 - aplicação para iOS;
 - integração bancária ou Open Finance, condicionada a análise legal, regulatória e de segurança;
+- importação assistida de arquivos financeiros, que poderá avaliar possibilidades como PDF de extrato, CSV, OFX, faturas ou documentos semelhantes, sempre em unidade própria e sem compromisso de implementar todos ou qualquer um desses formatos;
+- sugestão de criação de lançamentos a partir de itens extraídos, somente após revisão humana, tratamento de duplicidades e inconsistências e confirmação explícita;
 - categorização assistida por IA;
 - detecção de duplicidades e anomalias;
 - previsões e consultas em linguagem natural;
@@ -122,6 +117,8 @@ Classificações usadas:
 - recomendação autônoma de investimentos;
 - alterações financeiras silenciosas por IA;
 - copiar célula por célula a planilha;
+- usar a planilha legada como fonte de dados ou oferecer compatibilidade de importação com seu arquivo no MVP;
+- migrar o histórico ou a posição atual da planilha;
 - reproduzir defeitos, limites ou fórmulas incompatíveis do legado;
 - suporte contábil empresarial;
 - criptomoedas como meio de pagamento;
@@ -135,35 +132,30 @@ Classificações usadas:
 - **[Hipótese]** O núcleo definido para o MVP cobre as necessidades cotidianas mais importantes do usuário inicial.
 - **[Hipótese]** O uso online-first é aceitável no primeiro ciclo de teste.
 - **[Hipótese]** Android e web responsiva são suficientes para validar o produto antes de ampliar plataformas.
-- **[Hipótese]** Uma importação controlada permite iniciar o uso sem transportar todas as ambiguidades da planilha.
+- **[Hipótese]** A configuração inicial manual oferece os dados necessários para iniciar o uso sem transportar as ambiguidades da planilha.
 
 Hipóteses não são regras aprovadas e devem ser testadas antes de orientar decisões irreversíveis.
 
 ## 7. Decisões pendentes
 
-### 7.1 Importação
-
-- **[Dúvida]** Importar todo o histórico ou somente uma posição inicial?
-- **[Dúvida]** Quais registros inconsistentes podem ser importados com aviso e quais devem ser rejeitados?
-
-### 7.2 Composição do MVP
+### 7.1 Composição do MVP
 
 - **[Dúvida]** Metas devem entrar no MVP ou permanecer no pós-MVP?
 - **[Dúvida]** Investimentos devem entrar no MVP ou permanecer no pós-MVP?
 - **[Dúvida]** Notificações devem entrar no MVP ou permanecer no pós-MVP?
 
-### 7.3 Distribuição e usuários
+### 7.2 Distribuição e usuários
 
 - **[Dúvida]** A publicação inicial será privada, para teste interno, ou pública?
 - **[Dúvida]** Existe necessidade imediata de compartilhar dados com outra pessoa?
 - **[Validação futura]** Mesmo fora do MVP, a prioridade de compartilhamento familiar deverá ser reavaliada após o uso inicial.
 
-### 7.4 Conectividade
+### 7.3 Conectividade
 
 - **[Dúvida]** Qual comportamento é esperado durante interrupções breves de conexão?
 - **[Dúvida]** Há algum fluxo que precise funcionar sem conexão já no MVP, ainda que offline completo esteja excluído?
 
-### 7.5 Estados financeiros
+### 7.4 Estados financeiros
 
 - **[Dúvida]** Quais são os estados oficiais de lançamentos, faturas, parcelas e dívidas?
 - **[Dúvida]** Como representar agendado, vencido, cancelado, parcialmente pago e estornado?
