@@ -72,13 +72,15 @@ Resultados pretendidos:
 - consolidações sem dupla contagem conhecida;
 - saldos e cálculos explicáveis a partir de seus componentes;
 - visão mensal útil para acompanhamento de orçamento, contas, cartões e dívidas;
-- importação inicial controlada, sem transformar defeitos do legado em regras do produto;
+- configuração inicial manual de contas, saldos, categorias, cartões, dívidas, orçamento e demais dados necessários ao primeiro uso;
 - uso principal viável em Android e acesso complementar pela web responsiva;
 - evolução por SPECs pequenas, revisáveis e testáveis.
 
 ## 7. Diferenças em relação à planilha
 
 **[Decisão aprovada]** A planilha é fonte AS-IS e referência de funcionalidades, não uma especificação TO-BE.
+
+**[Decisão aprovada]** A planilha não será usada como fonte de dados do aplicativo: seu histórico e sua posição atual não serão transportados, e nenhuma compatibilidade de importação com o arquivo faz parte do MVP. A configuração inicial será feita manualmente no aplicativo.
 
 O PlannerFin não deve:
 
@@ -125,7 +127,6 @@ Os indicadores abaixo definem o que deverá ser medido. Metas numéricas serão 
 | Integridade das consolidações | Cenários de aceite não apresentam dupla contagem entre compra, fatura, transferência, receita e despesa | **[Validação futura]** |
 | Rastreabilidade | Totais relevantes podem ser explicados pelos registros que os compõem | **[Validação futura]** |
 | Clareza de estados | Usuário distingue valores previstos, pendentes e realizados, além de saldo oficial e estimado | **[Validação futura]** |
-| Qualidade da importação | Importação informa o que foi aceito, rejeitado ou exige revisão | **[Validação futura]** |
 | Usabilidade móvel | Fluxos principais são legíveis e operáveis confortavelmente em Android | **[Validação futura]** |
 | Confiabilidade | Erros de cálculo, perda de dados e alterações silenciosas são detectáveis e tratados | **[Validação futura]** |
 | Privacidade | Dados são expostos somente ao usuário autorizado e não aparecem em testes ou registros indevidos | **[Validação futura]** |
@@ -135,13 +136,15 @@ Os indicadores abaixo definem o que deverá ser medido. Metas numéricas serão 
 
 ### 11.1 MVP
 
-**[Decisão aprovada]** O MVP concentra o núcleo de registro e acompanhamento financeiro pessoal: identidade, contas, categorias, lançamentos, transferências, recorrências, cartões e faturas, dívidas, orçamento, dashboard, importação controlada, Android para teste interno e web responsiva.
+**[Decisão aprovada]** O MVP concentra o núcleo de registro e acompanhamento financeiro pessoal: identidade, configuração inicial manual, contas, categorias, lançamentos, transferências, recorrências, cartões e faturas, dívidas, orçamento, dashboard, Android para teste interno e web responsiva.
 
 O detalhamento e as decisões pendentes desse recorte estão em [SCOPE.md](SCOPE.md).
 
 ### 11.2 Visão futura
 
 **[Decisão aprovada]** A visão futura pode incluir compartilhamento familiar, offline completo com sincronização, iOS, integração bancária/Open Finance após análise legal e de segurança, além de recursos assistidos por IA.
+
+**[Decisão aprovada]** Importações de arquivos financeiros poderão ser avaliadas futuramente em unidades próprias, sem compromisso de implementação e sempre condicionadas a uma SPEC específica.
 
 **[Decisão aprovada]** Recursos futuros de IA podem apoiar categorização, detecção de duplicidades e anomalias, previsões e consultas em linguagem natural, sempre sem substituir o núcleo determinístico nem alterar dados silenciosamente.
 
@@ -155,7 +158,6 @@ O detalhamento e as decisões pendentes desse recorte estão em [SCOPE.md](SCOPE
 
 ### 12.2 Dúvidas
 
-- **[Dúvida]** A importação inicial deve trazer todo o histórico ou somente uma posição inicial revisada?
 - **[Dúvida]** Metas, investimentos e notificações devem permanecer pós-MVP?
 - **[Dúvida]** A publicação inicial será privada ou pública?
 - **[Dúvida]** Qual nível mínimo de operação sem conexão é necessário no uso real?
