@@ -56,9 +56,9 @@ Estes princípios orientam decisões de produto e critérios de aceite. Eles sã
 ## 9. Automações revisáveis
 
 - **Significado:** recorrências, importações, classificações e outros processos automáticos devem permitir inspeção e correção.
-- **Exemplo de aplicação:** uma importação apresenta itens aceitos, rejeitados e pendentes de revisão antes da confirmação final.
-- **Exemplo de violação:** gerar ou alterar lançamentos em massa sem apresentar o que mudou.
-- **Critério verificável:** o usuário consegue identificar a automação, revisar seu efeito e corrigir exceções sem editar dados ocultos.
+- **Exemplo de aplicação:** uma futura importação de arquivos financeiros apresenta os itens extraídos para revisão humana e trata duplicidades e inconsistências antes de sugerir a criação de lançamentos.
+- **Exemplo de violação:** criar ou alterar lançamentos silenciosamente a partir de um arquivo, sem apresentar o que mudou e sem confirmação.
+- **Critério verificável:** o usuário consegue identificar a automação, revisar seu efeito, corrigir exceções e confirmar explicitamente a criação ou alteração de dados, sem editar dados ocultos.
 
 ## 10. Privacidade por padrão
 
