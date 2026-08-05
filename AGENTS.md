@@ -19,10 +19,13 @@
 ## Git
 
 - Nunca trabalhar diretamente na branch `main`.
-- Toda tarefa que altera o repositório deve usar branch própria.
+- Toda tarefa que altera o repositório deve usar branch própria ou o mecanismo equivalente disponibilizado pelo ambiente de execução.
 - Implementações devem usar uma branch por SPEC.
 - Documentação, pesquisa e ADR devem usar uma branch por unidade documental.
 - Usar um pull request por unidade de trabalho e não misturar assuntos não relacionados.
+- No Codex Cloud, o repositório, a branch-base, a publicação da branch e a criação do pull request devem seguir o mecanismo nativo do Codex/ChatGPT; ausência de remote `origin`, `git fetch origin` ou `gh auth status` no sandbox não é bloqueio.
+- Em ambiente Git local ou Codex CLI, exigir remote, fetch, autenticação para push e GitHub CLI ou mecanismo equivalente somente quando aplicável ao fluxo escolhido.
+- Agentes não devem configurar PAT, token ou credenciais pessoais nem interromper uma tarefa no Codex Cloud apenas por não conseguir executar `push` pelo terminal.
 - Seguir integralmente [docs/process/GIT-WORKFLOW.md](docs/process/GIT-WORKFLOW.md).
 - Agentes podem fazer merge somente nas condições descritas no fluxo Git.
 - Decisões bloqueantes continuam exigindo intervenção humana antes do merge.
