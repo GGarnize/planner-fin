@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "moduleResolution": "Bundler",
+    "types": ["vite/client", "vitest/globals"],
+    "jsx": "preserve",
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "src/**/*.vue", "e2e/**/*.ts"]
+}

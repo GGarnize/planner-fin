@@ -1,0 +1,35 @@
+{
+  "name": "planner-fin",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Scaffold t\u00e9cnico inicial do PlannerFin.",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "packageManager": "pnpm@10.28.1",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @planner-fin/api --filter @planner-fin/web dev",
+    "dev:api": "pnpm --filter @planner-fin/api dev",
+    "dev:web": "pnpm --filter @planner-fin/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm --filter @planner-fin/shared build && pnpm --filter @planner-fin/config build && pnpm -r typecheck",
+    "test": "pnpm --filter @planner-fin/shared build && pnpm -r test",
+    "test:unit": "pnpm --filter @planner-fin/shared build && pnpm -r test:unit",
+    "test:e2e": "pnpm --filter @planner-fin/web test:e2e",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @planner-fin/api db:migrate",
+    "db:generate": "pnpm --filter @planner-fin/api db:generate"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.33.0",
+    "eslint": "^9.33.0",
+    "eslint-plugin-vue": "^10.4.0",
+    "prettier": "^3.6.2",
+    "typescript-eslint": "^8.39.0"
+  }
+}
