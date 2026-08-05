@@ -1,0 +1,92 @@
+name: Validação contínua do scaffold
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validar-scaffold:
+    name: Validar scaffold técnico
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: planner_fin_test
+          POSTGRES_USER: planner_fin_test
+          POSTGRES_PASSWORD: planner_fin_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U planner_fin_test -d planner_fin_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://planner_fin_test:planner_fin_test_password@localhost:5432/planner_fin_test?schema=public
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar pnpm pelo packageManager
+        uses: pnpm/action-setup@v4
+
+      - name: Configurar Node.js 22 com cache pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Instalar dependências com lockfile congelado
+        run: pnpm install --frozen-lockfile
+
+      - name: Validar lint
+        run: pnpm lint
+
+      - name: Validar formatação
+        run: pnpm format:check
+
+      - name: Validar tipos
+        run: pnpm typecheck
+
+      - name: Executar testes completos antes do banco
+        run: pnpm test
+
+      - name: Executar testes unitários
+        run: pnpm test:unit
+
+      - name: Gerar build
+        run: pnpm build
+
+      - name: Gerar Prisma Client
+        run: pnpm db:generate
+
+      - name: Validar whitespace do diff
+        run: git diff --check
+
+      - name: Instalar Chromium do Playwright
+        run: pnpm --filter @planner-fin/web exec playwright install --with-deps chromium
+
+      - name: Aplicar migrations versionadas no PostgreSQL
+        run: pnpm db:migrate
+
+      - name: Executar testes completos
+        run: pnpm test
+
+      - name: Executar E2E web
+        run: pnpm test:e2e
