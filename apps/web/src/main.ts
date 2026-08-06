@@ -3,5 +3,6 @@ import 'quasar/dist/quasar.css';
 import { Quasar } from 'quasar';
 import { createApp } from 'vue';
 import App from './App.vue';
+import { router } from './router';
 
-createApp(App).use(Quasar, {}).mount('#app');
+createApp(App).use(Quasar, {}).use(router).mount('#app');

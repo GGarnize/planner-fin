@@ -23,7 +23,8 @@
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @planner-fin/api db:migrate",
-    "db:generate": "pnpm --filter @planner-fin/api db:generate"
+    "db:generate": "pnpm --filter @planner-fin/api db:generate",
+    "db": "pnpm db:generate && pnpm db:migrate"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",

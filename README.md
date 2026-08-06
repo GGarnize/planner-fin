@@ -1,6 +1,6 @@
 # PlannerFin
 
-Scaffold técnico inicial do PlannerFin, um sistema financeiro pessoal em construção. Nesta etapa não há funcionalidades financeiras, autenticação, usuários, contas, lançamentos, cartões, orçamentos, importações, OCR, IA ou dados reais.
+PlannerFin, um sistema financeiro pessoal em construção. Esta etapa contém somente a fundação técnica de autenticação e isolamento por usuário; não há funcionalidades ou dados financeiros reais.
 
 ## Pré-requisitos
 
@@ -24,6 +24,13 @@ Variáveis principais:
 - `API_PORT`: porta da API, padrão `3000`.
 - `API_CORS_ORIGIN`: origem local autorizada para a web, padrão `http://localhost:9000`.
 - `VITE_API_BASE_URL`: URL base da API consumida pela web, padrão `http://localhost:3000/api`.
+- `JWT_SECRET`: chave independente para JWT HS256, com pelo menos 32 bytes.
+- `REFRESH_HMAC_SECRET`: chave independente para digest de refresh, com pelo menos 32 bytes.
+- `COOKIE_SECURE`: `false` somente no desenvolvimento HTTP local; seguro por padrão.
+
+Os valores do exemplo são sintéticos e não devem ser reutilizados. O access token
+fica somente em memória; o refresh usa cookie HttpOnly e proteção CSRF por cookie,
+header e origem explícita.
 
 ## Banco local
 
@@ -54,7 +61,7 @@ A API NestJS expõe `GET /api/health` na porta `3000` por padrão e responde exa
 }
 ```
 
-A web Vue 3 + Quasar roda na porta `9000` por padrão, exibe `PlannerFin` e mostra os estados `carregando`, `API disponível` ou `API indisponível` conforme a consulta técnica à API.
+A web Vue 3 + Quasar roda na porta `9000` por padrão e oferece cadastro, login, restauração de sessão, rota autenticada e logout.
 
 ## Qualidade, testes e build
 
@@ -69,14 +76,14 @@ pnpm build
 git diff --check
 ```
 
-`test` e `test:unit` não dependem de banco. `db:up`, `db:migrate` e validações reais de PostgreSQL dependem de Docker disponível. O Playwright sobe a web automaticamente e usa rota mockada para validar a página inicial sem exigir PostgreSQL.
+Os testes unitários não dependem de banco. A integração real, migrations e E2E completo dependem de PostgreSQL. Os testes Playwright da interface usam API simulada e não substituem a integração real.
 
 ## Estrutura do monorepo
 
 ```text
 apps/
-  api/      # API NestJS técnica com Prisma e endpoint de saúde
-  web/      # Web Vue 3 + Quasar com página técnica inicial
+  api/      # API NestJS com autenticação, usuários, Prisma e saúde
+  web/      # Web Vue 3 + Quasar com fluxo mínimo de autenticação
 packages/
   shared/   # Contrato compartilhado de saúde
   config/   # Constantes técnicas locais compartilháveis
