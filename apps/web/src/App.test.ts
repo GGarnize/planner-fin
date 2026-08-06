@@ -1,13 +1,19 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it, vi } from 'vitest';
+import { createMemoryHistory, createRouter } from 'vue-router';
+import { describe, expect, it } from 'vitest';
 import App from './App.vue';
-
-vi.mock('./health', () => ({ fetchHealth: vi.fn(async () => 'available') }));
-
-describe('App', () => {
-  it('renderiza a página técnica e estado de carregamento inicial', () => {
+import LoginPage from './pages/LoginPage.vue';
+describe('App', () =>
+  it('renderiza login acessível', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', component: LoginPage }],
+    });
+    await router.push('/');
+    await router.isReady();
     const wrapper = mount(App, {
       global: {
+        plugins: [router],
         stubs: {
           'q-layout': { template: '<div><slot /></div>' },
           'q-page-container': { template: '<div><slot /></div>' },
@@ -15,8 +21,6 @@ describe('App', () => {
         },
       },
     });
-    expect(wrapper.text()).toContain('PlannerFin');
-    expect(wrapper.text()).toContain('Scaffold técnico inicial ativo.');
-    expect(wrapper.text()).toContain('carregando');
-  });
-});
+    expect(wrapper.get('h1').text()).toBe('Entrar');
+    expect(wrapper.get('input[type=password]').attributes('autocomplete')).toBe('current-password');
+  }));

@@ -1,15 +1,37 @@
 import 'reflect-metadata';
-import { Logger } from '@nestjs/common';
+import { BadRequestException, Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { HttpExceptionFilter } from './common/http-exception.filter';
 import { loadApiConfig } from './config/env';
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
   const config = loadApiConfig();
   const app = await NestFactory.create(AppModule);
+  app.use(cookieParser());
   app.setGlobalPrefix('api');
-  app.enableCors({ origin: config.corsOrigin });
+  app.enableCors({ origin: config.corsOrigin, credentials: true });
+  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalPipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      exceptionFactory: (errors) =>
+        new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'Dados inválidos.',
+          details: errors.flatMap((error) =>
+            Object.values(error.constraints ?? {}).map((message) => ({
+              field: error.property,
+              message,
+            })),
+          ),
+        }),
+    }),
+  );
   app.enableShutdownHooks();
   await app.listen(config.port);
   logger.log(`API PlannerFin iniciada na porta ${config.port}.`);
