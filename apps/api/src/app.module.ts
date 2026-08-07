@@ -9,6 +9,9 @@ import { CategoriesModule } from './categories/categories.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { TransfersModule } from './transfers/transfers.module';
 import { RecurrencesModule } from './recurrences/recurrences.module';
+import { CardsModule } from './cards/cards.module';
+import { CardPurchasesModule } from './card-purchases/card-purchases.module';
+import { CardInvoicesModule } from './card-invoices/card-invoices.module';
 
 @Module({
   imports: [
@@ -21,6 +24,9 @@ import { RecurrencesModule } from './recurrences/recurrences.module';
     TransactionsModule,
     TransfersModule,
     RecurrencesModule,
+    CardsModule,
+    CardPurchasesModule,
+    CardInvoicesModule,
   ],
   controllers: [HealthController],
 })

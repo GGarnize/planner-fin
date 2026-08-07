@@ -18,7 +18,10 @@ const invalidDate = () =>
     details: [{ field: 'openingBalanceDate', message: 'Informe uma data de referência válida.' }],
   });
 
-export function publicAccount(account: FinancialAccount): PublicFinancialAccount {
+export function publicAccount(
+  account: FinancialAccount,
+  realizedBalance: Prisma.Decimal = account.openingBalance,
+): PublicFinancialAccount {
   return {
     id: account.id,
     name: account.name,
@@ -26,6 +29,7 @@ export function publicAccount(account: FinancialAccount): PublicFinancialAccount
     institution: account.institution,
     currency: 'BRL',
     openingBalance: account.openingBalance.toFixed(2),
+    realizedBalance: realizedBalance.toFixed(2),
     openingBalanceDate: account.openingBalanceDate.toISOString().slice(0, 10),
     archivedAt: account.archivedAt?.toISOString() ?? null,
     createdAt: account.createdAt.toISOString(),
@@ -43,17 +47,16 @@ export class AccountsService {
   }
 
   async create(userId: string, dto: CreateAccountDto): Promise<PublicFinancialAccount> {
-    return publicAccount(
-      await this.prisma.financialAccount.create({
-        data: {
-          ...dto,
-          institution: dto.institution ?? null,
-          openingBalance: new Prisma.Decimal(dto.openingBalance),
-          openingBalanceDate: this.date(dto.openingBalanceDate),
-          userId,
-        },
-      }),
-    );
+    const account = await this.prisma.financialAccount.create({
+      data: {
+        ...dto,
+        institution: dto.institution ?? null,
+        openingBalance: new Prisma.Decimal(dto.openingBalance),
+        openingBalanceDate: this.date(dto.openingBalanceDate),
+        userId,
+      },
+    });
+    return publicAccount(account);
   }
 
   async list(userId: string, includeArchived: boolean): Promise<PublicFinancialAccount[]> {
@@ -61,12 +64,12 @@ export class AccountsService {
       where: { userId, ...(includeArchived ? {} : { archivedAt: null }) },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
     });
-    return rows.map(publicAccount);
+    return Promise.all(rows.map((account) => this.publicWithBalance(account)));
   }
 
   async get(userId: string, id: string): Promise<PublicFinancialAccount> {
     const account = await this.find(userId, id);
-    return publicAccount(account);
+    return this.publicWithBalance(account);
   }
 
   async update(userId: string, id: string, dto: UpdateAccountDto): Promise<PublicFinancialAccount> {
@@ -87,15 +90,15 @@ export class AccountsService {
       data.openingBalance = new Prisma.Decimal(dto.openingBalance);
     if (dto.openingBalanceDate !== undefined)
       data.openingBalanceDate = this.date(dto.openingBalanceDate);
-    return publicAccount(
+    return this.publicWithBalance(
       await this.prisma.financialAccount.update({ where: { id: account.id }, data }),
     );
   }
 
   async archive(userId: string, id: string): Promise<PublicFinancialAccount> {
     const account = await this.find(userId, id);
-    if (account.archivedAt) return publicAccount(account);
-    return publicAccount(
+    if (account.archivedAt) return this.publicWithBalance(account);
+    return this.publicWithBalance(
       await this.prisma.financialAccount.update({
         where: { id: account.id },
         data: { archivedAt: new Date() },
@@ -105,8 +108,8 @@ export class AccountsService {
 
   async restore(userId: string, id: string): Promise<PublicFinancialAccount> {
     const account = await this.find(userId, id);
-    if (!account.archivedAt) return publicAccount(account);
-    return publicAccount(
+    if (!account.archivedAt) return this.publicWithBalance(account);
+    return this.publicWithBalance(
       await this.prisma.financialAccount.update({
         where: { id: account.id },
         data: { archivedAt: null },
@@ -120,5 +123,38 @@ export class AccountsService {
     const account = await this.prisma.financialAccount.findFirst({ where: { id, userId } });
     if (!account) throw notFound();
     return account;
+  }
+
+  private async publicWithBalance(account: FinancialAccount): Promise<PublicFinancialAccount> {
+    const [transactions, outgoing, incoming, payments] = await Promise.all([
+      this.prisma.financialTransaction.findMany({
+        where: { userId: account.userId, accountId: account.id, status: 'PAID' },
+        select: { type: true, actualAmount: true },
+      }),
+      this.prisma.financialTransfer.aggregate({
+        where: { userId: account.userId, sourceAccountId: account.id, status: 'COMPLETED' },
+        _sum: { actualAmount: true },
+      }),
+      this.prisma.financialTransfer.aggregate({
+        where: { userId: account.userId, destinationAccountId: account.id, status: 'COMPLETED' },
+        _sum: { actualAmount: true },
+      }),
+      this.prisma.cardInvoicePayment.aggregate({
+        where: { userId: account.userId, accountId: account.id },
+        _sum: { amount: true },
+      }),
+    ]);
+    const transactionBalance = transactions.reduce(
+      (total, row) =>
+        row.type === 'INCOME'
+          ? total.plus(row.actualAmount ?? 0)
+          : total.minus(row.actualAmount ?? 0),
+      account.openingBalance,
+    );
+    const balance = transactionBalance
+      .minus(outgoing._sum.actualAmount ?? 0)
+      .plus(incoming._sum.actualAmount ?? 0)
+      .minus(payments._sum.amount ?? 0);
+    return publicAccount(account, balance);
   }
 }

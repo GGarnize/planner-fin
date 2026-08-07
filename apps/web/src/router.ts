@@ -8,6 +8,7 @@ import CategoriesPage from './pages/CategoriesPage.vue';
 import TransactionsPage from './pages/TransactionsPage.vue';
 import TransfersPage from './pages/TransfersPage.vue';
 import RecurrencesPage from './pages/RecurrencesPage.vue';
+import CardsPage from './pages/CardsPage.vue';
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -20,6 +21,8 @@ export const router = createRouter({
     { path: '/transactions', component: TransactionsPage },
     { path: '/transfers', component: TransfersPage },
     { path: '/recurrences', component: RecurrencesPage },
+    { path: '/cards', component: CardsPage },
+    { path: '/cards/:id', component: CardsPage },
   ],
 });
 let restored = false;

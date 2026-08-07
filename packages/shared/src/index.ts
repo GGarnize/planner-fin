@@ -41,6 +41,7 @@ export interface PublicFinancialAccount {
   institution: string | null;
   currency: 'BRL';
   openingBalance: string;
+  realizedBalance: string;
   openingBalanceDate: string;
   archivedAt: string | null;
   createdAt: string;
@@ -282,3 +283,121 @@ export interface GenerateRecurrenceResponse {
   throughDate: string;
   nextOccurrenceDate: string | null;
 }
+
+export type CardInvoiceStatus = 'OPEN' | 'CLOSED' | 'PAID';
+export interface PublicFinancialCreditCard {
+  id: string;
+  name: string;
+  issuer: string | null;
+  last4: string | null;
+  creditLimit: string | null;
+  closingDay: number;
+  dueDay: number;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface CreateFinancialCreditCardRequest {
+  name: string;
+  issuer?: string | null;
+  last4?: string | null;
+  creditLimit?: string | null;
+  closingDay: number;
+  dueDay: number;
+}
+export type UpdateFinancialCreditCardRequest = Partial<CreateFinancialCreditCardRequest>;
+export interface PublicCardInstallment {
+  id: string;
+  installmentNumber: number;
+  installmentCount: number;
+  amount: string;
+  referenceMonth: string;
+  invoiceId: string;
+  createdAt: string;
+}
+export interface PublicCardPurchase {
+  id: string;
+  cardId: string;
+  categoryId: string;
+  description: string;
+  notes: string | null;
+  purchaseDate: string;
+  totalAmount: string;
+  installmentCount: number;
+  installments: PublicCardInstallment[];
+  createdAt: string;
+  updatedAt: string;
+}
+export interface CreateCardPurchaseRequest {
+  cardId: string;
+  categoryId: string;
+  description: string;
+  notes?: string | null;
+  purchaseDate: string;
+  totalAmount: string;
+  installmentCount: number;
+}
+export type UpdateCardPurchaseRequest = Partial<CreateCardPurchaseRequest>;
+export interface CardPurchaseListQuery {
+  cardId?: string;
+  categoryId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: string;
+  cursor?: string;
+}
+export interface PaginatedCardPurchasesResponse {
+  data: PublicCardPurchase[];
+  page: { limit: number; nextCursor: string | null };
+}
+export interface PublicCardInvoicePayment {
+  id: string;
+  invoiceId: string;
+  accountId: string;
+  amount: string;
+  paymentDate: string;
+  createdAt: string;
+}
+export interface PublicCardInvoice {
+  id: string;
+  cardId: string;
+  referenceMonth: string;
+  closingDate: string;
+  dueDate: string;
+  status: CardInvoiceStatus;
+  closedAt: string | null;
+  paidAt: string | null;
+  total: string;
+  installments: Array<PublicCardInstallment & { purchaseDescription: string }>;
+  payment: PublicCardInvoicePayment | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface CardInvoiceListQuery {
+  cardId?: string;
+  status?: CardInvoiceStatus;
+  cycleFrom?: string;
+  cycleTo?: string;
+  limit?: string;
+  cursor?: string;
+}
+export interface PaginatedCardInvoicesResponse {
+  data: PublicCardInvoice[];
+  page: { limit: number; nextCursor: string | null };
+}
+export interface PayCardInvoiceRequest {
+  accountId: string;
+  paymentDate: string;
+}
+export type CardErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'INVALID_CURSOR'
+  | 'UNAUTHORIZED'
+  | 'NOT_FOUND'
+  | 'RELATED_RESOURCE_ARCHIVED'
+  | 'CATEGORY_TYPE_MISMATCH'
+  | 'INVOICE_NOT_CLOSED'
+  | 'INVOICE_ALREADY_PAID'
+  | 'PURCHASE_IN_CLOSED_INVOICE'
+  | 'CONCURRENT_MODIFICATION'
+  | 'INTERNAL_ERROR';
