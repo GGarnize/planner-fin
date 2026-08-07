@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type {
@@ -24,6 +25,8 @@ import {
   splitInstallments,
 } from '../cards/card-finance';
 import type { CreateCardPurchaseDto, UpdateCardPurchaseDto } from './dto';
+import { isCivilDate } from '../accounts/dto';
+import { createCardCursor, paginationFingerprint, readCardCursor } from '../cards/card-pagination';
 const missing = () =>
   new NotFoundException({ code: 'NOT_FOUND', message: 'Compra não encontrada.' });
 const invalid = (field = 'body') =>
@@ -40,7 +43,7 @@ type PurchaseWithInstallments = Prisma.CardPurchaseGetPayload<{
 export class CardPurchasesService {
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(API_CONFIG) private readonly _config: ApiConfig,
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
   ) {}
   async create(userId: string, dto: CreateCardPurchaseDto) {
     return this.prisma.$transaction(
@@ -107,7 +110,11 @@ export class CardPurchasesService {
   }
   async list(userId: string, q: CardPurchaseListQuery): Promise<PaginatedCardPurchasesResponse> {
     const limit = this.limit(q.limit);
-    const cursor = q.cursor ? this.cursor(q.cursor) : undefined;
+    this.validateQuery(q);
+    const fingerprint = paginationFingerprint(q, limit);
+    const cursor = q.cursor
+      ? readCardCursor(q.cursor, this.config.jwtSecret, fingerprint)
+      : undefined;
     if (q.dateFrom && q.dateTo && q.dateFrom > q.dateTo) throw invalid('dateFrom');
     const rows = await this.prisma.cardPurchase.findMany({
       where: {
@@ -125,29 +132,27 @@ export class CardPurchasesService {
         ...(cursor
           ? {
               OR: [
-                { purchaseDate: { lt: civilDate(cursor.date) } },
-                { purchaseDate: civilDate(cursor.date), id: { gt: cursor.id } },
+                { purchaseDate: { lt: civilDate(cursor.key) } },
+                { purchaseDate: civilDate(cursor.key), id: { lt: cursor.id } },
               ],
             }
           : {}),
       },
       include: { installments: { orderBy: { installmentNumber: 'asc' } } },
-      orderBy: [{ purchaseDate: 'desc' }, { id: 'asc' }],
+      orderBy: [{ purchaseDate: 'desc' }, { id: 'desc' }],
       take: limit + 1,
     });
     const data = rows.slice(0, limit);
     const last = data.at(-1);
     return {
-      data: data.map(this.public),
-      page: {
-        limit,
-        nextCursor:
-          rows.length > limit && last
-            ? Buffer.from(
-                JSON.stringify({ date: civilString(last.purchaseDate), id: last.id }),
-              ).toString('base64url')
-            : null,
-      },
+      items: data.map(this.public),
+      nextCursor:
+        rows.length > limit && last
+          ? createCardCursor(
+              { key: civilString(last.purchaseDate), id: last.id, fingerprint },
+              this.config.jwtSecret,
+            )
+          : null,
     };
   }
   async update(userId: string, id: string, dto: UpdateCardPurchaseDto) {
@@ -169,13 +174,7 @@ export class CardPurchasesService {
         );
         const cardId = dto.cardId ?? row.cardId,
           categoryId = dto.categoryId ?? row.categoryId;
-        const { card } = await this.relations(
-          tx,
-          userId,
-          cardId,
-          categoryId,
-          cardId !== row.cardId,
-        );
+        const { card } = await this.relations(tx, userId, cardId, categoryId, structural);
         if (structural) {
           const total = dto.totalAmount ?? row.totalAmount.toFixed(2),
             count = dto.installmentCount ?? row.installmentCount,
@@ -259,12 +258,12 @@ export class CardPurchasesService {
     ]);
     if (!card || !category) throw missing();
     if ((requireActive && card.archivedAt) || category.archivedAt)
-      throw new ConflictException({
+      throw new UnprocessableEntityException({
         code: 'RELATED_RESOURCE_ARCHIVED',
         message: 'Selecione cartão e categoria ativos.',
       });
     if (category.type !== 'EXPENSE')
-      throw new ConflictException({
+      throw new UnprocessableEntityException({
         code: 'CATEGORY_TYPE_MISMATCH',
         message: 'Selecione uma categoria de despesa.',
       });
@@ -340,13 +339,13 @@ export class CardPurchasesService {
     if (!/^\d+$/.test(raw ?? '20') || n < 1 || n > 100) throw invalid('limit');
     return n;
   }
-  private cursor(raw: string): { date: string; id: string } {
-    try {
-      const x = JSON.parse(Buffer.from(raw, 'base64url').toString());
-      if (typeof x.date !== 'string' || typeof x.id !== 'string') throw 0;
-      return x;
-    } catch {
-      throw new BadRequestException({ code: 'INVALID_CURSOR', message: 'Reinicie a paginação.' });
-    }
+  private validateQuery(q: CardPurchaseListQuery) {
+    const allowed = ['cardId', 'categoryId', 'dateFrom', 'dateTo', 'limit', 'cursor'];
+    if (Object.keys(q).some((key) => !allowed.includes(key))) throw invalid('query');
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (q.cardId && !uuid.test(q.cardId)) throw invalid('cardId');
+    if (q.categoryId && !uuid.test(q.categoryId)) throw invalid('categoryId');
+    if (q.dateFrom && !isCivilDate(q.dateFrom)) throw invalid('dateFrom');
+    if (q.dateTo && !isCivilDate(q.dateTo)) throw invalid('dateTo');
   }
 }

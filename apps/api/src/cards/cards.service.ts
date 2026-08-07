@@ -35,12 +35,14 @@ export class CardsService {
     );
   }
   async list(userId: string, includeArchived: boolean) {
-    return (
-      await this.prisma.financialCreditCard.findMany({
-        where: { userId, ...(includeArchived ? {} : { archivedAt: null }) },
-        orderBy: [{ name: 'asc' }, { id: 'asc' }],
-      })
-    ).map(publicCard);
+    return {
+      items: (
+        await this.prisma.financialCreditCard.findMany({
+          where: { userId, ...(includeArchived ? {} : { archivedAt: null }) },
+          orderBy: [{ name: 'asc' }, { id: 'asc' }],
+        })
+      ).map(publicCard),
+    };
   }
   async get(userId: string, id: string) {
     return publicCard(await this.find(userId, id));

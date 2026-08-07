@@ -22,12 +22,9 @@ export class CardsController {
     return this.cards.create(a.userId, d);
   }
   @Get() list(@CurrentAuth() a: AuthenticatedContext, @Query() q: Record<string, string>) {
-    if (
-      Object.keys(q).some((k) => k !== 'includeArchived') ||
-      (q.includeArchived && q.includeArchived !== 'true')
-    )
+    if (Object.keys(q).some((k) => k !== 'archived') || (q.archived && q.archived !== 'true'))
       throw new BadRequestException({ code: 'VALIDATION_ERROR', message: 'Filtro inválido.' });
-    return this.cards.list(a.userId, q.includeArchived === 'true');
+    return this.cards.list(a.userId, q.archived === 'true');
   }
   @Get(':id') get(@CurrentAuth() a: AuthenticatedContext, @Param('id') id: string) {
     return this.cards.get(a.userId, id);

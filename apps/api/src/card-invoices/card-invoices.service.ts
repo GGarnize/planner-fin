@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type {
@@ -16,6 +17,7 @@ import type { ApiConfig } from '../config/env';
 import { civilDate, civilString } from '../cards/card-finance';
 import { PrismaService } from '../prisma/prisma.service';
 import type { PayCardInvoiceDto } from './dto';
+import { createCardCursor, paginationFingerprint, readCardCursor } from '../cards/card-pagination';
 const missing = () =>
   new NotFoundException({ code: 'NOT_FOUND', message: 'Fatura não encontrada.' });
 type Tx = Prisma.TransactionClient;
@@ -31,14 +33,16 @@ const include = {
 export class CardInvoicesService {
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(API_CONFIG) private readonly _config: ApiConfig,
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
   ) {}
   async get(userId: string, id: string) {
     return this.getTx(this.prisma, userId, id);
   }
   async list(userId: string, q: CardInvoiceListQuery): Promise<PaginatedCardInvoicesResponse> {
+    this.validateQuery(q);
     const limit = this.limit(q.limit),
-      cursor = q.cursor ? this.cursor(q.cursor) : undefined;
+      fingerprint = paginationFingerprint(q, limit),
+      cursor = q.cursor ? readCardCursor(q.cursor, this.config.jwtSecret, fingerprint) : undefined;
     if (q.cycleFrom && q.cycleTo && q.cycleFrom > q.cycleTo) throw this.invalid('cycleFrom');
     const rows = await this.prisma.cardInvoice.findMany({
       where: {
@@ -56,29 +60,27 @@ export class CardInvoicesService {
         ...(cursor
           ? {
               OR: [
-                { referenceMonth: { lt: cursor.month } },
-                { referenceMonth: cursor.month, id: { gt: cursor.id } },
+                { referenceMonth: { lt: cursor.key } },
+                { referenceMonth: cursor.key, id: { lt: cursor.id } },
               ],
             }
           : {}),
       },
       include,
-      orderBy: [{ referenceMonth: 'desc' }, { id: 'asc' }],
+      orderBy: [{ referenceMonth: 'desc' }, { id: 'desc' }],
       take: limit + 1,
     });
     const data = rows.slice(0, limit),
       last = data.at(-1);
     return {
-      data: data.map((x) => this.public(x)),
-      page: {
-        limit,
-        nextCursor:
-          rows.length > limit && last
-            ? Buffer.from(JSON.stringify({ month: last.referenceMonth, id: last.id })).toString(
-                'base64url',
-              )
-            : null,
-      },
+      items: data.map((x) => this.public(x)),
+      nextCursor:
+        rows.length > limit && last
+          ? createCardCursor(
+              { key: last.referenceMonth, id: last.id, fingerprint },
+              this.config.jwtSecret,
+            )
+          : null,
     };
   }
   async close(userId: string, id: string) {
@@ -120,7 +122,7 @@ export class CardInvoicesService {
         });
         if (!account) throw missing();
         if (account.archivedAt)
-          throw new ConflictException({
+          throw new UnprocessableEntityException({
             code: 'RELATED_RESOURCE_ARCHIVED',
             message: 'Selecione uma conta ativa.',
           });
@@ -217,13 +219,14 @@ export class CardInvoicesService {
       details: [{ field, message: 'Valor inválido.' }],
     });
   }
-  private cursor(raw: string): { month: string; id: string } {
-    try {
-      const x = JSON.parse(Buffer.from(raw, 'base64url').toString());
-      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(x.month) || typeof x.id !== 'string') throw 0;
-      return x;
-    } catch {
-      throw new BadRequestException({ code: 'INVALID_CURSOR', message: 'Reinicie a paginação.' });
-    }
+  private validateQuery(q: CardInvoiceListQuery) {
+    const allowed = ['cardId', 'status', 'cycleFrom', 'cycleTo', 'limit', 'cursor'];
+    if (Object.keys(q).some((key) => !allowed.includes(key))) throw this.invalid('query');
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const month = /^\d{4}-(0[1-9]|1[0-2])$/;
+    if (q.cardId && !uuid.test(q.cardId)) throw this.invalid('cardId');
+    if (q.status && !['OPEN', 'CLOSED', 'PAID'].includes(q.status)) throw this.invalid('status');
+    if (q.cycleFrom && !month.test(q.cycleFrom)) throw this.invalid('cycleFrom');
+    if (q.cycleTo && !month.test(q.cycleTo)) throw this.invalid('cycleTo');
   }
 }
