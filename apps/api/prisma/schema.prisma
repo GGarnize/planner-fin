@@ -21,6 +21,10 @@ model User {
   financialTransactions FinancialTransaction[]
   financialTransfers    FinancialTransfer[]
   recurrenceRules       RecurrenceRule[]
+  creditCards           FinancialCreditCard[]
+  cardPurchases         CardPurchase[]
+  cardInvoices          CardInvoice[]
+  cardInvoicePayments   CardInvoicePayment[]
 }
 
 enum FinancialCategoryType {
@@ -53,6 +57,7 @@ model FinancialCategory {
   user                  User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
   financialTransactions FinancialTransaction[]
   recurrenceRules       RecurrenceRule[]
+  cardPurchases         CardPurchase[]
 
   @@unique([userId, type, normalizedName])
   @@index([userId])
@@ -85,8 +90,111 @@ model FinancialAccount {
   destinationRecurrenceRules RecurrenceRule[]       @relation("RecurrenceDestinationAccount")
   outgoingTransfers          FinancialTransfer[]    @relation("TransferSourceAccount")
   incomingTransfers          FinancialTransfer[]    @relation("TransferDestinationAccount")
+  cardInvoicePayments        CardInvoicePayment[]
 
   @@index([userId])
+}
+
+enum CardInvoiceStatus {
+  OPEN
+  CLOSED
+  PAID
+}
+
+model FinancialCreditCard {
+  id          String         @id @default(uuid()) @db.Uuid
+  userId      String         @db.Uuid
+  name        String         @db.VarChar(120)
+  issuer      String?        @db.VarChar(120)
+  last4       String?        @db.Char(4)
+  creditLimit Decimal?       @db.Decimal(19, 2)
+  closingDay  Int
+  dueDay      Int
+  archivedAt  DateTime?      @db.Timestamptz(3)
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  purchases   CardPurchase[]
+  invoices    CardInvoice[]
+
+  @@index([userId, archivedAt, name, id])
+}
+
+model CardPurchase {
+  id               String              @id @default(uuid()) @db.Uuid
+  userId           String              @db.Uuid
+  cardId           String              @db.Uuid
+  categoryId       String              @db.Uuid
+  description      String              @db.VarChar(200)
+  notes            String?             @db.VarChar(2000)
+  purchaseDate     DateTime            @db.Date
+  totalAmount      Decimal             @db.Decimal(19, 2)
+  installmentCount Int
+  createdAt        DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime            @updatedAt @db.Timestamptz(3)
+  user             User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  card             FinancialCreditCard @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  category         FinancialCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  installments     CardInstallment[]
+
+  @@index([userId, purchaseDate(sort: Desc), createdAt(sort: Desc), id])
+  @@index([userId, cardId, purchaseDate])
+  @@index([userId, categoryId, purchaseDate])
+}
+
+model CardInstallment {
+  id                String       @id @default(uuid()) @db.Uuid
+  purchaseId        String       @db.Uuid
+  installmentNumber Int
+  installmentCount  Int
+  amount            Decimal      @db.Decimal(19, 2)
+  referenceMonth    String       @db.Char(7)
+  invoiceId         String       @db.Uuid
+  createdAt         DateTime     @default(now()) @db.Timestamptz(3)
+  purchase          CardPurchase @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  invoice           CardInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@unique([purchaseId, installmentNumber])
+  @@index([invoiceId])
+  @@index([referenceMonth])
+}
+
+model CardInvoice {
+  id             String              @id @default(uuid()) @db.Uuid
+  userId         String              @db.Uuid
+  cardId         String              @db.Uuid
+  referenceMonth String              @db.Char(7)
+  closingDate    DateTime            @db.Date
+  dueDate        DateTime            @db.Date
+  status         CardInvoiceStatus   @default(OPEN)
+  closedAt       DateTime?           @db.Timestamptz(3)
+  paidAt         DateTime?           @db.Timestamptz(3)
+  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime            @updatedAt @db.Timestamptz(3)
+  user           User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  card           FinancialCreditCard @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  installments   CardInstallment[]
+  payment        CardInvoicePayment?
+
+  @@unique([cardId, referenceMonth])
+  @@index([userId, referenceMonth(sort: Desc), createdAt(sort: Desc), id])
+  @@index([userId, cardId, status, referenceMonth])
+}
+
+model CardInvoicePayment {
+  id          String           @id @default(uuid()) @db.Uuid
+  userId      String           @db.Uuid
+  invoiceId   String           @unique @db.Uuid
+  accountId   String           @db.Uuid
+  amount      Decimal          @db.Decimal(19, 2)
+  paymentDate DateTime         @db.Date
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
+  user        User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  invoice     CardInvoice      @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  account     FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([userId, paymentDate(sort: Desc), id])
+  @@index([userId, accountId, paymentDate])
 }
 
 enum FinancialTransactionType {

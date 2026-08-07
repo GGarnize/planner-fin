@@ -85,7 +85,13 @@ describe('ciclo de vida', () => {
       .fn()
       .mockResolvedValueOnce(row({ archivedAt: new Date('2026-08-07T02:00:00Z') }))
       .mockResolvedValueOnce(row());
-    const service = new AccountsService({ financialAccount: { findFirst, update } } as never);
+    const aggregate = vi.fn().mockResolvedValue({ _sum: { actualAmount: null, amount: null } });
+    const service = new AccountsService({
+      financialAccount: { findFirst, update },
+      financialTransaction: { findMany: vi.fn().mockResolvedValue([]) },
+      financialTransfer: { aggregate },
+      cardInvoicePayment: { aggregate },
+    } as never);
     await service.archive(row().userId, row().id);
     await service.restore(row().userId, row().id);
     expect(update).not.toHaveBeenCalled();
