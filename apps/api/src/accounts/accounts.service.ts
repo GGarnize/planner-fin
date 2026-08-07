@@ -126,24 +126,33 @@ export class AccountsService {
   }
 
   private async publicWithBalance(account: FinancialAccount): Promise<PublicFinancialAccount> {
-    const [transactions, outgoing, incoming, payments] = await Promise.all([
-      this.prisma.financialTransaction.findMany({
-        where: { userId: account.userId, accountId: account.id, status: 'PAID' },
-        select: { type: true, actualAmount: true },
-      }),
-      this.prisma.financialTransfer.aggregate({
-        where: { userId: account.userId, sourceAccountId: account.id, status: 'COMPLETED' },
-        _sum: { actualAmount: true },
-      }),
-      this.prisma.financialTransfer.aggregate({
-        where: { userId: account.userId, destinationAccountId: account.id, status: 'COMPLETED' },
-        _sum: { actualAmount: true },
-      }),
-      this.prisma.cardInvoicePayment.aggregate({
-        where: { userId: account.userId, accountId: account.id },
-        _sum: { amount: true },
-      }),
-    ]);
+    const [transactions, outgoing, incoming, payments, debtFundings, debtPayments] =
+      await Promise.all([
+        this.prisma.financialTransaction.findMany({
+          where: { userId: account.userId, accountId: account.id, status: 'PAID' },
+          select: { type: true, actualAmount: true },
+        }),
+        this.prisma.financialTransfer.aggregate({
+          where: { userId: account.userId, sourceAccountId: account.id, status: 'COMPLETED' },
+          _sum: { actualAmount: true },
+        }),
+        this.prisma.financialTransfer.aggregate({
+          where: { userId: account.userId, destinationAccountId: account.id, status: 'COMPLETED' },
+          _sum: { actualAmount: true },
+        }),
+        this.prisma.cardInvoicePayment.aggregate({
+          where: { userId: account.userId, accountId: account.id },
+          _sum: { amount: true },
+        }),
+        this.prisma.debtFunding.aggregate({
+          where: { userId: account.userId, accountId: account.id },
+          _sum: { amount: true },
+        }),
+        this.prisma.debtPayment.findMany({
+          where: { userId: account.userId, accountId: account.id },
+          select: { principalAmount: true, interestAmount: true, feeAmount: true },
+        }),
+      ]);
     const transactionBalance = transactions.reduce(
       (total, row) =>
         row.type === 'INCOME'
@@ -154,7 +163,15 @@ export class AccountsService {
     const balance = transactionBalance
       .minus(outgoing._sum.actualAmount ?? 0)
       .plus(incoming._sum.actualAmount ?? 0)
-      .minus(payments._sum.amount ?? 0);
+      .minus(payments._sum.amount ?? 0)
+      .plus(debtFundings._sum.amount ?? 0)
+      .minus(
+        debtPayments.reduce(
+          (sum, payment) =>
+            sum.plus(payment.principalAmount).plus(payment.interestAmount).plus(payment.feeAmount),
+          new Prisma.Decimal(0),
+        ),
+      );
     return publicAccount(account, balance);
   }
 }

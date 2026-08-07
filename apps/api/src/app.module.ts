@@ -12,6 +12,7 @@ import { RecurrencesModule } from './recurrences/recurrences.module';
 import { CardsModule } from './cards/cards.module';
 import { CardPurchasesModule } from './card-purchases/card-purchases.module';
 import { CardInvoicesModule } from './card-invoices/card-invoices.module';
+import { DebtsModule } from './debts/debts.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { CardInvoicesModule } from './card-invoices/card-invoices.module';
     CardsModule,
     CardPurchasesModule,
     CardInvoicesModule,
+    DebtsModule,
   ],
   controllers: [HealthController],
 })

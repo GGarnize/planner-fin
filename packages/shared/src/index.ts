@@ -401,3 +401,112 @@ export type CardErrorCode =
   | 'PURCHASE_IN_CLOSED_INVOICE'
   | 'CONCURRENT_MODIFICATION'
   | 'INTERNAL_ERROR';
+
+export type DebtType = 'LOAN' | 'FINANCING' | 'NEGOTIATED_DEBT' | 'OTHER';
+export type DebtStatus = 'ACTIVE' | 'PAID_OFF';
+export type DebtInstallmentStatus = 'PENDING' | 'PAID';
+export type DebtProjectedStatus = DebtStatus;
+export interface PublicDebtInstallment {
+  id: string;
+  installmentNumber: number;
+  dueDate: string;
+  principalAmount: string;
+  interestAmount: string;
+  feeAmount: string;
+  totalAmount: string;
+  status: DebtInstallmentStatus;
+  isOverdue: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface PublicDebtFunding {
+  id: string;
+  accountId: string;
+  amount: string;
+  fundingDate: string;
+  createdAt: string;
+}
+export interface PublicDebtPayment {
+  id: string;
+  debtId: string;
+  installmentId: string;
+  accountId: string;
+  paymentDate: string;
+  principalAmount: string;
+  interestAmount: string;
+  feeAmount: string;
+  totalAmount: string;
+  createdAt: string;
+}
+export interface DebtProjections {
+  outstandingPrincipal: string;
+  paidPrincipal: string;
+  paidInterestAmount: string;
+  paidFeeAmount: string;
+  pendingInterestAmount: string;
+  pendingFeeAmount: string;
+  totalFutureAmount: string;
+  paidInstallmentCount: number;
+  pendingInstallmentCount: number;
+  overdueInstallmentCount: number;
+  nextInstallment: PublicDebtInstallment | null;
+  projectedStatus: DebtProjectedStatus;
+}
+export interface PublicFinancialDebt {
+  id: string;
+  type: DebtType;
+  creditorName: string;
+  description: string | null;
+  notes: string | null;
+  originalPrincipal: string;
+  startDate: string;
+  installmentCount: number;
+  status: DebtStatus;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  projections: DebtProjections;
+}
+export interface FinancialDebtDetail extends PublicFinancialDebt {
+  funding: PublicDebtFunding | null;
+  installments: PublicDebtInstallment[];
+  payments: PublicDebtPayment[];
+}
+export interface DebtInstallmentInput {
+  installmentNumber: number;
+  dueDate: string;
+  principalAmount: string;
+  interestAmount: string;
+  feeAmount: string;
+}
+export interface DebtFundingInput {
+  accountId: string;
+  amount: string;
+  fundingDate: string;
+}
+export interface CreateFinancialDebtRequest {
+  type: DebtType;
+  creditorName: string;
+  description?: string | null;
+  notes?: string | null;
+  originalPrincipal: string;
+  startDate: string;
+  installmentCount: number;
+  installments: DebtInstallmentInput[];
+  funding?: DebtFundingInput;
+}
+export type UpdateFinancialDebtRequest = Partial<CreateFinancialDebtRequest>;
+export interface ListFinancialDebtsResponse {
+  items: PublicFinancialDebt[];
+  nextCursor: string | null;
+}
+export interface PayDebtInstallmentRequest {
+  accountId: string;
+  paymentDate: string;
+}
+export interface PayDebtInstallmentResponse {
+  payment: PublicDebtPayment;
+  created: boolean;
+}
+export type DebtDueFilter = 'overdue' | 'upcoming' | 'all';
+export type DebtArchivedFilter = 'false' | 'true' | 'all';

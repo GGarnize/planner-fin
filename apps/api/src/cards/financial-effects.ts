@@ -23,3 +23,26 @@ export function accountBalance(
   for (const value of incoming) total = total.plus(value);
   return total.toFixed(2);
 }
+
+export function debtFinancialCost(payments: Array<{ interestAmount: string; feeAmount: string }>) {
+  return payments
+    .reduce(
+      (sum, payment) => sum.plus(payment.interestAmount).plus(payment.feeAmount),
+      new Prisma.Decimal(0),
+    )
+    .toFixed(2);
+}
+export function accountBalanceWithDebts(
+  baseBalance: string,
+  fundings: string[],
+  payments: Array<{ principalAmount: string; interestAmount: string; feeAmount: string }>,
+) {
+  let total = new Prisma.Decimal(baseBalance);
+  for (const funding of fundings) total = total.plus(funding);
+  for (const payment of payments)
+    total = total
+      .minus(payment.principalAmount)
+      .minus(payment.interestAmount)
+      .minus(payment.feeAmount);
+  return total.toFixed(2);
+}
