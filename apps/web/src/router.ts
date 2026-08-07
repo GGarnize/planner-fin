@@ -7,6 +7,7 @@ import AccountsPage from './pages/AccountsPage.vue';
 import CategoriesPage from './pages/CategoriesPage.vue';
 import TransactionsPage from './pages/TransactionsPage.vue';
 import TransfersPage from './pages/TransfersPage.vue';
+import RecurrencesPage from './pages/RecurrencesPage.vue';
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -18,6 +19,7 @@ export const router = createRouter({
     { path: '/categories', component: CategoriesPage },
     { path: '/transactions', component: TransactionsPage },
     { path: '/transfers', component: TransfersPage },
+    { path: '/recurrences', component: RecurrencesPage },
   ],
 });
 let restored = false;

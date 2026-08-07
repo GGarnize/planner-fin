@@ -8,18 +8,19 @@ datasource db {
 }
 
 model User {
-  id              String    @id @default(uuid()) @db.Uuid
-  name            String    @db.VarChar(120)
-  email           String    @unique @db.VarChar(254)
-  normalizedEmail String    @unique @db.VarChar(254)
-  passwordHash    String
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  sessions        Session[]
-  financialAccounts FinancialAccount[]
-  financialCategories FinancialCategory[]
+  id                    String                 @id @default(uuid()) @db.Uuid
+  name                  String                 @db.VarChar(120)
+  email                 String                 @unique @db.VarChar(254)
+  normalizedEmail       String                 @unique @db.VarChar(254)
+  passwordHash          String
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  sessions              Session[]
+  financialAccounts     FinancialAccount[]
+  financialCategories   FinancialCategory[]
   financialTransactions FinancialTransaction[]
-  financialTransfers FinancialTransfer[]
+  financialTransfers    FinancialTransfer[]
+  recurrenceRules       RecurrenceRule[]
 }
 
 enum FinancialCategoryType {
@@ -39,21 +40,22 @@ enum FinancialCategoryIcon {
 }
 
 model FinancialCategory {
-  id             String                  @id @default(uuid()) @db.Uuid
-  userId         String                  @db.Uuid
-  name           String                  @db.VarChar(80)
-  normalizedName String                  @db.VarChar(80)
-  type           FinancialCategoryType
-  color          String?                 @db.VarChar(7)
-  icon           FinancialCategoryIcon?
-  archivedAt     DateTime?               @db.Timestamptz(3)
-  createdAt      DateTime                @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime                @updatedAt @db.Timestamptz(3)
-  user           User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  id                    String                 @id @default(uuid()) @db.Uuid
+  userId                String                 @db.Uuid
+  name                  String                 @db.VarChar(80)
+  normalizedName        String                 @db.VarChar(80)
+  type                  FinancialCategoryType
+  color                 String?                @db.VarChar(7)
+  icon                  FinancialCategoryIcon?
+  archivedAt            DateTime?              @db.Timestamptz(3)
+  createdAt             DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime               @updatedAt @db.Timestamptz(3)
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
   financialTransactions FinancialTransaction[]
+  recurrenceRules       RecurrenceRule[]
 
-  @@index([userId])
   @@unique([userId, type, normalizedName])
+  @@index([userId])
 }
 
 enum FinancialAccountType {
@@ -65,21 +67,24 @@ enum FinancialAccountType {
 }
 
 model FinancialAccount {
-  id                 String               @id @default(uuid()) @db.Uuid
-  userId             String               @db.Uuid
-  name               String               @db.VarChar(120)
-  type               FinancialAccountType
-  institution        String?              @db.VarChar(120)
-  currency           String               @db.Char(3)
-  openingBalance     Decimal              @db.Decimal(19, 2)
-  openingBalanceDate DateTime             @db.Date
-  archivedAt         DateTime?            @db.Timestamptz(3)
-  createdAt          DateTime             @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime             @updatedAt @db.Timestamptz(3)
-  user               User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
-  financialTransactions FinancialTransaction[]
-  outgoingTransfers FinancialTransfer[] @relation("TransferSourceAccount")
-  incomingTransfers FinancialTransfer[] @relation("TransferDestinationAccount")
+  id                         String                 @id @default(uuid()) @db.Uuid
+  userId                     String                 @db.Uuid
+  name                       String                 @db.VarChar(120)
+  type                       FinancialAccountType
+  institution                String?                @db.VarChar(120)
+  currency                   String                 @db.Char(3)
+  openingBalance             Decimal                @db.Decimal(19, 2)
+  openingBalanceDate         DateTime               @db.Date
+  archivedAt                 DateTime?              @db.Timestamptz(3)
+  createdAt                  DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt                  DateTime               @updatedAt @db.Timestamptz(3)
+  user                       User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  financialTransactions      FinancialTransaction[]
+  transactionRecurrenceRules RecurrenceRule[]       @relation("RecurrenceAccount")
+  sourceRecurrenceRules      RecurrenceRule[]       @relation("RecurrenceSourceAccount")
+  destinationRecurrenceRules RecurrenceRule[]       @relation("RecurrenceDestinationAccount")
+  outgoingTransfers          FinancialTransfer[]    @relation("TransferSourceAccount")
+  incomingTransfers          FinancialTransfer[]    @relation("TransferDestinationAccount")
 
   @@index([userId])
 }
@@ -95,24 +100,28 @@ enum FinancialTransactionStatus {
 }
 
 model FinancialTransaction {
-  id            String                     @id @default(uuid()) @db.Uuid
-  userId        String                     @db.Uuid
-  accountId     String                     @db.Uuid
-  categoryId    String                     @db.Uuid
-  type          FinancialTransactionType
-  status        FinancialTransactionStatus
-  description   String                     @db.VarChar(200)
-  notes         String?                    @db.VarChar(2000)
-  plannedAmount Decimal                    @db.Decimal(19, 2)
-  actualAmount  Decimal?                   @db.Decimal(19, 2)
-  dueDate       DateTime                   @db.Date
-  paidAt        DateTime?                  @db.Date
-  createdAt     DateTime                   @default(now()) @db.Timestamptz(3)
-  updatedAt     DateTime                   @updatedAt @db.Timestamptz(3)
-  user          User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
-  account       FinancialAccount           @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  category      FinancialCategory          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  id               String                     @id @default(uuid()) @db.Uuid
+  userId           String                     @db.Uuid
+  accountId        String                     @db.Uuid
+  categoryId       String                     @db.Uuid
+  type             FinancialTransactionType
+  status           FinancialTransactionStatus
+  description      String                     @db.VarChar(200)
+  notes            String?                    @db.VarChar(2000)
+  plannedAmount    Decimal                    @db.Decimal(19, 2)
+  actualAmount     Decimal?                   @db.Decimal(19, 2)
+  dueDate          DateTime                   @db.Date
+  paidAt           DateTime?                  @db.Date
+  recurrenceRuleId String?                    @db.Uuid
+  occurrenceDate   DateTime?                  @db.Date
+  createdAt        DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime                   @updatedAt @db.Timestamptz(3)
+  user             User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  account          FinancialAccount           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category         FinancialCategory          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  recurrenceRule   RecurrenceRule?            @relation(fields: [recurrenceRuleId], references: [id], onDelete: Restrict)
 
+  @@unique([recurrenceRuleId, occurrenceDate])
   @@index([userId, dueDate(sort: Desc), createdAt(sort: Desc), id])
   @@index([userId, accountId, dueDate])
   @@index([userId, categoryId, dueDate])
@@ -137,17 +146,95 @@ model FinancialTransfer {
   actualAmount         Decimal?                @db.Decimal(19, 2)
   dueDate              DateTime                @db.Date
   completedAt          DateTime?               @db.Date
+  recurrenceRuleId     String?                 @db.Uuid
+  occurrenceDate       DateTime?               @db.Date
   createdAt            DateTime                @default(now()) @db.Timestamptz(3)
   updatedAt            DateTime                @updatedAt @db.Timestamptz(3)
   user                 User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
   sourceAccount        FinancialAccount        @relation("TransferSourceAccount", fields: [sourceAccountId], references: [id], onDelete: Restrict)
   destinationAccount   FinancialAccount        @relation("TransferDestinationAccount", fields: [destinationAccountId], references: [id], onDelete: Restrict)
+  recurrenceRule       RecurrenceRule?         @relation(fields: [recurrenceRuleId], references: [id], onDelete: Restrict)
 
+  @@unique([recurrenceRuleId, occurrenceDate])
   @@index([userId, dueDate(sort: Desc), createdAt(sort: Desc), id])
   @@index([userId, sourceAccountId, dueDate])
   @@index([userId, destinationAccountId, dueDate])
   @@index([userId, status, dueDate])
   @@index([userId, completedAt])
+}
+
+enum RecurrenceKind {
+  TRANSACTION
+  TRANSFER
+}
+
+enum RecurrenceStatus {
+  ACTIVE
+  PAUSED
+}
+
+enum RecurrenceFrequency {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum RecurrenceAttentionStatus {
+  READY
+  BLOCKED
+}
+
+enum RecurrenceBlockedReason {
+  RELATED_RESOURCE_ARCHIVED
+}
+
+enum RecurrenceBlockedResourceType {
+  ACCOUNT
+  CATEGORY
+}
+
+model RecurrenceRule {
+  id                   String                         @id @default(uuid()) @db.Uuid
+  userId               String                         @db.Uuid
+  kind                 RecurrenceKind
+  status               RecurrenceStatus               @default(ACTIVE)
+  frequency            RecurrenceFrequency
+  startDate            DateTime                       @db.Date
+  endDate              DateTime?                      @db.Date
+  dayOfWeek            Int?
+  dayOfMonth           Int?
+  monthOfYear          Int?
+  transactionType      FinancialTransactionType?
+  accountId            String?                        @db.Uuid
+  categoryId           String?                        @db.Uuid
+  sourceAccountId      String?                        @db.Uuid
+  destinationAccountId String?                        @db.Uuid
+  plannedAmount        Decimal                        @db.Decimal(19, 2)
+  description          String                         @db.VarChar(200)
+  notes                String?                        @db.VarChar(2000)
+  nextOccurrenceDate   DateTime?                      @db.Date
+  attentionStatus      RecurrenceAttentionStatus      @default(READY)
+  blockedReason        RecurrenceBlockedReason?
+  blockedResourceType  RecurrenceBlockedResourceType?
+  blockedResourceId    String?                        @db.Uuid
+  blockedAt            DateTime?                      @db.Timestamptz(3)
+  archivedAt           DateTime?                      @db.Timestamptz(3)
+  createdAt            DateTime                       @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime                       @updatedAt @db.Timestamptz(3)
+  user                 User                           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  account              FinancialAccount?              @relation("RecurrenceAccount", fields: [accountId], references: [id], onDelete: Restrict)
+  category             FinancialCategory?             @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  sourceAccount        FinancialAccount?              @relation("RecurrenceSourceAccount", fields: [sourceAccountId], references: [id], onDelete: Restrict)
+  destinationAccount   FinancialAccount?              @relation("RecurrenceDestinationAccount", fields: [destinationAccountId], references: [id], onDelete: Restrict)
+  transactions         FinancialTransaction[]
+  transfers            FinancialTransfer[]
+
+  @@index([userId, archivedAt, status, nextOccurrenceDate])
+  @@index([userId, kind, frequency])
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([sourceAccountId])
+  @@index([destinationAccountId])
 }
 
 model Session {
