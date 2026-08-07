@@ -1,4 +1,5 @@
 const js = require('@eslint/js');
+const eslintConfigPrettier = require('eslint-config-prettier/flat');
 const tseslint = require('typescript-eslint');
 const vue = require('eslint-plugin-vue');
 
@@ -24,4 +25,5 @@ module.exports = tseslint.config(
       'vue/singleline-html-element-content-newline': 'off',
     },
   },
+  eslintConfigPrettier,
 );

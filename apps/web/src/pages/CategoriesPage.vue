@@ -138,12 +138,16 @@ onMounted(load);
       {{ error }} <button class="link" @click="load">Tentar novamente</button>
     </p>
     <div class="filters">
-      <label>Natureza<select v-model="filterType" @change="load">
-        <option value="">Todas</option>
-        <option value="INCOME">Receitas</option>
-        <option value="EXPENSE">Despesas</option>
-      </select></label><label class="check"><input v-model="includeArchived" type="checkbox" @change="load"> Incluir
-        arquivadas</label>
+      <label
+        >Natureza<select v-model="filterType" @change="load">
+          <option value="">Todas</option>
+          <option value="INCOME">Receitas</option>
+          <option value="EXPENSE">Despesas</option>
+        </select></label
+      ><label class="check"
+        ><input v-model="includeArchived" type="checkbox" @change="load" /> Incluir
+        arquivadas</label
+      >
     </div>
     <p v-if="loading" aria-live="polite">Carregando…</p>
     <section v-else-if="!categories.length" class="empty">
@@ -165,7 +169,8 @@ onMounted(load);
             class="category"
             :style="{ borderColor: item.color || '#d0d5dd' }"
           >
-            <span v-if="item.archivedAt" class="badge">Arquivada</span><q-icon
+            <span v-if="item.archivedAt" class="badge">Arquivada</span
+            ><q-icon
               v-if="item.icon"
               :name="iconMap[item.icon]"
               size="1.5rem"
@@ -173,8 +178,10 @@ onMounted(load);
             />
             <h3>{{ item.name }}</h3>
             <div class="actions">
-              <button v-if="item.archivedAt" @click="action(item, 'restore')">Reativar</button><template v-else>
-                <button class="secondary" @click="edit(item)">Editar</button><button class="danger" @click="action(item, 'archive')">Arquivar</button>
+              <button v-if="item.archivedAt" @click="action(item, 'restore')">Reativar</button
+              ><template v-else>
+                <button class="secondary" @click="edit(item)">Editar</button
+                ><button class="danger" @click="action(item, 'archive')">Arquivar</button>
               </template>
             </div>
           </article>
@@ -190,17 +197,24 @@ onMounted(load);
     >
       <form @submit.prevent="save">
         <h2 id="category-form-title">{{ editingId ? 'Editar categoria' : 'Nova categoria' }}</h2>
-        <label>Nome<input v-model="form.name" maxlength="80" required></label><label>Natureza<select v-model="form.type" :disabled="!!editingId">
-          <option value="INCOME">Receita</option>
-          <option value="EXPENSE">Despesa</option>
-        </select></label><label>Cor (opcional)<input v-model="form.color" type="color"></label><label>Ícone (opcional)<select v-model="form.icon">
-          <option :value="null">Sem ícone</option>
-          <option v-for="item in icons" :key="item.value" :value="item.value">
-            {{ item.label }}
-          </option>
-        </select></label>
+        <label>Nome<input v-model="form.name" maxlength="80" required /></label
+        ><label
+          >Natureza<select v-model="form.type" :disabled="!!editingId">
+            <option value="INCOME">Receita</option>
+            <option value="EXPENSE">Despesa</option>
+          </select></label
+        ><label>Cor (opcional)<input v-model="form.color" type="color" /></label
+        ><label
+          >Ícone (opcional)<select v-model="form.icon">
+            <option :value="null">Sem ícone</option>
+            <option v-for="item in icons" :key="item.value" :value="item.value">
+              {{ item.label }}
+            </option>
+          </select></label
+        >
         <div class="actions">
-          <button type="button" class="secondary" @click="showForm = false">Cancelar</button><button :disabled="loading">Salvar</button>
+          <button type="button" class="secondary" @click="showForm = false">Cancelar</button
+          ><button :disabled="loading">Salvar</button>
         </div>
       </form>
     </div>

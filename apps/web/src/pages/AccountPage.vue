@@ -8,7 +8,7 @@ async function leave() {
 }
 </script>
 <template>
-  <main class="card" v-if="authState.user">
+  <main v-if="authState.user" class="card">
     <h1>Minha conta</h1>
     <p>Olá, {{ authState.user.name }}.</p>
     <dl>
