@@ -6,9 +6,18 @@ import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { CategoriesModule } from './categories/categories.module';
+import { TransactionsModule } from './transactions/transactions.module';
 
 @Module({
-  imports: [ConfigModule, PrismaModule, AuthModule, UsersModule, AccountsModule, CategoriesModule],
+  imports: [
+    ConfigModule,
+    PrismaModule,
+    AuthModule,
+    UsersModule,
+    AccountsModule,
+    CategoriesModule,
+    TransactionsModule,
+  ],
   controllers: [HealthController],
 })
 export class AppModule {}

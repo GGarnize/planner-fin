@@ -89,3 +89,73 @@ export interface UpdateFinancialCategoryRequest {
   icon?: FinancialCategoryIcon | null;
 }
 export type ListFinancialCategoriesResponse = PublicFinancialCategory[];
+
+export type FinancialTransactionType = 'INCOME' | 'EXPENSE';
+export type FinancialTransactionStatus = 'PENDING' | 'PAID';
+export interface PublicFinancialTransaction {
+  id: string;
+  accountId: string;
+  categoryId: string;
+  type: FinancialTransactionType;
+  status: FinancialTransactionStatus;
+  description: string;
+  notes: string | null;
+  plannedAmount: string;
+  actualAmount: string | null;
+  dueDate: string;
+  paidAt: string | null;
+  isOverdue: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface CreateFinancialTransactionRequest {
+  accountId: string;
+  categoryId: string;
+  type: FinancialTransactionType;
+  status: FinancialTransactionStatus;
+  description: string;
+  notes?: string | null;
+  plannedAmount: string;
+  actualAmount?: string | null;
+  dueDate: string;
+  paidAt?: string | null;
+}
+export interface UpdateFinancialTransactionRequest {
+  description?: string;
+  notes?: string | null;
+  plannedAmount?: string;
+  dueDate?: string;
+  accountId?: string;
+  categoryId?: string;
+  type?: FinancialTransactionType;
+}
+export interface PayFinancialTransactionRequest {
+  actualAmount: string;
+  paidAt: string;
+}
+export interface TransactionListQuery {
+  accountId?: string;
+  categoryId?: string;
+  type?: FinancialTransactionType;
+  status?: FinancialTransactionStatus;
+  dueDateFrom?: string;
+  dueDateTo?: string;
+  paidAtFrom?: string;
+  paidAtTo?: string;
+  limit?: string;
+  cursor?: string;
+}
+export interface PaginatedFinancialTransactionsResponse {
+  data: PublicFinancialTransaction[];
+  page: { limit: number; nextCursor: string | null };
+}
+export type FinancialTransactionErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'INVALID_CURSOR'
+  | 'UNAUTHORIZED'
+  | 'NOT_FOUND'
+  | 'CATEGORY_TYPE_MISMATCH'
+  | 'RELATED_RESOURCE_ARCHIVED'
+  | 'TRANSACTION_ALREADY_PAID'
+  | 'PAID_TRANSACTION_REQUIRES_REOPEN'
+  | 'INTERNAL_ERROR';

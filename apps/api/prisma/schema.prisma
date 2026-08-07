@@ -18,6 +18,7 @@ model User {
   sessions        Session[]
   financialAccounts FinancialAccount[]
   financialCategories FinancialCategory[]
+  financialTransactions FinancialTransaction[]
 }
 
 enum FinancialCategoryType {
@@ -48,6 +49,7 @@ model FinancialCategory {
   createdAt      DateTime                @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime                @updatedAt @db.Timestamptz(3)
   user           User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  financialTransactions FinancialTransaction[]
 
   @@index([userId])
   @@unique([userId, type, normalizedName])
@@ -74,8 +76,45 @@ model FinancialAccount {
   createdAt          DateTime             @default(now()) @db.Timestamptz(3)
   updatedAt          DateTime             @updatedAt @db.Timestamptz(3)
   user               User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  financialTransactions FinancialTransaction[]
 
   @@index([userId])
+}
+
+enum FinancialTransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum FinancialTransactionStatus {
+  PENDING
+  PAID
+}
+
+model FinancialTransaction {
+  id            String                     @id @default(uuid()) @db.Uuid
+  userId        String                     @db.Uuid
+  accountId     String                     @db.Uuid
+  categoryId    String                     @db.Uuid
+  type          FinancialTransactionType
+  status        FinancialTransactionStatus
+  description   String                     @db.VarChar(200)
+  notes         String?                    @db.VarChar(2000)
+  plannedAmount Decimal                    @db.Decimal(19, 2)
+  actualAmount  Decimal?                   @db.Decimal(19, 2)
+  dueDate       DateTime                   @db.Date
+  paidAt        DateTime?                  @db.Date
+  createdAt     DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime                   @updatedAt @db.Timestamptz(3)
+  user          User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  account       FinancialAccount           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category      FinancialCategory          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([userId, dueDate(sort: Desc), createdAt(sort: Desc), id])
+  @@index([userId, accountId, dueDate])
+  @@index([userId, categoryId, dueDate])
+  @@index([userId, status, dueDate])
+  @@index([userId, paidAt])
 }
 
 model Session {
