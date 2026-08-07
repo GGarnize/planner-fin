@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage.vue';
 import RegisterPage from './pages/RegisterPage.vue';
 import AccountPage from './pages/AccountPage.vue';
 import AccountsPage from './pages/AccountsPage.vue';
+import CategoriesPage from './pages/CategoriesPage.vue';
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -12,6 +13,7 @@ export const router = createRouter({
     { path: '/cadastro', component: RegisterPage, meta: { public: true } },
     { path: '/conta', component: AccountPage },
     { path: '/accounts', component: AccountsPage },
+    { path: '/categories', component: CategoriesPage },
   ],
 });
 let restored = false;
