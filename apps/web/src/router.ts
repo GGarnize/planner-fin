@@ -3,6 +3,7 @@ import { authState, restore } from './auth';
 import LoginPage from './pages/LoginPage.vue';
 import RegisterPage from './pages/RegisterPage.vue';
 import AccountPage from './pages/AccountPage.vue';
+import AccountsPage from './pages/AccountsPage.vue';
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -10,6 +11,7 @@ export const router = createRouter({
     { path: '/login', component: LoginPage, meta: { public: true } },
     { path: '/cadastro', component: RegisterPage, meta: { public: true } },
     { path: '/conta', component: AccountPage },
+    { path: '/accounts', component: AccountsPage },
   ],
 });
 let restored = false;
