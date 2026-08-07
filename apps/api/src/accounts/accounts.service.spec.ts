@@ -91,6 +91,8 @@ describe('ciclo de vida', () => {
       financialTransaction: { findMany: vi.fn().mockResolvedValue([]) },
       financialTransfer: { aggregate },
       cardInvoicePayment: { aggregate },
+      debtFunding: { aggregate },
+      debtPayment: { findMany: vi.fn().mockResolvedValue([]) },
     } as never);
     await service.archive(row().userId, row().id);
     await service.restore(row().userId, row().id);
