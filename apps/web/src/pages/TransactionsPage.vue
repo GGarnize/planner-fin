@@ -197,6 +197,7 @@ onMounted(() => {
         <nav>
           <router-link to="/accounts">Contas</router-link> ·
           <router-link to="/categories">Categorias</router-link>
+          · <router-link to="/transfers">Transferências</router-link>
         </nav>
       </div>
       <div class="actions">

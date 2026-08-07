@@ -19,6 +19,7 @@ model User {
   financialAccounts FinancialAccount[]
   financialCategories FinancialCategory[]
   financialTransactions FinancialTransaction[]
+  financialTransfers FinancialTransfer[]
 }
 
 enum FinancialCategoryType {
@@ -77,6 +78,8 @@ model FinancialAccount {
   updatedAt          DateTime             @updatedAt @db.Timestamptz(3)
   user               User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
   financialTransactions FinancialTransaction[]
+  outgoingTransfers FinancialTransfer[] @relation("TransferSourceAccount")
+  incomingTransfers FinancialTransfer[] @relation("TransferDestinationAccount")
 
   @@index([userId])
 }
@@ -115,6 +118,36 @@ model FinancialTransaction {
   @@index([userId, categoryId, dueDate])
   @@index([userId, status, dueDate])
   @@index([userId, paidAt])
+}
+
+enum FinancialTransferStatus {
+  PENDING
+  COMPLETED
+}
+
+model FinancialTransfer {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  userId               String                  @db.Uuid
+  sourceAccountId      String                  @db.Uuid
+  destinationAccountId String                  @db.Uuid
+  status               FinancialTransferStatus
+  description          String                  @db.VarChar(200)
+  notes                String?                 @db.VarChar(2000)
+  plannedAmount        Decimal                 @db.Decimal(19, 2)
+  actualAmount         Decimal?                @db.Decimal(19, 2)
+  dueDate              DateTime                @db.Date
+  completedAt          DateTime?               @db.Date
+  createdAt            DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime                @updatedAt @db.Timestamptz(3)
+  user                 User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  sourceAccount        FinancialAccount        @relation("TransferSourceAccount", fields: [sourceAccountId], references: [id], onDelete: Restrict)
+  destinationAccount   FinancialAccount        @relation("TransferDestinationAccount", fields: [destinationAccountId], references: [id], onDelete: Restrict)
+
+  @@index([userId, dueDate(sort: Desc), createdAt(sort: Desc), id])
+  @@index([userId, sourceAccountId, dueDate])
+  @@index([userId, destinationAccountId, dueDate])
+  @@index([userId, status, dueDate])
+  @@index([userId, completedAt])
 }
 
 model Session {

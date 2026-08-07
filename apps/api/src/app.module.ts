@@ -7,6 +7,7 @@ import { UsersModule } from './users/users.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { CategoriesModule } from './categories/categories.module';
 import { TransactionsModule } from './transactions/transactions.module';
+import { TransfersModule } from './transfers/transfers.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { TransactionsModule } from './transactions/transactions.module';
     AccountsModule,
     CategoriesModule,
     TransactionsModule,
+    TransfersModule,
   ],
   controllers: [HealthController],
 })
