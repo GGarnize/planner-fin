@@ -159,3 +159,69 @@ export type FinancialTransactionErrorCode =
   | 'TRANSACTION_ALREADY_PAID'
   | 'PAID_TRANSACTION_REQUIRES_REOPEN'
   | 'INTERNAL_ERROR';
+
+export type FinancialTransferStatus = 'PENDING' | 'COMPLETED';
+export interface PublicFinancialTransfer {
+  id: string;
+  sourceAccountId: string;
+  destinationAccountId: string;
+  status: FinancialTransferStatus;
+  description: string;
+  notes: string | null;
+  plannedAmount: string;
+  actualAmount: string | null;
+  dueDate: string;
+  completedAt: string | null;
+  isOverdue: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface CreateFinancialTransferRequest {
+  sourceAccountId: string;
+  destinationAccountId: string;
+  status: FinancialTransferStatus;
+  description: string;
+  notes?: string | null;
+  plannedAmount: string;
+  actualAmount?: string | null;
+  dueDate: string;
+  completedAt?: string | null;
+}
+export interface UpdateFinancialTransferRequest {
+  description?: string;
+  notes?: string | null;
+  plannedAmount?: string;
+  dueDate?: string;
+  sourceAccountId?: string;
+  destinationAccountId?: string;
+}
+export interface CompleteFinancialTransferRequest {
+  actualAmount: string;
+  completedAt: string;
+}
+export interface TransferListQuery {
+  sourceAccountId?: string;
+  destinationAccountId?: string;
+  accountId?: string;
+  status?: FinancialTransferStatus;
+  dueDateFrom?: string;
+  dueDateTo?: string;
+  completedAtFrom?: string;
+  completedAtTo?: string;
+  limit?: string;
+  cursor?: string;
+}
+export interface PaginatedFinancialTransfersResponse {
+  data: PublicFinancialTransfer[];
+  page: { limit: number; nextCursor: string | null };
+}
+export type FinancialTransferErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'INVALID_CURSOR'
+  | 'UNAUTHORIZED'
+  | 'NOT_FOUND'
+  | 'RELATED_ACCOUNT_ARCHIVED'
+  | 'TRANSFER_ALREADY_COMPLETED'
+  | 'COMPLETED_TRANSFER_REQUIRES_REOPEN'
+  | 'CONCURRENT_MODIFICATION'
+  | 'INTERNAL_ERROR';
