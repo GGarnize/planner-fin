@@ -10,7 +10,7 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
-const MONEY = /^(0|[1-9][0-9]{0,16})\.[0-9]{2}$/;
+const MONEY = /^(?:0\.(?:0[1-9]|[1-9][0-9])|[1-9][0-9]{0,16}\.[0-9]{2})$/;
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 export class CreateCardDto {
   @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(120) name!: string;

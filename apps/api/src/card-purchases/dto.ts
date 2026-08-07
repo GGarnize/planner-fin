@@ -10,7 +10,9 @@ import {
   MaxLength,
   Min,
   ValidateIf,
+  ValidateBy,
 } from 'class-validator';
+import { isCivilDate } from '../accounts/dto';
 const MONEY = /^(0|[1-9][0-9]{0,16})\.[0-9]{2}$/,
   DATE = /^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/;
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
@@ -24,7 +26,7 @@ export class CreateCardPurchaseDto {
   @IsString()
   @MaxLength(2000)
   notes?: string | null;
-  @IsString() @Matches(DATE) purchaseDate!: string;
+  @IsString() @Matches(DATE) @IsCivilDate() purchaseDate!: string;
   @IsString() @Matches(MONEY) totalAmount!: string;
   @IsInt() @Min(1) @Max(36) installmentCount!: number;
 }
@@ -38,7 +40,14 @@ export class UpdateCardPurchaseDto {
   @IsString()
   @MaxLength(2000)
   notes?: string | null;
-  @IsOptional() @IsString() @Matches(DATE) purchaseDate?: string;
+  @IsOptional() @IsString() @Matches(DATE) @IsCivilDate() purchaseDate?: string;
   @IsOptional() @IsString() @Matches(MONEY) totalAmount?: string;
   @IsOptional() @IsInt() @Min(1) @Max(36) installmentCount?: number;
+}
+
+export function IsCivilDate() {
+  return ValidateBy({
+    name: 'isCivilDate',
+    validator: { validate: (value: unknown) => typeof value === 'string' && isCivilDate(value) },
+  });
 }

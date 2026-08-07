@@ -347,8 +347,8 @@ export interface CardPurchaseListQuery {
   cursor?: string;
 }
 export interface PaginatedCardPurchasesResponse {
-  data: PublicCardPurchase[];
-  page: { limit: number; nextCursor: string | null };
+  items: PublicCardPurchase[];
+  nextCursor: string | null;
 }
 export interface PublicCardInvoicePayment {
   id: string;
@@ -382,8 +382,8 @@ export interface CardInvoiceListQuery {
   cursor?: string;
 }
 export interface PaginatedCardInvoicesResponse {
-  data: PublicCardInvoice[];
-  page: { limit: number; nextCursor: string | null };
+  items: PublicCardInvoice[];
+  nextCursor: string | null;
 }
 export interface PayCardInvoiceRequest {
   accountId: string;
