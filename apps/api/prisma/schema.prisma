@@ -17,6 +17,40 @@ model User {
   updatedAt       DateTime  @updatedAt
   sessions        Session[]
   financialAccounts FinancialAccount[]
+  financialCategories FinancialCategory[]
+}
+
+enum FinancialCategoryType {
+  INCOME
+  EXPENSE
+}
+
+enum FinancialCategoryIcon {
+  HOME
+  WORK
+  SHOPPING_CART
+  RESTAURANT
+  DIRECTIONS_CAR
+  HEALTH_AND_SAFETY
+  SCHOOL
+  SAVINGS
+}
+
+model FinancialCategory {
+  id             String                  @id @default(uuid()) @db.Uuid
+  userId         String                  @db.Uuid
+  name           String                  @db.VarChar(80)
+  normalizedName String                  @db.VarChar(80)
+  type           FinancialCategoryType
+  color          String?                 @db.VarChar(7)
+  icon           FinancialCategoryIcon?
+  archivedAt     DateTime?               @db.Timestamptz(3)
+  createdAt      DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime                @updatedAt @db.Timestamptz(3)
+  user           User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@unique([userId, type, normalizedName])
 }
 
 enum FinancialAccountType {

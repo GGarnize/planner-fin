@@ -56,3 +56,36 @@ export interface CreateFinancialAccountRequest {
 }
 export type UpdateFinancialAccountRequest = Partial<CreateFinancialAccountRequest>;
 export type ListFinancialAccountsResponse = PublicFinancialAccount[];
+
+export type FinancialCategoryType = 'INCOME' | 'EXPENSE';
+export type FinancialCategoryIcon =
+  | 'HOME'
+  | 'WORK'
+  | 'SHOPPING_CART'
+  | 'RESTAURANT'
+  | 'DIRECTIONS_CAR'
+  | 'HEALTH_AND_SAFETY'
+  | 'SCHOOL'
+  | 'SAVINGS';
+export interface PublicFinancialCategory {
+  id: string;
+  name: string;
+  type: FinancialCategoryType;
+  color: string | null;
+  icon: FinancialCategoryIcon | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface CreateFinancialCategoryRequest {
+  name: string;
+  type: FinancialCategoryType;
+  color?: string | null;
+  icon?: FinancialCategoryIcon | null;
+}
+export interface UpdateFinancialCategoryRequest {
+  name?: string;
+  color?: string | null;
+  icon?: FinancialCategoryIcon | null;
+}
+export type ListFinancialCategoriesResponse = PublicFinancialCategory[];

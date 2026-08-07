@@ -19,6 +19,7 @@ async function leave() {
     </dl>
     <p v-if="authState.error" role="alert">{{ authState.error }}</p>
     <router-link class="nav-link" to="/accounts">Minhas contas financeiras</router-link>
+    <router-link class="nav-link" to="/categories">Minhas categorias</router-link>
     <button @click="leave">Sair</button>
   </main>
 </template>
