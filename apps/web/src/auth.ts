@@ -74,15 +74,18 @@ export async function logout(): Promise<void> {
     authState.user = null;
   }
 }
-export async function authenticatedFetch(path: string): Promise<Response> {
+export async function authenticatedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = { ...init.headers, Authorization: `Bearer ${authState.token ?? ''}` };
   let response = await fetch(`${api}${path}`, {
-    headers: { Authorization: `Bearer ${authState.token ?? ''}` },
+    ...init,
+    headers,
     credentials: 'include',
   });
   if (response.status === 401) {
     await requestAuth('refresh');
     response = await fetch(`${api}${path}`, {
-      headers: { Authorization: `Bearer ${authState.token ?? ''}` },
+      ...init,
+      headers: { ...init.headers, Authorization: `Bearer ${authState.token ?? ''}` },
       credentials: 'include',
     });
   }
