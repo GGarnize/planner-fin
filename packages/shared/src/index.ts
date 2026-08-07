@@ -225,3 +225,60 @@ export type FinancialTransferErrorCode =
   | 'COMPLETED_TRANSFER_REQUIRES_REOPEN'
   | 'CONCURRENT_MODIFICATION'
   | 'INTERNAL_ERROR';
+
+export type RecurrenceKind = 'TRANSACTION' | 'TRANSFER';
+export type RecurrenceStatus = 'ACTIVE' | 'PAUSED';
+export type RecurrenceFrequency = 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+export type RecurrenceAttentionStatus = 'READY' | 'BLOCKED';
+export type RecurrenceCalendar =
+  | { frequency: 'WEEKLY'; dayOfWeek: number }
+  | { frequency: 'MONTHLY'; dayOfMonth: number }
+  | { frequency: 'YEARLY'; monthOfYear: number; dayOfMonth: number };
+export type RecurrenceTemplate =
+  | {
+      kind: 'TRANSACTION';
+      transactionType: FinancialTransactionType;
+      accountId: string;
+      categoryId: string;
+      plannedAmount: string;
+      description: string;
+      notes?: string | null;
+    }
+  | {
+      kind: 'TRANSFER';
+      sourceAccountId: string;
+      destinationAccountId: string;
+      plannedAmount: string;
+      description: string;
+      notes?: string | null;
+    };
+export type CreateRecurrenceRequest = RecurrenceCalendar &
+  RecurrenceTemplate & {
+    startDate: string;
+    endDate?: string | null;
+  };
+export type UpdateRecurrenceRequest = Partial<Omit<CreateRecurrenceRequest, 'kind'>>;
+export type PublicRecurrence = CreateRecurrenceRequest & {
+  id: string;
+  status: RecurrenceStatus;
+  nextOccurrenceDate: string | null;
+  attentionStatus: RecurrenceAttentionStatus;
+  blockedReason: 'RELATED_RESOURCE_ARCHIVED' | null;
+  blockedResourceType: 'ACCOUNT' | 'CATEGORY' | null;
+  blockedResourceId: string | null;
+  blockedAt: string | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+export interface RecurrenceListQuery {
+  kind?: RecurrenceKind;
+  status?: RecurrenceStatus;
+  frequency?: RecurrenceFrequency;
+  includeArchived?: boolean;
+}
+export interface GenerateRecurrenceResponse {
+  generatedCount: number;
+  throughDate: string;
+  nextOccurrenceDate: string | null;
+}
