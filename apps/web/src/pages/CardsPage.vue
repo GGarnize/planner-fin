@@ -8,6 +8,7 @@ import type {
   PublicFinancialAccount,
   PublicFinancialCategory,
   PublicFinancialCreditCard,
+  UpdateCardPurchaseRequest,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 const cards = ref<PublicFinancialCreditCard[]>([]),
@@ -46,6 +47,7 @@ const purchase = reactive({
 const payment = reactive<Record<string, { accountId: string; paymentDate: string }>>({});
 const editingCardId = ref('');
 const editingPurchaseId = ref('');
+const originalPurchase = ref<PaginatedCardPurchasesResponse['items'][number] | null>(null);
 const editCard = reactive({
   name: '',
   issuer: '',
@@ -64,6 +66,9 @@ const editPurchase = reactive({
   installmentCount: 1,
 });
 const activeCards = computed(() => cards.value.filter((x) => !x.archivedAt)),
+  editablePurchaseCards = computed(() =>
+    cards.value.filter((x) => !x.archivedAt || x.id === originalPurchase.value?.cardId),
+  ),
   activeAccounts = computed(() => accounts.value.filter((x) => !x.archivedAt)),
   expenseCategories = computed(() =>
     categories.value.filter((x) => !x.archivedAt && x.type === 'EXPENSE'),
@@ -205,6 +210,7 @@ function saveCardEdit() {
 }
 function startPurchaseEdit(item: (typeof purchases.value)[number]) {
   editingPurchaseId.value = item.id;
+  originalPurchase.value = item;
   Object.assign(editPurchase, {
     cardId: item.cardId,
     categoryId: item.categoryId,
@@ -215,12 +221,36 @@ function startPurchaseEdit(item: (typeof purchases.value)[number]) {
     installmentCount: item.installmentCount,
   });
 }
+function canonicalMoney(value: string) {
+  const match = /^(\d+)(?:\.(\d{0,2}))?$/.exec(value);
+  if (!match) return value;
+  const integer = match[1]!.replace(/^0+(?=\d)/, '');
+  return `${integer}.${(match[2] ?? '').padEnd(2, '0')}`;
+}
 function savePurchaseEdit() {
-  return patch(`/card-purchases/${editingPurchaseId.value}`, {
-    ...editPurchase,
-    notes: editPurchase.notes || null,
-    installmentCount: Number(editPurchase.installmentCount),
-  });
+  const original = originalPurchase.value;
+  if (!original) return;
+
+  const delta: UpdateCardPurchaseRequest = {};
+  const notes = editPurchase.notes || null;
+  const installmentCount = Number(editPurchase.installmentCount);
+  const totalAmount = canonicalMoney(editPurchase.totalAmount);
+  if (editPurchase.cardId !== original.cardId) delta.cardId = editPurchase.cardId;
+  if (editPurchase.categoryId !== original.categoryId) delta.categoryId = editPurchase.categoryId;
+  if (editPurchase.description !== original.description)
+    delta.description = editPurchase.description;
+  if (notes !== original.notes) delta.notes = notes;
+  if (editPurchase.purchaseDate !== original.purchaseDate)
+    delta.purchaseDate = editPurchase.purchaseDate;
+  if (totalAmount !== canonicalMoney(original.totalAmount)) delta.totalAmount = totalAmount;
+  if (installmentCount !== original.installmentCount) delta.installmentCount = installmentCount;
+
+  if (!Object.keys(delta).length) {
+    editingPurchaseId.value = '';
+    originalPurchase.value = null;
+    return;
+  }
+  return patch(`/card-purchases/${editingPurchaseId.value}`, delta);
 }
 async function toggle(item: PublicFinancialCreditCard) {
   await mutate(`/cards/${item.id}/${item.archivedAt ? 'restore' : 'archive'}`);
@@ -393,7 +423,9 @@ onMounted(load);
             <div class="grid">
               <label
                 >Cartão<select v-model="editPurchase.cardId" required>
-                  <option v-for="c in activeCards" :key="c.id" :value="c.id">{{ c.name }}</option>
+                  <option v-for="c in editablePurchaseCards" :key="c.id" :value="c.id">
+                    {{ c.name }}{{ c.archivedAt ? ' (arquivado)' : '' }}
+                  </option>
                 </select></label
               >
               <label
