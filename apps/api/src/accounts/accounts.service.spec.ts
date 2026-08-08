@@ -3,7 +3,7 @@ import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { describe, expect, it, vi } from 'vitest';
 import { CreateAccountDto, isCivilDate } from './dto';
-import { AccountsService, publicAccount } from './accounts.service';
+import { AccountsService, publicAccount, realizedBalanceWindow } from './accounts.service';
 import { Prisma } from '@prisma/client';
 
 const valid = {
@@ -97,5 +97,180 @@ describe('ciclo de vida', () => {
     await service.archive(row().userId, row().id);
     await service.restore(row().userId, row().id);
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('saldo realizado com corte temporal', () => {
+  it('produz a janela estrita no corte e inclusiva no dia civil D', () => {
+    expect(realizedBalanceWindow(new Date('2026-01-31T00:00:00.000Z'), '2026-02-28')).toEqual({
+      gt: new Date('2026-01-31T00:00:00.000Z'),
+      lte: new Date('2026-02-28T00:00:00.000Z'),
+    });
+  });
+
+  it('aplica paidAt, completedAt, paymentDate e fundingDate e consolida as cinco fontes', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 1, 28, 12));
+    const financialTransaction = {
+      findMany: vi.fn().mockResolvedValue([
+        { type: 'INCOME', actualAmount: new Prisma.Decimal('200.00') },
+        { type: 'EXPENSE', actualAmount: new Prisma.Decimal('50.00') },
+      ]),
+    };
+    const financialTransfer = {
+      aggregate: vi
+        .fn()
+        .mockResolvedValueOnce({ _sum: { actualAmount: new Prisma.Decimal('25.00') } })
+        .mockResolvedValueOnce({ _sum: { actualAmount: new Prisma.Decimal('10.00') } }),
+    };
+    const cardInvoicePayment = {
+      aggregate: vi.fn().mockResolvedValue({ _sum: { amount: new Prisma.Decimal('30.00') } }),
+    };
+    const debtFunding = {
+      aggregate: vi.fn().mockResolvedValue({ _sum: { amount: new Prisma.Decimal('300.00') } }),
+    };
+    const debtPayment = {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          principalAmount: new Prisma.Decimal('100.00'),
+          interestAmount: new Prisma.Decimal('8.00'),
+          feeAmount: new Prisma.Decimal('2.00'),
+        },
+      ]),
+    };
+    const account = row({
+      openingBalance: new Prisma.Decimal('1000.00'),
+      openingBalanceDate: new Date('2026-01-31T00:00:00.000Z'),
+    });
+    const service = new AccountsService({
+      financialAccount: { findFirst: vi.fn().mockResolvedValue(account) },
+      financialTransaction,
+      financialTransfer,
+      cardInvoicePayment,
+      debtFunding,
+      debtPayment,
+    } as never);
+
+    await expect(service.get(account.userId, account.id)).resolves.toMatchObject({
+      realizedBalance: '1295.00',
+    });
+    const window = {
+      gt: new Date('2026-01-31T00:00:00.000Z'),
+      lte: new Date('2026-02-28T00:00:00.000Z'),
+    };
+    expect(financialTransaction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'PAID', paidAt: window }),
+      }),
+    );
+    expect(financialTransfer.aggregate).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'COMPLETED', completedAt: window }),
+      }),
+    );
+    expect(financialTransfer.aggregate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'COMPLETED', completedAt: window }),
+      }),
+    );
+    expect(cardInvoicePayment.aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ paymentDate: window }) }),
+    );
+    expect(debtFunding.aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ fundingDate: window }) }),
+    );
+    expect(debtPayment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ paymentDate: window }) }),
+    );
+    vi.useRealTimers();
+  });
+
+  it('passa a incluir eventos futuros somente quando o relógio civil alcança a data', async () => {
+    vi.useFakeTimers();
+    const account = row({ openingBalanceDate: new Date('2026-01-31T00:00:00.000Z') });
+    const findMany = vi.fn().mockResolvedValue([]);
+    const aggregate = vi.fn().mockResolvedValue({ _sum: { actualAmount: null, amount: null } });
+    const service = new AccountsService({
+      financialAccount: { findFirst: vi.fn().mockResolvedValue(account) },
+      financialTransaction: { findMany },
+      financialTransfer: { aggregate },
+      cardInvoicePayment: { aggregate },
+      debtFunding: { aggregate },
+      debtPayment: { findMany: vi.fn().mockResolvedValue([]) },
+    } as never);
+    vi.setSystemTime(new Date(2026, 1, 28, 12));
+    await service.get(account.userId, account.id);
+    vi.setSystemTime(new Date(2026, 2, 1, 12));
+    await service.get(account.userId, account.id);
+    expect(findMany.mock.calls[0]![0].where.paidAt.lte).toEqual(
+      new Date('2026-02-28T00:00:00.000Z'),
+    );
+    expect(findMany.mock.calls[1]![0].where.paidAt.lte).toEqual(
+      new Date('2026-03-01T00:00:00.000Z'),
+    );
+    vi.useRealTimers();
+  });
+
+  it('avalia cada ponta da transferência contra o corte da própria conta', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 2, 31, 12));
+    const accountA = row({ openingBalanceDate: new Date('2026-01-31T00:00:00.000Z') });
+    const accountB = row({
+      id: '33333333-3333-4333-8333-333333333333',
+      openingBalanceDate: new Date('2026-02-28T00:00:00.000Z'),
+    });
+    const transferAggregate = vi.fn().mockResolvedValue({ _sum: { actualAmount: null } });
+    const emptyAggregate = vi.fn().mockResolvedValue({ _sum: { amount: null } });
+    const service = new AccountsService({
+      financialAccount: {
+        findFirst: vi.fn().mockResolvedValueOnce(accountA).mockResolvedValueOnce(accountB),
+      },
+      financialTransaction: { findMany: vi.fn().mockResolvedValue([]) },
+      financialTransfer: { aggregate: transferAggregate },
+      cardInvoicePayment: { aggregate: emptyAggregate },
+      debtFunding: { aggregate: emptyAggregate },
+      debtPayment: { findMany: vi.fn().mockResolvedValue([]) },
+    } as never);
+    await service.get(accountA.userId, accountA.id);
+    await service.get(accountB.userId, accountB.id);
+    expect(transferAggregate.mock.calls[0]![0].where.completedAt.gt).toEqual(
+      accountA.openingBalanceDate,
+    );
+    expect(transferAggregate.mock.calls[2]![0].where.completedAt.gt).toEqual(
+      accountB.openingBalanceDate,
+    );
+    vi.useRealTimers();
+  });
+
+  it('recalcula imediatamente após editar saldo ou data sem mutar movimentos', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 1, 28, 12));
+    const original = row({ openingBalanceDate: new Date('2026-01-31T00:00:00.000Z') });
+    const updated = row({
+      openingBalance: new Prisma.Decimal('500.00'),
+      openingBalanceDate: new Date('2026-02-10T00:00:00.000Z'),
+    });
+    const movementFind = vi.fn().mockResolvedValue([]);
+    const aggregate = vi.fn().mockResolvedValue({ _sum: { actualAmount: null, amount: null } });
+    const accountUpdate = vi.fn().mockResolvedValue(updated);
+    const service = new AccountsService({
+      financialAccount: { findFirst: vi.fn().mockResolvedValue(original), update: accountUpdate },
+      financialTransaction: { findMany: movementFind },
+      financialTransfer: { aggregate },
+      cardInvoicePayment: { aggregate },
+      debtFunding: { aggregate },
+      debtPayment: { findMany: vi.fn().mockResolvedValue([]) },
+    } as never);
+    await expect(
+      service.update(original.userId, original.id, {
+        openingBalance: '500.00',
+        openingBalanceDate: '2026-02-10',
+      }),
+    ).resolves.toMatchObject({ realizedBalance: '500.00' });
+    expect(movementFind.mock.calls[0]![0].where.paidAt.gt).toEqual(updated.openingBalanceDate);
+    expect(accountUpdate).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });

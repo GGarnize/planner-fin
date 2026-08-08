@@ -7,6 +7,7 @@ import {
 import { Prisma, type FinancialAccount } from '@prisma/client';
 import type { PublicFinancialAccount } from '@planner-fin/shared';
 import { PrismaService } from '../prisma/prisma.service';
+import { civilDate, currentCivilDate } from '../debts/debt-finance';
 import { CreateAccountDto, isCivilDate, UpdateAccountDto } from './dto';
 
 const notFound = () =>
@@ -35,6 +36,11 @@ export function publicAccount(
     createdAt: account.createdAt.toISOString(),
     updatedAt: account.updatedAt.toISOString(),
   };
+}
+
+/** Janela canônica de caixa: depois do saldo inicial e até o dia civil informado. */
+export function realizedBalanceWindow(openingBalanceDate: Date, through: string) {
+  return { gt: openingBalanceDate, lte: civilDate(through) };
 }
 
 @Injectable()
@@ -126,30 +132,46 @@ export class AccountsService {
   }
 
   private async publicWithBalance(account: FinancialAccount): Promise<PublicFinancialAccount> {
+    const effectiveDate = realizedBalanceWindow(account.openingBalanceDate, currentCivilDate());
     const [transactions, outgoing, incoming, payments, debtFundings, debtPayments] =
       await Promise.all([
         this.prisma.financialTransaction.findMany({
-          where: { userId: account.userId, accountId: account.id, status: 'PAID' },
+          where: {
+            userId: account.userId,
+            accountId: account.id,
+            status: 'PAID',
+            paidAt: effectiveDate,
+          },
           select: { type: true, actualAmount: true },
         }),
         this.prisma.financialTransfer.aggregate({
-          where: { userId: account.userId, sourceAccountId: account.id, status: 'COMPLETED' },
+          where: {
+            userId: account.userId,
+            sourceAccountId: account.id,
+            status: 'COMPLETED',
+            completedAt: effectiveDate,
+          },
           _sum: { actualAmount: true },
         }),
         this.prisma.financialTransfer.aggregate({
-          where: { userId: account.userId, destinationAccountId: account.id, status: 'COMPLETED' },
+          where: {
+            userId: account.userId,
+            destinationAccountId: account.id,
+            status: 'COMPLETED',
+            completedAt: effectiveDate,
+          },
           _sum: { actualAmount: true },
         }),
         this.prisma.cardInvoicePayment.aggregate({
-          where: { userId: account.userId, accountId: account.id },
+          where: { userId: account.userId, accountId: account.id, paymentDate: effectiveDate },
           _sum: { amount: true },
         }),
         this.prisma.debtFunding.aggregate({
-          where: { userId: account.userId, accountId: account.id },
+          where: { userId: account.userId, accountId: account.id, fundingDate: effectiveDate },
           _sum: { amount: true },
         }),
         this.prisma.debtPayment.findMany({
-          where: { userId: account.userId, accountId: account.id },
+          where: { userId: account.userId, accountId: account.id, paymentDate: effectiveDate },
           select: { principalAmount: true, interestAmount: true, feeAmount: true },
         }),
       ]);
