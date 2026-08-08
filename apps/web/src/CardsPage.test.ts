@@ -132,6 +132,36 @@ describe('CardsPage', () => {
     expect(authenticatedFetch).toHaveBeenCalledWith('/card-invoices?limit=20', undefined);
   });
 
+  it('mantém conta ativa com saldo indisponível selecionável no pagamento', async () => {
+    const invoice = {
+      id: 'invoice-1',
+      status: 'CLOSED',
+      referenceMonth: '2026-08',
+      total: '10.00',
+      closingDate: '2026-08-10',
+      dueDate: '2026-08-17',
+      installments: [],
+    };
+    vi.mocked(authenticatedFetch).mockImplementation((path) => {
+      const url = String(path);
+      if (url.startsWith('/cards')) return response({ items: [] });
+      if (url.startsWith('/card-purchases')) return response({ items: [], nextCursor: null });
+      if (url.startsWith('/card-invoices')) return response({ items: [invoice], nextCursor: null });
+      if (url.startsWith('/accounts'))
+        return response([
+          { id: 'account-1', name: 'Conta futura', realizedBalance: null, archivedAt: null },
+        ]);
+      return response([]);
+    });
+    const wrapper = mount(CardsPage);
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Conta futura'));
+    const option = wrapper.find('option[value="account-1"]');
+    expect(option.text()).toContain('saldo atual indisponível');
+    expect(option.text()).not.toContain('R$ 0,00');
+    await wrapper.find('.pay select').setValue('account-1');
+    expect(wrapper.find('.pay button').attributes('disabled')).toBeUndefined();
+  });
+
   it('distingue API indisponível e oferece retry', async () => {
     vi.mocked(authenticatedFetch)
       .mockRejectedValueOnce(new Error('offline'))

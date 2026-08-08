@@ -271,7 +271,12 @@ onMounted(async () => {
               >Conta<select v-model="form.funding.accountId" required>
                 <option value="">Selecione</option>
                 <option v-for="a in activeAccounts" :key="a.id" :value="a.id">
-                  {{ a.name }} · {{ money(a.realizedBalance) }}
+                  {{ a.name }} ·
+                  {{
+                    a.realizedBalance === null
+                      ? 'saldo atual indisponível'
+                      : money(a.realizedBalance)
+                  }}
                 </option>
               </select></label
             ><label>Valor<input v-model="form.funding.amount" inputmode="decimal" required /></label

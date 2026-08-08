@@ -41,7 +41,7 @@ export interface PublicFinancialAccount {
   institution: string | null;
   currency: 'BRL';
   openingBalance: string;
-  realizedBalance: string;
+  realizedBalance: string | null;
   openingBalanceDate: string;
   archivedAt: string | null;
   createdAt: string;

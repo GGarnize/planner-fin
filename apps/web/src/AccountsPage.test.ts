@@ -6,6 +6,19 @@ vi.mock('./auth', () => ({ authenticatedFetch: vi.fn() }));
 import { authenticatedFetch } from './auth';
 const response = (data: unknown, ok = true) =>
   Promise.resolve({ ok, status: ok ? 200 : 500, json: () => Promise.resolve(data) } as Response);
+const account = (realizedBalance: string | null, openingBalanceDate = '2026-08-09') => ({
+  id: '11111111-1111-4111-8111-111111111111',
+  name: 'Conta teste',
+  type: 'CHECKING',
+  institution: null,
+  currency: 'BRL',
+  openingBalance: '1500.00',
+  realizedBalance,
+  openingBalanceDate,
+  archivedAt: null,
+  createdAt: '2026-08-01T00:00:00.000Z',
+  updatedAt: '2026-08-01T00:00:00.000Z',
+});
 
 describe('tela de contas (API mockada)', () => {
   beforeEach(() => vi.mocked(authenticatedFetch).mockReset());
@@ -49,6 +62,40 @@ describe('tela de contas (API mockada)', () => {
     expect(vi.mocked(authenticatedFetch)).toHaveBeenLastCalledWith(
       '/accounts?includeArchived=true',
       undefined,
+    );
+  });
+  it.each([
+    ['1500.00', 'Saldo atual: R$ 1.500,00'],
+    [null, 'Saldo atual: ainda não disponível'],
+  ])('apresenta saldo atual %s sem confundir indisponibilidade com zero', async (balance, text) => {
+    vi.mocked(authenticatedFetch).mockReturnValue(response([account(balance)]));
+    const wrapper = mount(AccountsPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    expect(wrapper.text()).toContain('Posição inicial: R$ 1.500,00');
+    expect(wrapper.text()).toContain('Data da posição inicial: 09/08/2026');
+    expect(wrapper.text()).toContain(text);
+    if (balance === null) expect(wrapper.text()).not.toContain('Saldo atual: R$ 0,00');
+  });
+  it.each([
+    ['passado para futuro', account('1510.00', '2026-08-07'), account(null)],
+    ['futuro para passado', account(null), account('1510.00', '2026-08-07')],
+  ])('reflete edição de %s usando a resposta recarregada', async (_, before, after) => {
+    vi.mocked(authenticatedFetch)
+      .mockReturnValueOnce(response([before]))
+      .mockReturnValueOnce(response(after))
+      .mockReturnValueOnce(response([after]));
+    const wrapper = mount(AccountsPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Editar')!
+      .trigger('click');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    expect(wrapper.text()).toContain(
+      after.realizedBalance === null
+        ? 'Saldo atual: ainda não disponível'
+        : 'Saldo atual: R$ 1.510,00',
     );
   });
 });

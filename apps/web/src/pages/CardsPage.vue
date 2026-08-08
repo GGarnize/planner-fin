@@ -493,7 +493,12 @@ onMounted(load);
               >
                 <option value="">Selecione</option>
                 <option v-for="a in activeAccounts" :key="a.id" :value="a.id">
-                  {{ a.name }} · saldo {{ money(a.realizedBalance) }}
+                  {{ a.name }} ·
+                  {{
+                    a.realizedBalance === null
+                      ? 'saldo atual indisponível'
+                      : `saldo ${money(a.realizedBalance)}`
+                  }}
                 </option>
               </select></label
             ><label>Data<input v-model="payment[x.id]!.paymentDate" type="date" /></label
