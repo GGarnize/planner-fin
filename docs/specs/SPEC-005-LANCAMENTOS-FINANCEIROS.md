@@ -8,7 +8,7 @@
 | Título | Lançamentos financeiros básicos |
 | Responsável | Codex Cloud |
 | Data de criação | `2026-08-07` |
-| Última atualização | `2026-08-07` |
+| Última atualização | `2026-08-08` |
 | Tarefa relacionada | `PROMPT-SPEC-005-LANCAMENTOS-FINANCEIROS.md` |
 | Documentos relacionados | SPEC-002, SPEC-003, SPEC-004, ADR-001 a ADR-006, visão, escopo, princípios, modelo TO-BE e glossário do produto |
 
@@ -105,7 +105,10 @@ SPEC-002 fornece autenticação e isolamento. SPEC-003 fornece contas e `opening
 ### 9.6 Efeito no saldo
 
 - `PENDING` não afeta saldo realizado. `PAID INCOME` soma `actualAmount`; `PAID EXPENSE` subtrai `actualAmount`.
-- Para cada conta, `saldoAtual = openingBalance + soma(actualAmount de PAID INCOME) - soma(actualAmount de PAID EXPENSE)`.
+- Para uma data civil `D >= openingBalanceDate`, entram somente lançamentos com `openingBalanceDate < paidAt <= D`: `PAID INCOME` soma e `PAID EXPENSE` subtrai `actualAmount`. O saldo atual usa `D = hoje civil`.
+- `paidAt` é a única data efetiva de caixa do lançamento. `dueDate`, datas de competência, `createdAt` e `updatedAt` nunca determinam sua inclusão no saldo.
+- Lançamentos anteriores ou iguais ao corte continuam no histórico e nos relatórios de receita/despesa, mas ficam fora do saldo da conta porque já estão cobertos pelo `openingBalance`. Um `paidAt` futuro, se aceito pelo contrato vigente, só afeta o saldo quando o dia chegar.
+- A composição completa, incluindo as demais fontes de caixa, é a fórmula canônica da SPEC-003.
 - Pagar inclui o efeito uma única vez; reabrir o remove uma única vez. Diferença entre planejado e realizado nunca afeta o saldo além do `actualAmount`.
 - Não persistir `currentBalance`, cache ou materialização nesta unidade. O saldo inicial permanece posição inicial, não lançamento.
 
@@ -537,6 +540,18 @@ Logs estruturados mínimos podem registrar nome da operação, código HTTP, dur
 ### `CA-46 — Concorrência nas transições`
 **Dado** duas requisições concorrentes de pay ou reopen **Quando** são processadas **Então** a transição e o efeito no saldo ocorrem no máximo uma vez, com resultado idempotente/conflito previsto.
 
+### `CA-47 — Lançamento antes do corte`
+**Dado** lançamento `PAID` com `paidAt < openingBalanceDate` **Quando** calcula o saldo da conta **Então** não agrega `actualAmount`, mas preserva lançamento e efeito econômico nos relatórios.
+
+### `CA-48 — Lançamento exatamente no corte`
+**Dado** lançamento `PAID` com `paidAt = openingBalanceDate` **Quando** calcula o saldo **Então** não agrega `actualAmount`, pois o evento já está incorporado ao saldo inicial.
+
+### `CA-49 — Lançamento depois do corte`
+**Dado** lançamento `PAID` com `openingBalanceDate < paidAt <= D` **Quando** calcula `realizedBalance(D)` **Então** receita soma ou despesa subtrai `actualAmount` exatamente uma vez.
+
+### `CA-50 — Lançamento futuro`
+**Dado** lançamento `PAID` com `paidAt` posterior a hoje **Quando** calcula o saldo atual **Então** não o agrega até o dia civil de `paidAt`.
+
 ## 23. Testes obrigatórios
 
 | Nível | Cenários mínimos | Critérios relacionados | Evidência esperada |
@@ -547,6 +562,8 @@ Logs estruturados mínimos podem registrar nome da operação, código HTTP, dur
 | Web com mocks controlados | Vazio; receita/despesa; pendente/realizado; filtros; paginação; pay/reopen; vencido; edição por estado; erro; redirecionamento; responsividade lógica. | CA-01–CA-02, CA-19–CA-37, CA-42–CA-45 | Testes nomeados como mockados, sem alegar banco real. |
 | E2E | Login; criar pendente; pagar; listar; reabrir; criar realizado; filtrar; logout. | CA-01–CA-02, CA-19–CA-24, CA-31, CA-34, CA-42 | Playwright contra aplicação e banco de teste reais, dados fictícios. |
 | Aceitação manual | Clareza previsto/realizado; filtros/paginação; responsividade; acessibilidade; erros; ausência de transferência/recorrência. | CA-23–CA-30, CA-36–CA-37, CA-43–CA-45 | Checklist e capturas sanitizadas quando implementado. |
+
+Testes futuros unitários e de serviço devem cobrir `paidAt` antes, igual e depois do corte, hoje e futuro, preservando história e relatórios. A integração PostgreSQL deve comprovar filtro por `paidAt`, owner, decimal exato e plano do índice aplicável; web e E2E devem exibir o saldo correto sem remover lançamentos.
 
 Testes monetários verificam limites, zero, negativos, escala e soma exata. Datas cobrem mês/ano, bissexto, formato e fusos de execução distintos sem mudar data civil. Mocks não são evidência de migration, constraint, FK, transação, concorrência ou isolamento no PostgreSQL.
 
@@ -642,7 +659,7 @@ Além da [Definition of Done do projeto](../quality/DEFINITION-OF-DONE.md), a im
 - [ ] Fórmula do saldo usa somente `PAID.actualAmount`, sem `currentBalance`.
 - [ ] Web protegida, responsiva e acessível distingue previsto/realizado e todos os estados exigidos.
 - [ ] Testes unitários, integração PostgreSQL, contrato, web e E2E aplicáveis passaram.
-- [ ] Todos os 46 critérios de aceite foram atendidos com evidências sanitizadas.
+- [ ] Todos os 50 critérios de aceite foram atendidos com evidências sanitizadas.
 - [ ] Nenhuma transferência, recorrência, exclusão ou outro item fora do escopo foi implementado.
 - [ ] Workflow de CI permaneceu desativado e inalterado.
 
@@ -653,3 +670,4 @@ Para esta criação exclusivamente documental, lint/typecheck/testes/build de ap
 | Data | Alteração | Motivo | Autor | Aprovador, quando aplicável |
 |---|---|---|---|---|
 | `2026-08-07` | Criação da SPEC-005 com status Aprovada. | Definir e autorizar a futura unidade de lançamentos financeiros básicos. | `Codex Cloud` | Tarefa `PROMPT-SPEC-005-LANCAMENTOS-FINANCEIROS.md` |
+| `2026-08-08` | Definição de `paidAt` e da janela estrita do saldo. | Alinhar lançamentos ao corte temporal canônico da SPEC-003. | `Codex Cloud` | Tarefa `PROMPT-FIX-SPECS-SALDO-INICIAL-CORTE-TEMPORAL.md` |
