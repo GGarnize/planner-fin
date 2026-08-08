@@ -97,4 +97,23 @@ describe('página de dívidas', () => {
     expect(body.description).toBe(' Contrato ');
     expect(body).not.toHaveProperty('funding');
   });
+  it('mantém conta ativa com saldo indisponível selecionável para funding', async () => {
+    vi.mocked(authenticatedFetch)
+      .mockResolvedValueOnce(
+        response([
+          { id: 'account-1', name: 'Conta futura', realizedBalance: null, archivedAt: null },
+        ]),
+      )
+      .mockResolvedValueOnce(response({ items: [], nextCursor: null }));
+    const w = await render();
+    await w.get('header button').trigger('click');
+    const option = w.find('option[value="account-1"]');
+    expect(option.text()).toContain('saldo atual indisponível');
+    expect(option.text()).not.toContain('R$ 0,00');
+    const fundingSelect = w
+      .findAll('form select')
+      .find((select) => select.find('option[value="account-1"]').exists())!;
+    await fundingSelect.setValue('account-1');
+    expect((fundingSelect.element as HTMLSelectElement).value).toBe('account-1');
+  });
 });

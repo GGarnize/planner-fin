@@ -166,8 +166,10 @@ onMounted(load);
           {{ labels[account.type]
           }}<span v-if="account.institution"> · {{ account.institution }}</span>
         </p>
-        <strong>Saldo inicial: {{ money(account.openingBalance) }}</strong
-        ><small>Data de referência: {{ date(account.openingBalanceDate) }}</small>
+        <strong>Posição inicial: {{ money(account.openingBalance) }}</strong
+        ><small>Data da posição inicial: {{ date(account.openingBalanceDate) }}</small>
+        <strong v-if="account.realizedBalance === null">Saldo atual: ainda não disponível</strong
+        ><strong v-else>Saldo atual: {{ money(account.realizedBalance) }}</strong>
         <div class="actions">
           <template v-if="account.archivedAt"
             ><button @click="action(account.id, 'restore')">Reativar</button></template

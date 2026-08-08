@@ -21,7 +21,7 @@ const invalidDate = () =>
 
 export function publicAccount(
   account: FinancialAccount,
-  realizedBalance: Prisma.Decimal = account.openingBalance,
+  realizedBalance: Prisma.Decimal | null = account.openingBalance,
 ): PublicFinancialAccount {
   return {
     id: account.id,
@@ -30,7 +30,7 @@ export function publicAccount(
     institution: account.institution,
     currency: 'BRL',
     openingBalance: account.openingBalance.toFixed(2),
-    realizedBalance: realizedBalance.toFixed(2),
+    realizedBalance: realizedBalance?.toFixed(2) ?? null,
     openingBalanceDate: account.openingBalanceDate.toISOString().slice(0, 10),
     archivedAt: account.archivedAt?.toISOString() ?? null,
     createdAt: account.createdAt.toISOString(),
@@ -62,7 +62,7 @@ export class AccountsService {
         userId,
       },
     });
-    return publicAccount(account);
+    return this.publicWithBalance(account);
   }
 
   async list(userId: string, includeArchived: boolean): Promise<PublicFinancialAccount[]> {
@@ -132,7 +132,12 @@ export class AccountsService {
   }
 
   private async publicWithBalance(account: FinancialAccount): Promise<PublicFinancialAccount> {
-    const effectiveDate = realizedBalanceWindow(account.openingBalanceDate, currentCivilDate());
+    const today = currentCivilDate();
+    const openingDate = account.openingBalanceDate.toISOString().slice(0, 10);
+    if (openingDate > today) return publicAccount(account, null);
+    if (openingDate === today) return publicAccount(account);
+
+    const effectiveDate = realizedBalanceWindow(account.openingBalanceDate, today);
     const [transactions, outgoing, incoming, payments, debtFundings, debtPayments] =
       await Promise.all([
         this.prisma.financialTransaction.findMany({

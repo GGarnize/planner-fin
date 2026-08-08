@@ -68,6 +68,137 @@ describe('validação de contas', () => {
     expect(result.openingBalanceDate).toBe('2026-08-07');
     expect(result).not.toHaveProperty('userId');
   });
+  it('projeta explicitamente saldo realizado indisponível', () => {
+    expect(publicAccount(row(), null).realizedBalance).toBeNull();
+  });
+});
+
+describe('saldo realizado antes e no corte', () => {
+  const movementSpies = () => ({
+    financialTransaction: { findMany: vi.fn().mockResolvedValue([]) },
+    financialTransfer: {
+      aggregate: vi.fn().mockResolvedValue({ _sum: { actualAmount: null } }),
+    },
+    cardInvoicePayment: { aggregate: vi.fn().mockResolvedValue({ _sum: { amount: null } }) },
+    debtFunding: { aggregate: vi.fn().mockResolvedValue({ _sum: { amount: null } }) },
+    debtPayment: { findMany: vi.fn().mockResolvedValue([]) },
+  });
+  const expectNoMovementQueries = (spies: ReturnType<typeof movementSpies>) => {
+    expect(spies.financialTransaction.findMany).not.toHaveBeenCalled();
+    expect(spies.financialTransfer.aggregate).not.toHaveBeenCalled();
+    expect(spies.cardInvoicePayment.aggregate).not.toHaveBeenCalled();
+    expect(spies.debtFunding.aggregate).not.toHaveBeenCalled();
+    expect(spies.debtPayment.findMany).not.toHaveBeenCalled();
+  };
+
+  it.each([
+    ['hoje', '2026-08-08', '10.10'],
+    ['amanhã', '2026-08-09', null],
+  ])('retorna o contrato do corte %s sem consultar movimentos', async (_, date, balance) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-08T12:00:00.000Z'));
+    const account = row({ openingBalanceDate: new Date(`${date}T00:00:00.000Z`) });
+    const movements = movementSpies();
+    const service = new AccountsService({
+      financialAccount: { findFirst: vi.fn().mockResolvedValue(account) },
+      ...movements,
+    } as never);
+    await expect(service.get(account.userId, account.id)).resolves.toMatchObject({
+      realizedBalance: balance,
+    });
+    expectNoMovementQueries(movements);
+    vi.useRealTimers();
+  });
+
+  it('aplica null de modo uniforme em create, list e get', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-08T12:00:00.000Z'));
+    const future = row({ openingBalanceDate: new Date('2026-08-09T00:00:00.000Z') });
+    const movements = movementSpies();
+    const service = new AccountsService({
+      financialAccount: {
+        create: vi.fn().mockResolvedValue(future),
+        findMany: vi.fn().mockResolvedValue([future]),
+        findFirst: vi.fn().mockResolvedValue(future),
+      },
+      ...movements,
+    } as never);
+    const created = await service.create(future.userId, {
+      name: future.name,
+      type: future.type,
+      currency: 'BRL',
+      openingBalance: '10.10',
+      openingBalanceDate: '2026-08-09',
+    });
+    expect(created.realizedBalance).toBeNull();
+    expect(created.realizedBalance).not.toBe('0.00');
+    await expect(service.list(future.userId, false)).resolves.toMatchObject([
+      { realizedBalance: null },
+    ]);
+    await expect(service.get(future.userId, future.id)).resolves.toMatchObject({
+      realizedBalance: null,
+    });
+    expectNoMovementQueries(movements);
+    vi.useRealTimers();
+  });
+
+  it.each([
+    ['passado para futuro', '2026-08-09', null, false],
+    ['futuro para hoje', '2026-08-08', '25.00', false],
+    ['futuro para passado', '2026-08-07', '25.00', true],
+    ['futuro para outro futuro', '2026-08-10', null, false],
+  ])('reflete edição de %s sem mutar movimentos', async (_, date, balance, queries) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-08T12:00:00.000Z'));
+    const original = row({ openingBalanceDate: new Date('2026-08-09T00:00:00.000Z') });
+    const updated = row({
+      openingBalance: new Prisma.Decimal('25.00'),
+      openingBalanceDate: new Date(`${date}T00:00:00.000Z`),
+    });
+    const movements = movementSpies();
+    const update = vi.fn().mockResolvedValue(updated);
+    const service = new AccountsService({
+      financialAccount: { findFirst: vi.fn().mockResolvedValue(original), update },
+      ...movements,
+    } as never);
+    await expect(
+      service.update(original.userId, original.id, { openingBalanceDate: date }),
+    ).resolves.toMatchObject({ realizedBalance: balance });
+    expect(update).toHaveBeenCalledTimes(1);
+    if (queries) expect(movements.financialTransaction.findMany).toHaveBeenCalledTimes(1);
+    else expectNoMovementQueries(movements);
+    vi.useRealTimers();
+  });
+
+  it.each(['archive', 'restore'] as const)(
+    'preserva null ao executar %s em conta com corte futuro',
+    async (operation) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-08T12:00:00.000Z'));
+      const archivedAt = operation === 'restore' ? new Date('2026-08-01T00:00:00.000Z') : null;
+      const account = row({
+        openingBalanceDate: new Date('2026-08-09T00:00:00.000Z'),
+        archivedAt,
+      });
+      const updated = row({
+        openingBalanceDate: account.openingBalanceDate,
+        archivedAt: operation === 'archive' ? new Date('2026-08-08T12:00:00.000Z') : null,
+      });
+      const movements = movementSpies();
+      const service = new AccountsService({
+        financialAccount: {
+          findFirst: vi.fn().mockResolvedValue(account),
+          update: vi.fn().mockResolvedValue(updated),
+        },
+        ...movements,
+      } as never);
+      await expect(service[operation](account.userId, account.id)).resolves.toMatchObject({
+        realizedBalance: null,
+      });
+      expectNoMovementQueries(movements);
+      vi.useRealTimers();
+    },
+  );
 });
 
 describe('ciclo de vida', () => {
