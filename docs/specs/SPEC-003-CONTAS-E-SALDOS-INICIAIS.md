@@ -11,7 +11,7 @@
 | Responsável | `Codex Cloud` |
 | Data de criação | `2026-08-07` |
 | Última atualização | `2026-08-08` |
-| Tarefa relacionada | `PROMPT-SPEC-003-CONTAS-E-SALDOS-INICIAIS.md` |
+| Tarefa relacionada | `PROMPT-SPEC-003-CONTAS-E-SALDOS-INICIAIS.md`; `PROMPT-FIX-SPEC-003-SALDO-FUTURO.md` |
 | Documentos relacionados | `docs/specs/README.md`; `docs/specs/SPEC-002-AUTENTICACAO-E-ISOLAMENTO-POR-USUARIO.md`; `docs/process/GIT-WORKFLOW.md`; `docs/quality/DEFINITION-OF-DONE.md`; `docs/quality/TEST-STRATEGY.md`; documentos de produto; `ADR-003`, `ADR-004` e `ADR-006` |
 
 ## 2. Status
@@ -76,7 +76,7 @@ A autenticação e o contexto autenticado existem, mas não há modelo, API ou i
 - A persistência usa `Decimal(19,2)`, nunca `float`/`double`. A resposta usa sinal apenas para negativos e exatamente duas casas decimais.
 - `openingBalanceDate` é obrigatória, deve ser uma data gregoriana existente em `YYYY-MM-DD` e permanece data civil sem horário. Datas passadas, presentes e futuras são aceitas, pois a posição pode ser preparada antecipadamente.
 - O saldo inicial não cria lançamento artificial, receita ou despesa e não altera totais de receitas ou despesas.
-- Até existirem lançamentos, a interface pode apresentar esse valor apenas como **Saldo inicial** ou **Posição inicial**, junto da data; não pode rotulá-lo como saldo atual.
+- A interface apresenta `openingBalance` apenas como **Saldo inicial** ou **Posição inicial**, junto da data; não pode rotular essa posição de referência como saldo atual. O saldo atual, quando disponível, é apresentado separadamente a partir de `realizedBalance`.
 - Armazenar valor e data na própria conta é a solução deliberadamente simples enquanto não há lançamentos. Histórico completo de mudanças dependerá de outra SPEC.
 
 ### 9.2.1 Corte temporal e fórmula canônica do saldo realizado
@@ -101,13 +101,25 @@ Cada termo inclui exclusivamente eventos cuja janela seja `openingBalanceDate < 
 
 O saldo realizado atual usa `D = hoje civil`, com relógio e data civil consistentes no backend e controláveis em testes. Evento com data efetiva igual ao corte já pertence ao saldo inicial; por isso, o limite inferior é estritamente `>`. Evento posterior a hoje não compõe o saldo atual, ainda que seu registro já esteja `PAID` ou `COMPLETED`; passa a compor quando o respectivo dia civil chegar.
 
-A regra já aprovada de aceitar `openingBalanceDate` futura é preservada. Enquanto hoje for anterior ao corte, não se deriva saldo realizado atual a partir de uma posição futura; a interface apresenta apenas a posição inicial futura e sua data, sem rotulá-la como saldo atual. Nenhum contrato de criação ou edição passa a proibir datas futuras nesta correção documental.
+A regra já aprovada de aceitar `openingBalanceDate` futura é preservada. A projeção pública sempre contém `realizedBalance`, com o contrato `string | null`, tanto na listagem quanto no detalhe e nas respostas das mutações. Se `openingBalanceDate <= hojeCivil`, o campo é uma string decimal canônica com duas casas; se `openingBalanceDate > hojeCivil`, o campo é `null`.
+
+`null` significa exclusivamente que o saldo realizado atual ainda não é derivável porque a posição inicial da conta está datada no futuro. Não significa saldo zero, conta sem movimentação, erro, dado ausente nem saldo desconhecido por falha técnica. O campo nunca é omitido. A conta continua válida e consultável, sem erro HTTP por esse estado, e preserva `openingBalance` e `openingBalanceDate` para explicitar a posição inicial futura.
+
+Os três casos temporais ficam fechados assim:
+
+- se `openingBalanceDate < hojeCivil`, o saldo é derivado normalmente pela janela `openingBalanceDate < effectiveDate <= hojeCivil`;
+- se `openingBalanceDate == hojeCivil`, `realizedBalance` parte exatamente de `openingBalance`; eventos do próprio dia do corte não são somados, pois o limite inferior é estrito, e não existe outra data civil posterior ao corte e menor ou igual a hoje;
+- se `openingBalanceDate > hojeCivil`, `realizedBalance = null`; nenhuma consulta de movimentos é necessária para inventar um saldo atual.
+
+Não se usa `"0.00"`, pois zero é um saldo financeiro válido e mudaria o significado da conta. Não se usa `openingBalance` antes do corte, pois isso apresentaria hoje uma posição definida para uma data futura. Não se omite o campo, pois um shape variável prejudica consumidores tipados. Não se retorna erro HTTP, pois a conta é válida e apenas uma projeção temporal ainda não está disponível.
 
 O corte pertence à conta. Assim, cada lado de uma transferência é avaliado contra o `openingBalanceDate` da respectiva conta, mesmo que isso inclua o evento no saldo de uma ponta e o exclua do saldo da outra. Essa diferença temporal não transforma transferência em receita ou despesa nem rompe sua neutralidade econômica.
 
 Movimentos anteriores ou iguais ao corte continuam no histórico e disponíveis para relatórios de receita, despesa, competência, dívida e demais visões aplicáveis. O corte evita dupla contagem somente no saldo de caixa da `FinancialAccount`; não apaga, reclassifica ou oculta eventos e não altera suas regras econômicas.
 
-Quando a conta ativa puder ser editada, mudar `openingBalance` recalcula derivadamente o saldo realizado. Mudar `openingBalanceDate` altera somente a janela de agregação. Em ambos os casos, nenhum movimento é criado, apagado ou reescrito, e os bloqueios de edição já aprovados permanecem.
+Quando a conta ativa puder ser editada, mudar `openingBalance` recalcula derivadamente o saldo realizado. Mudar `openingBalanceDate` altera somente a janela de agregação: passado/hoje para futuro faz a resposta passar a `realizedBalance: null`; futuro para hoje/passado faz a resposta passar imediatamente à string derivada; futuro A para futuro B mantém `null`. Em todos os casos, nenhum movimento é criado, apagado, reclassificado ou reescrito, e os bloqueios de edição já aprovados permanecem.
+
+Arquivar não muda o significado temporal: uma conta arquivada retorna string se o corte já foi alcançado e `null` se o corte é futuro.
 
 ### 9.3 Ciclo de vida
 
@@ -212,6 +224,7 @@ type PublicFinancialAccount = {
   currency: 'BRL';
   openingBalance: string;
   openingBalanceDate: string;
+  realizedBalance: string | null;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -231,6 +244,16 @@ type ListFinancialAccountsResponse = PublicFinancialAccount[];
 ```
 
 No update, o objeto deve conter ao menos um dos seis campos declarados. Nenhum contrato compartilhado contém tipo Prisma ou `userId`. O envelope de erro e seus detalhes podem reutilizar o contrato compartilhado aprovado pela SPEC-002 quando usados por API e web.
+
+Em JSON, `realizedBalance` é uma string decimal como `"123.45"` quando disponível e é `null` antes de um corte futuro. Listagem, detalhe e respostas de criação, edição, arquivamento e reativação usam a mesma regra; nenhum endpoint ou campo adicional é criado. Exemplo antes do corte:
+
+```json
+{
+  "openingBalance": "1500.00",
+  "openingBalanceDate": "2026-09-01",
+  "realizedBalance": null
+}
+```
 
 ### 14.2 Criar conta
 
@@ -293,12 +316,16 @@ No update, o objeto deve conter ao menos um dos seis campos declarados. Nenhum c
 
 - Rota protegida única desta unidade: `/accounts`; sem sessão, usa o redirecionamento ao login já existente.
 - A tela oferece título, criação e listagem. O estado vazio informa que ainda não há contas e apresenta ação de criar.
-- Cada item mostra nome, tipo, instituição quando houver, `Saldo inicial` com moeda e a data de referência, além do estado arquivado quando aplicável. Nunca chama a posição de saldo atual.
+- Cada item mostra nome, tipo, instituição quando houver, `Posição inicial` com moeda e a data de referência, além do estado arquivado quando aplicável. Para corte futuro, apresenta “Saldo atual: ainda não disponível”; no exemplo de `2026-09-01`, antes dessa data apresenta “Posição inicial: R$ 1.500,00” e “Data da posição inicial: 01/09/2026”.
 - Criação e edição oferecem controles para os seis campos públicos editáveis, mensagens junto aos campos e moeda `BRL` fixa. Conta arquivada oferece reativação, não edição.
 - Arquivamento exige confirmação explícita; filtro permite incluir arquivadas; reativação é disponível nelas.
 - Carregamento impede submissão duplicada; sucesso atualiza estado a partir da resposta da API. Erro de API permanece visível em região anunciável e oferece nova tentativa quando aplicável.
 - Layout, controles, foco, teclado e mensagens devem funcionar em larguras móveis e desktop, seguindo o sistema visual existente.
 - Não criar tela, link funcional ou placeholder de lançamentos, categorias, cartões ou outros itens fora do escopo.
+
+Todo consumidor presente ou futuro de `PublicFinancialAccount`, incluindo tela de contas, selects de conta em pagamento de fatura, funding/pagamento de dívida e dashboard futuro, deve tratar `realizedBalance = null` explicitamente. A UI não formata `null` como moeda, não o converte em zero nem o soma em agregados. Quando uma operação apenas seleciona uma conta, a conta continua selecionável se estiver ativa; a indisponibilidade temporária de `realizedBalance` não bloqueia a operação, salvo regra própria aprovada em SPEC futura.
+
+Dashboard e orçamento não devem tratar contas com `realizedBalance = null` silenciosamente como zero. A SPEC futura de cada agregado decidirá como apresentar totais quando houver conta sem saldo atual derivável; esta SPEC não antecipa essa decisão.
 
 ## 16. Validações
 
@@ -355,6 +382,9 @@ Logs estruturados mínimos podem registrar operação (`create`, `list`, `get`, 
 - Compatibilidade retroativa: autenticação e contratos existentes permanecem inalterados.
 - Migration necessária: futuramente, uma migration aditiva nova conforme seção 13.2; nunca editar as anteriores.
 - Implantação gradual: não aplicável ao documento; a implementação será entregue como uma unidade após validações.
+- O contrato público de TypeScript/JSON muda de `realizedBalance: string` para `realizedBalance: string | null`. Em JSON, a mudança é compatível para consumidores atualizados na mesma unidade futura de implementação, mas é potencialmente breaking em TypeScript para código que pressupõe `string`.
+- A implementação futura atualizará todos os consumidores internos no mesmo pull request. Não haverá nova versão de API nesta fase.
+- `realizedBalance` permanece somente derivado; não existe nem será criado `currentBalance` persistido.
 
 ## 22. Critérios de aceite
 
@@ -449,20 +479,68 @@ Logs estruturados mínimos podem registrar operação (`create`, `list`, `get`, 
 **Dado** conta ativa cuja edição é permitida **Quando** altera `openingBalanceDate` **Então** somente a janela de agregação muda e o histórico permanece intacto.
 
 ### `CA-31 — Corte futuro preservado`
-**Dado** `openingBalanceDate` futura válida **Quando** consulta a conta antes do corte **Então** vê a posição inicial futura e sua data, sem saldo atual derivado nem proibição nova no contrato.
+**Dado** `openingBalanceDate` futura válida **Quando** consulta a conta antes do corte **Então** vê a posição inicial futura, sua data e `realizedBalance: null`, sem proibição nova no contrato.
+
+### `CA-32 — Corte passado retorna string`
+**Dado** uma conta cujo corte é anterior a hoje **Quando** seu saldo atual é projetado **Então** `realizedBalance` é uma string decimal canônica com duas casas, derivada pela janela `openingBalanceDate < effectiveDate <= hojeCivil`.
+
+### `CA-33 — Corte hoje parte da posição inicial`
+**Dado** uma conta cujo corte é hoje **Quando** seu saldo atual é projetado **Então** `realizedBalance` é `openingBalance`, pois eventos no próprio corte já estão incorporados e não há data civil posterior ao corte e menor ou igual a hoje.
+
+### `CA-34 — Corte futuro retorna null, não zero`
+**Dado** uma conta cujo corte é posterior a hoje e cujo `openingBalance` pode inclusive ser `"0.00"` **Quando** seu saldo atual é projetado **Então** `realizedBalance` é `null`, e esse valor não é interpretado como saldo zero.
+
+### `CA-35 — Listagem e detalhe consistentes`
+**Dado** a mesma conta com corte futuro **Quando** ela aparece na listagem e no detalhe **Então** ambas as respostas contêm `realizedBalance: null` e preservam `openingBalance` e `openingBalanceDate`.
+
+### `CA-36 — Edição de corte alcançado para futuro`
+**Dado** uma conta ativa com corte passado ou hoje **Quando** `openingBalanceDate` é alterada para uma data futura **Então** a resposta passa a conter `realizedBalance: null`.
+
+### `CA-37 — Edição de corte futuro para alcançado`
+**Dado** uma conta ativa com corte futuro **Quando** `openingBalanceDate` é alterada para hoje ou para o passado **Então** a resposta passa imediatamente a conter a string derivada.
+
+### `CA-38 — Edição entre datas futuras`
+**Dado** uma conta ativa com corte futuro A **Quando** `openingBalanceDate` é alterada para outra data futura B **Então** `realizedBalance` continua `null`.
+
+### `CA-39 — Edição preserva movimentos históricos`
+**Dado** movimentos anteriores, iguais ou posteriores ao corte **Quando** `openingBalanceDate` é alterada **Então** nenhum movimento é criado, apagado, reclassificado ou reescrito e o histórico permanece intacto.
+
+### `CA-40 — Conta arquivada com corte futuro`
+**Dado** uma conta arquivada cujo corte é futuro **Quando** ela é consultada ou incluída na listagem **Então** retorna `realizedBalance: null`, sem o arquivamento mudar a projeção temporal.
+
+### `CA-41 — Consumidor não formata null como dinheiro`
+**Dado** `realizedBalance: null` **Quando** a UI apresenta a conta **Então** mostra “Saldo atual: ainda não disponível” e não chama o formatador monetário com `null`, não converte o valor em zero nem o soma.
+
+### `CA-42 — Conta ativa continua selecionável`
+**Dado** uma conta ativa com `realizedBalance: null` **Quando** uma operação financeira permitida apenas solicita a seleção de conta **Então** ela continua selecionável, salvo regra própria aprovada futuramente.
+
+### `CA-43 — Estado válido não produz erro HTTP`
+**Dado** uma conta válida com corte futuro **Quando** qualquer endpoint existente retorna sua projeção pública **Então** responde com o status de sucesso aplicável e `realizedBalance: null`, nunca com erro causado por esse estado.
+
+### `CA-44 — Shape estável sem endpoint adicional`
+**Dado** os contratos de conta existentes **Quando** o corte está no passado, hoje ou futuro **Então** `realizedBalance` está sempre presente como string ou `null`, sem novo endpoint nem outro campo para representar disponibilidade.
+
+### `CA-45 — Saldo atual não é persistido`
+**Dado** a implementação do contrato **Quando** schema e migrations são inspecionados **Então** não existe `currentBalance` persistido; `realizedBalance` é sempre uma projeção derivada.
+
+### `CA-46 — Agregado futuro não presume zero`
+**Dado** uma conta com `realizedBalance: null` **Quando** um dashboard ou orçamento futuro considerar agregados **Então** não a trata silenciosamente como zero e segue a decisão da SPEC própria do agregado.
 
 ## 23. Testes obrigatórios
 
 | Nível | Cenários mínimos | Critérios relacionados | Evidência esperada |
 |---|---|---|---|
-| Unitário com mocks | Nome válido/inválido; tipo; BRL; saldo positivo/zero/negativo, formato, precisão, escala e limites; data; projeção sem `userId`; archive/restore. | CA-02–CA-09, CA-16–CA-20, CA-24 | Relatório determinístico de testes rápidos; mocks não contam como persistência. |
-| Integração com PostgreSQL real | Aplicar todas as migrations; criar; preservar Decimal e negativo; listar/consultar por owner; cruzado `404`; editar; arquivar/idempotência/reativar; FK Restrict; migrations anteriores preservadas. | CA-01, CA-05–CA-10, CA-13–CA-20, CA-23–CA-24 | Banco PostgreSQL real isolado, dados fictícios e comandos registrados. |
-| Contrato/API | Todos os métodos, rotas, DTOs, status, envelopes, whitelist, projeção e ordenação; dois usuários. | CA-01–CA-10, CA-12–CA-21 | Testes HTTP automatizados; não substituir o banco real por mocks nos cenários de persistência. |
-| Web com mocks controlados | Estado vazio, criação, edição, arquivamento, filtro, reativação, validações, API indisponível e redirecionamento sem sessão. | CA-01–CA-04, CA-11–CA-12, CA-15, CA-17–CA-22, CA-24 | Testes de componentes/integração identificados como mockados. |
-| E2E | Login, criar, visualizar, editar, arquivar, incluir arquivadas, reativar e logout. | CA-01, CA-10–CA-13, CA-15, CA-17–CA-21 | Playwright contra aplicação e banco de teste reais, com dados sintéticos. |
-| Aceitação manual | Responsividade, rótulos, foco, confirmação, erros e ausência de domínios excluídos. | CA-11, CA-22–CA-24 | Checklist e capturas sanitizadas quando a implementação existir. |
+| Unitário com mocks | Nome válido/inválido; tipo; BRL; saldo positivo/zero/negativo, formato, precisão, escala e limites; data; projeção sem `userId`; archive/restore; relógio civil ontem/hoje/amanhã; string/`null`; edições de corte. | CA-02–CA-09, CA-16–CA-20, CA-24–CA-26, CA-29–CA-34, CA-36–CA-40, CA-45 | Relatório determinístico de testes rápidos; mocks não contam como persistência. |
+| Integração com PostgreSQL real | Aplicar todas as migrations; criar; preservar Decimal e negativo; listar/consultar por owner; cruzado `404`; editar; arquivar/idempotência/reativar; preservar histórico; não persistir saldo atual; migrations anteriores preservadas. | CA-01, CA-05–CA-10, CA-13–CA-20, CA-23–CA-30, CA-32–CA-40, CA-43, CA-45 | Banco PostgreSQL real isolado, dados fictícios e comandos registrados. |
+| Contrato/API | Todos os métodos, rotas, DTOs, status, envelopes, whitelist, projeção string/`null`, shape estável e ordenação; dois usuários. | CA-01–CA-10, CA-12–CA-21, CA-31–CA-40, CA-43–CA-44 | Testes HTTP automatizados; não substituir o banco real por mocks nos cenários de persistência. |
+| Shared | `PublicFinancialAccount.realizedBalance` aceita somente `string | null`; consumidores tipados tratam ambos os casos. | CA-32–CA-35, CA-44 | Typecheck e testes de contrato compartilhado. |
+| Web com mocks controlados | Estado vazio, criação, edição, arquivamento, filtro, reativação, validações, API indisponível, redirecionamento sem sessão, posição futura, mensagem de indisponibilidade, formatter e selects. | CA-01–CA-04, CA-11–CA-12, CA-15, CA-17–CA-22, CA-24, CA-31, CA-35–CA-42 | Testes de componentes/integração identificados como mockados. |
+| E2E | Login; criar conta com corte futuro; consultar; avançar data; verificar transição de `null` para `openingBalance` e histórico intacto; editar; arquivar; reativar; logout. | CA-01, CA-10–CA-13, CA-15, CA-17–CA-21, CA-27, CA-31–CA-40, CA-43 | Playwright contra aplicação e banco de teste reais, com dados sintéticos e relógio controlado. |
+| Aceitação manual | Responsividade, rótulos, foco, confirmação, erros, indisponibilidade explícita e ausência de domínios excluídos. | CA-11, CA-22–CA-24, CA-31, CA-41–CA-42, CA-46 | Checklist e capturas sanitizadas quando a implementação existir. |
 
-Na implementação futura, os testes unitários cobrirão cada fonte com data efetiva `<`, `=` e `>` ao corte, limite `<= hoje`, futuro e transferência com cortes distintos. Testes de serviço cobrirão `realizedBalance`, edição de `openingBalance`/`openingBalanceDate` e histórico intacto. A integração PostgreSQL verificará filtros pelas datas efetivas, owner, precisão decimal e índices/plano quando aplicável. Testes web comprovarão saldo e edição corretos sem ocultar movimentos; o E2E usará saldo inicial histórico e eventos antes, no dia e depois do corte para obter total exato sem dupla contagem.
+Na implementação futura, o backend usará relógio civil controlado e cobrirá ontem, hoje e amanhã, retorno string/`null`, atualização de `openingBalanceDate`, listagem, detalhe e conta arquivada. Os testes unitários cobrirão cada fonte com data efetiva `<`, `=` e `>` ao corte, limite `<= hoje`, futuro e transferência com cortes distintos. Testes de serviço cobrirão `realizedBalance`, edição de `openingBalance`/`openingBalanceDate` e histórico intacto. A integração PostgreSQL verificará filtros pelas datas efetivas, owner, precisão decimal e índices/plano quando aplicável.
+
+Os testes de shared comprovarão o tipo `string | null`. Os testes web renderizarão a posição inicial futura e “Saldo atual: ainda não disponível”, comprovarão que nenhum formatador de moeda recebe `null` e que selects de contas ativas continuam funcionais. O E2E criará conta com `openingBalanceDate` futura, consultará a conta, avançará o relógio/data controlado e verificará a transição de `null` para `openingBalance`, com histórico intacto. Outro E2E usará saldo inicial histórico e eventos antes, no dia e depois do corte para obter total exato sem dupla contagem.
 
 ## 24. Arquivos permitidos
 
@@ -525,6 +603,7 @@ Não há dúvidas abertas. Limites, precisão, datas, contratos e ciclo de vida 
 | `2026-08-07` | Arquivamento lógico e idempotente; edição requer conta ativa. | Tarefa da SPEC-003 | Dados são preservados e exclusão não existe. |
 | `2026-08-07` | Listagem sem paginação, ordenada por nome e ID. | Tarefa da SPEC-003 | Adequado ao volume pessoal inicial; revisão futura possível. |
 | `2026-08-07` | Owner vem somente do access token e acesso cruzado usa `404`. | SPEC-002 e tarefa | `userId` não integra contratos públicos. |
+| `2026-08-08` | `realizedBalance` usa `string | null`; `null` representa exclusivamente corte futuro ainda não alcançado. | Tarefa `PROMPT-FIX-SPEC-003-SALDO-FUTURO.md` | Shape permanece estável, consumidores tratam indisponibilidade explicitamente e nenhum saldo atual é inventado. |
 
 ## 31. Definition of Done específica
 
@@ -537,7 +616,7 @@ Além da [Definition of Done do projeto](../quality/DEFINITION-OF-DONE.md), a im
 - [ ] Isolamento por usuário foi provado com dois usuários e `404` cruzado.
 - [ ] Telas mínimas responsivas, estados e rótulo inequívoco de saldo inicial foram entregues.
 - [ ] Testes unitários, integração real, contrato, web e E2E aplicáveis passaram e distinguem mocks de PostgreSQL real.
-- [ ] Todos os 31 critérios de aceite foram atendidos e evidências obrigatórias anexadas.
+- [ ] Todos os 46 critérios de aceite foram atendidos e evidências obrigatórias anexadas.
 - [ ] Nenhuma funcionalidade fora do escopo foi criada.
 - [ ] Workflow de CI permaneceu inalterado e desativado.
 
@@ -547,3 +626,4 @@ Além da [Definition of Done do projeto](../quality/DEFINITION-OF-DONE.md), a im
 |---|---|---|---|---|
 | `2026-08-07` | Criação da SPEC-003 com status Aprovada. | Autorizar e delimitar a primeira unidade financeira futura. | `Codex Cloud` | Tarefa `PROMPT-SPEC-003-CONTAS-E-SALDOS-INICIAIS.md` |
 | `2026-08-08` | Clarificação do corte temporal e da fórmula canônica do saldo realizado. | Evitar dupla contagem de efeitos já incorporados ao saldo inicial. | `Codex Cloud` | Tarefa `PROMPT-FIX-SPECS-SALDO-INICIAL-CORTE-TEMPORAL.md` |
+| `2026-08-08` | Definição de `realizedBalance: string | null` para corte futuro. | Fechar o shape HTTP/UI de saldo atual ainda não derivável. | `Codex Cloud` | Tarefa `PROMPT-FIX-SPEC-003-SALDO-FUTURO.md` |
