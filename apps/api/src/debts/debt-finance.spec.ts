@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { Prisma } from '@prisma/client';
-import { installmentTotal, projections, validateAggregate } from './debt-finance';
+import {
+  currentCivilDate,
+  installmentTotal,
+  projections,
+  publicInstallment,
+  validateAggregate,
+} from './debt-finance';
 const date = (s: string) => new Date(`${s}T00:00:00Z`);
 const installment = (
   n: number,
@@ -95,7 +101,50 @@ describe('finanças de dívidas', () => {
       projectedStatus: 'ACTIVE',
     });
     expect(p.nextInstallment?.installmentNumber).toBe(2);
-    expect(p.nextInstallment?.isOverdue).toBe(false);
+    expect(p.nextInstallment?.projectedStatus).toBe('PENDING');
+  });
+  it('projeta PENDING, OVERDUE e PAID sem persistir atraso', () => {
+    expect(publicInstallment(installment(1, '2026-08-06'), '2026-08-07').projectedStatus).toBe(
+      'OVERDUE',
+    );
+    expect(publicInstallment(installment(1, '2026-08-07'), '2026-08-07').projectedStatus).toBe(
+      'PENDING',
+    );
+    expect(
+      publicInstallment(installment(1, '2026-08-06', 'PAID'), '2026-08-07').projectedStatus,
+    ).toBe('PAID');
+  });
+  it('usa o dia civil do relógio controlado, não o dia UTC implícito', () => {
+    const instant = new Date('2026-08-08T00:30:00.000Z');
+    const original = process.env.TZ;
+    process.env.TZ = 'America/Sao_Paulo';
+    expect(currentCivilDate(() => instant)).toBe('2026-08-07');
+    process.env.TZ = original;
+  });
+  it('aceita ano bissexto e rejeita datas gregorianas inexistentes', () => {
+    const base = {
+      type: 'FINANCING',
+      originalPrincipal: '10.00',
+      installmentCount: 1,
+      installments: [
+        {
+          installmentNumber: 1,
+          dueDate: '2028-02-29',
+          principalAmount: '10.00',
+          interestAmount: '0.00',
+          feeAmount: '0.00',
+        },
+      ],
+    };
+    expect(() => validateAggregate({ ...base, startDate: '2028-02-29' })).not.toThrow();
+    expect(() => validateAggregate({ ...base, startDate: '2027-02-29' })).toThrow('datas civis');
+    expect(() =>
+      validateAggregate({
+        ...base,
+        startDate: '2028-02-29',
+        installments: [{ ...base.installments[0]!, dueDate: '2026-02-31' }],
+      }),
+    ).toThrow('datas civis');
   });
   it('PAID nunca fica overdue e última parcela projeta PAID_OFF', () => {
     const p = projections(

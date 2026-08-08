@@ -405,7 +405,7 @@ export type CardErrorCode =
 export type DebtType = 'LOAN' | 'FINANCING' | 'NEGOTIATED_DEBT' | 'OTHER';
 export type DebtStatus = 'ACTIVE' | 'PAID_OFF';
 export type DebtInstallmentStatus = 'PENDING' | 'PAID';
-export type DebtProjectedStatus = DebtStatus;
+export type DebtInstallmentProjectedStatus = 'PENDING' | 'OVERDUE' | 'PAID';
 export interface PublicDebtInstallment {
   id: string;
   installmentNumber: number;
@@ -415,7 +415,7 @@ export interface PublicDebtInstallment {
   feeAmount: string;
   totalAmount: string;
   status: DebtInstallmentStatus;
-  isOverdue: boolean;
+  projectedStatus: DebtInstallmentProjectedStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -450,13 +450,13 @@ export interface DebtProjections {
   pendingInstallmentCount: number;
   overdueInstallmentCount: number;
   nextInstallment: PublicDebtInstallment | null;
-  projectedStatus: DebtProjectedStatus;
+  projectedStatus: DebtStatus;
 }
 export interface PublicFinancialDebt {
   id: string;
   type: DebtType;
   creditorName: string;
-  description: string | null;
+  description: string;
   notes: string | null;
   originalPrincipal: string;
   startDate: string;
@@ -487,7 +487,7 @@ export interface DebtFundingInput {
 export interface CreateFinancialDebtRequest {
   type: DebtType;
   creditorName: string;
-  description?: string | null;
+  description: string;
   notes?: string | null;
   originalPrincipal: string;
   startDate: string;
@@ -506,6 +506,9 @@ export interface PayDebtInstallmentRequest {
 }
 export interface PayDebtInstallmentResponse {
   payment: PublicDebtPayment;
+  installment: PublicDebtInstallment;
+  debt: FinancialDebtDetail;
+  projections: DebtProjections;
   created: boolean;
 }
 export type DebtDueFilter = 'overdue' | 'upcoming' | 'all';

@@ -8,6 +8,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   Max,
   MaxLength,
@@ -28,19 +29,18 @@ export class DebtInstallmentDto {
   @IsString() @Matches(MONEY_NON_NEGATIVE) feeAmount!: string;
 }
 export class DebtFundingDto {
-  @IsString() @Matches(/^[0-9a-f-]{36}$/i) accountId!: string;
+  @IsUUID() accountId!: string;
   @IsString() @Matches(MONEY_POSITIVE) amount!: string;
   @IsString() @Matches(CIVIL_DATE) fundingDate!: string;
 }
 export class CreateDebtDto {
   @IsIn(TYPES) type!: (typeof TYPES)[number];
   @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(120) creditorName!: string;
-  @IsOptional()
-  @ValidateIf((_o, v) => v !== null)
   @Transform(trim)
   @IsString()
+  @IsNotEmpty()
   @MaxLength(200)
-  description?: string | null;
+  description!: string;
   @IsOptional()
   @ValidateIf((_o, v) => v !== null)
   @Transform(trim)
@@ -62,11 +62,12 @@ export class UpdateDebtDto {
   @IsOptional() @IsIn(TYPES) type?: (typeof TYPES)[number];
   @IsOptional() @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(120) creditorName?: string;
   @IsOptional()
-  @ValidateIf((_o, v) => v !== null)
+  @ValidateIf((_o, v) => v !== undefined)
   @Transform(trim)
   @IsString()
+  @IsNotEmpty()
   @MaxLength(200)
-  description?: string | null;
+  description?: string;
   @IsOptional()
   @ValidateIf((_o, v) => v !== null)
   @Transform(trim)
@@ -86,6 +87,6 @@ export class UpdateDebtDto {
   @IsOptional() @ValidateNested() @Type(() => DebtFundingDto) funding?: DebtFundingDto;
 }
 export class PayDebtInstallmentDto {
-  @IsString() @Matches(/^[0-9a-f-]{36}$/i) accountId!: string;
+  @IsUUID() accountId!: string;
   @IsString() @Matches(CIVIL_DATE) paymentDate!: string;
 }
