@@ -17,6 +17,7 @@ import type { CreateDebtDto, PayDebtInstallmentDto, UpdateDebtDto } from './dto'
 import {
   civilDate,
   civilString,
+  currentCivilDate,
   invalidUuid,
   installmentTotal,
   projections,
@@ -36,7 +37,7 @@ export class DebtsService {
     @Inject(API_CONFIG) private readonly config: ApiConfig,
   ) {}
   private today() {
-    return new Date().toISOString().slice(0, 10);
+    return currentCivilDate();
   }
   private async account(tx: Prisma.TransactionClient, userId: string, id: string) {
     const own = await tx.financialAccount.findFirst({ where: { id, userId } });
@@ -50,7 +51,7 @@ export class DebtsService {
       userId,
       type: dto.type,
       creditorName: dto.creditorName,
-      description: dto.description || null,
+      description: dto.description,
       notes: dto.notes || null,
       originalPrincipal: new Prisma.Decimal(dto.originalPrincipal),
       startDate: civilDate(dto.startDate),
@@ -58,9 +59,16 @@ export class DebtsService {
     };
   }
   async create(userId: string, dto: CreateDebtDto) {
-    validateAggregate(dto);
+    if (typeof dto.description !== 'string' || !dto.description.trim())
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Informe uma descrição.',
+      });
+    dto.description = dto.description.trim();
     requireCivil(dto.startDate, 'Data inicial');
+    dto.installments.forEach((item) => requireCivil(item.dueDate, 'Vencimento'));
     if (dto.funding) requireCivil(dto.funding.fundingDate, 'Data do funding');
+    validateAggregate(dto);
     return this.prisma.$transaction(
       async (tx) => {
         if (dto.funding) await this.account(tx, userId, dto.funding.accountId);
@@ -173,6 +181,11 @@ export class DebtsService {
     return this.detail(row);
   }
   async update(userId: string, id: string, dto: UpdateDebtDto) {
+    if (invalidUuid(id))
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Identificador inválido.',
+      });
     if (!Object.keys(dto).length)
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
@@ -210,6 +223,9 @@ export class DebtsService {
             ...dto,
             creditorName: dto.creditorName ?? row.creditorName,
           } as CreateDebtDto;
+          requireCivil(aggregate.startDate, 'Data inicial');
+          aggregate.installments.forEach((item) => requireCivil(item.dueDate, 'Vencimento'));
+          if (aggregate.funding) requireCivil(aggregate.funding.fundingDate, 'Data do funding');
           validateAggregate(aggregate);
           if (aggregate.funding) await this.account(tx, userId, aggregate.funding.accountId);
           await tx.debtFunding.deleteMany({ where: { debtId: id } });
@@ -259,7 +275,12 @@ export class DebtsService {
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
   }
-  async pay(userId: string, id: string, dto: PayDebtInstallmentDto) {
+  async pay(userId: string, id: string, dto: PayDebtInstallmentDto, attempt = 0): Promise<any> {
+    if (invalidUuid(id))
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Identificador inválido.',
+      });
     requireCivil(dto.paymentDate, 'Data de pagamento');
     try {
       return await this.prisma.$transaction(
@@ -274,7 +295,7 @@ export class DebtsService {
               inst.payment.accountId === dto.accountId &&
               civilString(inst.payment.paymentDate) === dto.paymentDate
             )
-              return { payment: this.publicPayment(inst.payment), created: false };
+              return this.paymentResult(tx, userId, inst.debtId, id, inst.payment, false);
             throw new ConflictException({
               code: 'PAYMENT_CONFLICT',
               message: 'A parcela já possui outro pagamento.',
@@ -312,7 +333,7 @@ export class DebtsService {
             where: { id: inst.debtId },
             data: { status: pending ? 'ACTIVE' : 'PAID_OFF' },
           });
-          return { payment: this.publicPayment(payment), created: true };
+          return this.paymentResult(tx, userId, inst.debtId, id, payment, true);
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
@@ -322,6 +343,9 @@ export class DebtsService {
         e instanceof Prisma.PrismaClientKnownRequestError &&
         (e.code === 'P2002' || e.code === 'P2034')
       ) {
+        // PostgreSQL pode abortar uma das serializações quando parcelas finais distintas
+        // são pagas juntas. Reexecutar a decisão garante que o último commit veja o outro.
+        if (e.code === 'P2034' && attempt < 2) return this.pay(userId, id, dto, attempt + 1);
         const existing = await this.prisma.debtPayment.findUnique({ where: { installmentId: id } });
         if (
           existing &&
@@ -329,7 +353,7 @@ export class DebtsService {
           existing.accountId === dto.accountId &&
           civilString(existing.paymentDate) === dto.paymentDate
         )
-          return { payment: this.publicPayment(existing), created: false };
+          return this.paymentResult(this.prisma, userId, existing.debtId, id, existing, false);
         throw new ConflictException({
           code: 'PAYMENT_CONFLICT',
           message: 'Pagamento concorrente ou divergente.',
@@ -352,7 +376,11 @@ export class DebtsService {
     return this.get(userId, id);
   }
   private async find(userId: string, id: string) {
-    if (invalidUuid(id)) throw missing();
+    if (invalidUuid(id))
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Identificador inválido.',
+      });
     const x = await this.prisma.financialDebt.findFirst({ where: { id, userId } });
     if (!x) throw missing();
     return x;
@@ -415,6 +443,24 @@ export class DebtsService {
       feeAmount: p.feeAmount.toFixed(2),
       totalAmount: installmentTotal(p).toFixed(2),
       createdAt: p.createdAt.toISOString(),
+    };
+  }
+  private async paymentResult(
+    tx: Prisma.TransactionClient | PrismaService,
+    userId: string,
+    debtId: string,
+    installmentId: string,
+    payment: any,
+    created: boolean,
+  ) {
+    const debt = await this.getTx(tx as Prisma.TransactionClient, userId, debtId);
+    const installment = debt.installments.find((item) => item.id === installmentId)!;
+    return {
+      payment: this.publicPayment(payment),
+      installment,
+      debt,
+      projections: debt.projections,
+      created,
     };
   }
 }

@@ -22,7 +22,8 @@ export const publicInstallment = (x: DebtInstallment, today: string): PublicDebt
   feeAmount: x.feeAmount.toFixed(2),
   totalAmount: installmentTotal(x).toFixed(2),
   status: x.status,
-  isOverdue: x.status === 'PENDING' && civilString(x.dueDate) < today,
+  projectedStatus:
+    x.status === 'PAID' ? 'PAID' : civilString(x.dueDate) < today ? 'OVERDUE' : 'PENDING',
   createdAt: x.createdAt.toISOString(),
   updatedAt: x.updatedAt.toISOString(),
 });
@@ -97,4 +98,10 @@ export const invalidUuid = (id: string) =>
 export function requireCivil(value: string, field: string) {
   if (!isCivilDate(value))
     throw new BadRequestException({ code: 'VALIDATION_ERROR', message: `${field} inválida.` });
+}
+
+/** Data civil do processo, sem converter o instante para UTC; o relógio é injetável em testes. */
+export function currentCivilDate(now: () => Date = () => new Date()) {
+  const value = now();
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
 }

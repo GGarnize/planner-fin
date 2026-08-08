@@ -18,7 +18,8 @@ const route = useRoute(),
   busy = ref(false),
   error = ref(''),
   nextCursor = ref<string | null>(null),
-  showForm = ref(false);
+  showForm = ref(false),
+  editing = ref(false);
 const filters = reactive({ status: '', type: '', due: 'all', archived: 'false' });
 const form = reactive<any>({
   type: 'LOAN',
@@ -40,8 +41,11 @@ const form = reactive<any>({
   funding: { accountId: '', amount: '', fundingDate: '' },
 });
 const pay = reactive({ installmentId: '', accountId: '', paymentDate: '' });
-const money = (v: string) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(v));
+const money = (v: string) => {
+  const match = /^(\d+)\.(\d{2})$/.exec(v);
+  if (!match) return v;
+  return `R$ ${match[1]!.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${match[2]}`;
+};
 const activeAccounts = computed(() => accounts.value.filter((a) => !a.archivedAt));
 async function json<T>(path: string, init?: RequestInit) {
   let r: Response;
@@ -100,7 +104,7 @@ async function create() {
   busy.value = true;
   error.value = '';
   try {
-    const body: any = { ...form, description: form.description || null, notes: form.notes || null };
+    const body: any = { ...form, description: form.description, notes: form.notes || null };
     if (body.type !== 'LOAN') delete body.funding;
     await json('/debts', {
       method: 'POST',
@@ -118,9 +122,71 @@ async function create() {
 async function action(id: string, kind: 'archive' | 'restore') {
   try {
     await json(`/debts/${id}/${kind}`, { method: 'POST' });
-    await load();
+    if (detail.value) await loadDetail(id);
+    else await load();
   } catch (e) {
     error.value = (e as Error).message;
+  }
+}
+function beginEdit() {
+  if (!detail.value) return;
+  const d = detail.value;
+  Object.assign(form, {
+    type: d.type,
+    creditorName: d.creditorName,
+    description: d.description,
+    notes: d.notes ?? '',
+    originalPrincipal: d.originalPrincipal,
+    startDate: d.startDate,
+    installmentCount: d.installmentCount,
+    installments: d.installments.map((x) => ({
+      installmentNumber: x.installmentNumber,
+      dueDate: x.dueDate,
+      principalAmount: x.principalAmount,
+      interestAmount: x.interestAmount,
+      feeAmount: x.feeAmount,
+    })),
+    funding: d.funding
+      ? {
+          accountId: d.funding.accountId,
+          amount: d.funding.amount,
+          fundingDate: d.funding.fundingDate,
+        }
+      : { accountId: '', amount: '', fundingDate: '' },
+  });
+  editing.value = true;
+  error.value = '';
+}
+async function saveEdit() {
+  if (!detail.value) return;
+  busy.value = true;
+  error.value = '';
+  try {
+    const body: any = {
+      creditorName: form.creditorName,
+      description: form.description,
+      notes: form.notes || null,
+    };
+    if (!detail.value.payments.length) {
+      Object.assign(body, {
+        type: form.type,
+        originalPrincipal: form.originalPrincipal,
+        startDate: form.startDate,
+        installmentCount: form.installmentCount,
+        installments: form.installments,
+      });
+      if (form.type === 'LOAN') body.funding = form.funding;
+    }
+    detail.value = await json(`/debts/${detail.value.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    editing.value = false;
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    busy.value = false;
   }
 }
 async function payInstallment() {
@@ -193,9 +259,9 @@ onMounted(async () => {
               type="number"
               min="1"
               max="600"
-              @change="resize"
-              required /></label
-          ><label>Descrição<input v-model="form.description" maxlength="200" /></label>
+              required
+              @change="resize" /></label
+          ><label>Descrição<input v-model="form.description" required maxlength="200" /></label>
         </div>
         <label>Notas<textarea v-model="form.notes" maxlength="2000"></textarea></label>
         <fieldset v-if="form.type === 'LOAN'">
@@ -246,7 +312,11 @@ onMounted(async () => {
         ><select v-model="filters.due" @change="load()">
           <option value="all">Todos os vencimentos</option>
           <option value="overdue">Em atraso</option>
-          <option value="upcoming">A vencer</option>
+          <option value="upcoming">A vencer</option></select
+        ><select v-model="filters.archived" aria-label="Arquivamento" @change="load()">
+          <option value="false">Não arquivadas</option>
+          <option value="true">Arquivadas</option>
+          <option value="all">Todas</option>
         </select>
       </div>
       <div v-if="!items.length && !error" class="empty">
@@ -268,7 +338,9 @@ onMounted(async () => {
           ><strong>{{ money(x.projections.outstandingPrincipal) }}</strong
           ><small v-if="x.projections.nextInstallment"
             >Próxima: {{ x.projections.nextInstallment.dueDate }}
-            <b v-if="x.projections.nextInstallment.isOverdue">· em atraso</b></small
+            <b v-if="x.projections.nextInstallment.projectedStatus === 'OVERDUE'"
+              >· em atraso</b
+            ></small
           >
         </div>
         <button
@@ -294,15 +366,14 @@ onMounted(async () => {
           ><strong>{{ money(detail.projections.paidPrincipal) }}</strong>
         </div>
         <div>
-          <small>Custos pagos</small
-          ><strong>{{
-            money(
-              String(
-                Number(detail.projections.paidInterestAmount) +
-                  Number(detail.projections.paidFeeAmount),
-              ),
-            )
-          }}</strong>
+          <small>Juros pagos</small
+          ><strong>{{ money(detail.projections.paidInterestAmount) }}</strong>
+          <small>Tarifas pagas</small><strong>{{ money(detail.projections.paidFeeAmount) }}</strong>
+        </div>
+        <div>
+          <small>Custos pendentes</small>
+          <span>Juros {{ money(detail.projections.pendingInterestAmount) }}</span>
+          <span> · tarifas {{ money(detail.projections.pendingFeeAmount) }}</span>
         </div>
         <div>
           <small>Total futuro</small
@@ -317,6 +388,86 @@ onMounted(async () => {
         <p v-if="detail.funding">
           Funding: {{ money(detail.funding.amount) }} em {{ detail.funding.fundingDate }}
         </p>
+        <p>
+          Próxima parcela:
+          <b>{{ detail.projections.nextInstallment?.dueDate ?? 'nenhuma' }}</b> · vencidas:
+          <b>{{ detail.projections.overdueInstallmentCount }}</b>
+        </p>
+        <div v-if="!editing" class="actions">
+          <button v-if="!detail.archivedAt" class="secondary" @click="beginEdit">Editar</button>
+          <button
+            v-if="detail.status === 'PAID_OFF' && !detail.archivedAt"
+            class="secondary"
+            @click="action(detail.id, 'archive')"
+          >
+            Arquivar
+          </button>
+          <button v-if="detail.archivedAt" class="secondary" @click="action(detail.id, 'restore')">
+            Restaurar
+          </button>
+        </div>
+        <form v-if="editing" class="edit" @submit.prevent="saveEdit">
+          <h3>Editar contrato</h3>
+          <div class="grid">
+            <label>Credor<input v-model="form.creditorName" required maxlength="120" /></label>
+            <label>Descrição<input v-model="form.description" required maxlength="200" /></label>
+            <label>Notas<textarea v-model="form.notes" maxlength="2000"></textarea></label>
+          </div>
+          <template v-if="!detail.payments.length">
+            <div class="grid">
+              <label
+                >Tipo<select v-model="form.type">
+                  <option value="LOAN">Empréstimo</option>
+                  <option value="FINANCING">Financiamento</option>
+                  <option value="NEGOTIATED_DEBT">Dívida negociada</option>
+                  <option value="OTHER">Outra</option>
+                </select></label
+              >
+              <label>Principal<input v-model="form.originalPrincipal" required /></label>
+              <label>Data inicial<input v-model="form.startDate" type="date" required /></label>
+              <label
+                >Quantidade<input
+                  v-model.number="form.installmentCount"
+                  type="number"
+                  min="1"
+                  max="600"
+                  required
+                  @change="resize"
+              /></label>
+            </div>
+            <fieldset v-if="form.type === 'LOAN'">
+              <legend>Funding integral</legend>
+              <select v-model="form.funding.accountId" required>
+                <option value="">Conta</option>
+                <option v-for="a in activeAccounts" :key="a.id" :value="a.id">{{ a.name }}</option>
+              </select>
+              <input v-model="form.funding.amount" aria-label="Valor do funding" required />
+              <input
+                v-model="form.funding.fundingDate"
+                aria-label="Data do funding"
+                type="date"
+                required
+              />
+            </fieldset>
+            <div v-for="x in form.installments" :key="x.installmentNumber" class="installment">
+              <b>#{{ x.installmentNumber }}</b
+              ><input v-model="x.dueDate" type="date" required /><input
+                v-model="x.principalAmount"
+                required
+              /><input v-model="x.interestAmount" required /><input
+                v-model="x.feeAmount"
+                required
+              />
+            </div>
+          </template>
+          <p v-else class="notice">
+            Após o primeiro pagamento, somente credor, descrição e notas podem ser alterados.
+          </p>
+          <button :disabled="busy">{{ busy ? 'Salvando…' : 'Salvar alterações' }}</button>
+          <button type="button" class="secondary" :disabled="busy" @click="editing = false">
+            Cancelar
+          </button>
+        </form>
         <p class="notice">
           O principal pago reduz a dívida e o saldo da conta, mas não é nova despesa; juros e
           tarifas pagos são custo financeiro.
@@ -326,7 +477,14 @@ onMounted(async () => {
         <h2>Cronograma</h2>
         <div v-for="x in detail.installments" :key="x.id" class="schedule">
           <span
-            >#{{ x.installmentNumber }} · {{ x.dueDate }} <b v-if="x.isOverdue">Em atraso</b></span
+            >#{{ x.installmentNumber }} · {{ x.dueDate }}
+            <b>{{
+              x.projectedStatus === 'OVERDUE'
+                ? 'Em atraso'
+                : x.projectedStatus === 'PAID'
+                  ? 'Pago'
+                  : 'Pendente'
+            }}</b></span
           ><strong>{{ money(x.totalAmount) }}</strong
           ><button
             v-if="x.status === 'PENDING' && !detail.archivedAt"
