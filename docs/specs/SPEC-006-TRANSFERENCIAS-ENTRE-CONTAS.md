@@ -8,7 +8,7 @@
 | Título | Transferências entre contas |
 | Responsável | Equipe PlannerFin |
 | Data de criação | 2026-08-07 |
-| Última atualização | 2026-08-07 |
+| Última atualização | 2026-08-08 |
 | Tarefa relacionada | `PROMPT-SPEC-006-TRANSFERENCIAS-ENTRE-CONTAS.md` |
 | Documentos relacionados | SPEC-002, SPEC-003, SPEC-004, SPEC-005; ADR-001 a ADR-006; documentos de produto e qualidade |
 
@@ -101,21 +101,21 @@ SPEC-002 define autenticação e isolamento; SPEC-003 define contas e `openingBa
 
 ### 9.6 Efeito no saldo realizado
 
-Para uma conta `A`:
+Para uma conta `A` e data civil `D >= openingBalanceDate(A)`, a composição completa segue a fórmula canônica da SPEC-003. O termo de transferência é:
 
 ```text
-saldoRealizado(A)
-  = openingBalance(A)
-  + soma(actualAmount de FinancialTransaction PAID INCOME de A)
-  - soma(actualAmount de FinancialTransaction PAID EXPENSE de A)
-  - soma(actualAmount de FinancialTransfer COMPLETED cuja origem é A)
-  + soma(actualAmount de FinancialTransfer COMPLETED cujo destino é A)
+- soma(actualAmount de FinancialTransfer COMPLETED cuja origem é A
+       e openingBalanceDate(A) < completedAt <= D)
++ soma(actualAmount de FinancialTransfer COMPLETED cujo destino é A
+       e openingBalanceDate(A) < completedAt <= D)
 ```
 
 - `PENDING` não afeta saldo. `COMPLETED` afeta ambas as contas uma única vez e pelo mesmo `actualAmount`.
 - Concluir inclui os sinais opostos; reabrir remove logicamente ambos ao tirar o registro do conjunto `COMPLETED`.
 - Para origem e destino consideradas juntas, a variação é `-actualAmount + actualAmount = 0`; o patrimônio consolidado não muda.
 - Totais de receita e despesa não mudam. `plannedAmount` nunca entra no saldo realizado.
+- `completedAt` é a única data efetiva de caixa; `dueDate`, `createdAt`, `updatedAt` e competência não podem substituí-la. Evento igual ao corte já está incorporado ao saldo inicial, e evento posterior a hoje não afeta o saldo atual até o dia chegar.
+- Origem e destino aplicam seus próprios cortes. Com cortes distintos, a mesma transferência pode integrar temporariamente a janela de uma conta e ficar fora da outra; o histórico permanece íntegro e a transferência continua economicamente neutra, sem virar receita ou despesa.
 
 ### 9.7 Concorrência
 
@@ -534,6 +534,15 @@ Não existe rota `DELETE /api/transfers/:id`.
 ### `CA-48 — Arquivamento concorrente`
 **Dado** arquivamento de conta concorrente à criação/PATCH **Quando** ambos executam **Então** ou a relação nasce antes e vira histórico, ou é rejeitada como arquivada.
 
+### `CA-49 — Transferência antes, no corte e depois`
+**Dado** transferências `COMPLETED` com `completedAt` anterior, igual e posterior ao corte da conta **Quando** calcula `realizedBalance(D)` **Então** inclui somente a posterior que também seja `<= D`, com sinal próprio de origem ou destino.
+
+### `CA-50 — Cortes diferentes por conta`
+**Dado** transferência concluída entre contas com `openingBalanceDate` diferentes **Quando** calcula cada saldo na mesma data `D` **Então** aplica separadamente cada janela, podendo incluir o evento em uma conta e excluí-lo na outra sem criar receita, despesa ou lançamento artificial.
+
+### `CA-51 — Transferência futura`
+**Dado** transferência `COMPLETED` com `completedAt` posterior a hoje **Quando** calcula os saldos atuais **Então** não altera nenhuma conta até o dia civil efetivo e permanece no histórico.
+
 ## 23. Testes obrigatórios
 
 | Nível | Cenários mínimos | Critérios relacionados | Evidência esperada |
@@ -544,6 +553,8 @@ Não existe rota `DELETE /api/transfers/:id`.
 | Web | Vazio; criação; origem/destino; filtros/paginação; complete/reopen; vencida; API indisponível; redirecionamento; responsividade. | CA-01–03, CA-16–23, CA-26–36, CA-41, CA-44–45 | Testes de componentes com API e relógio controlados. |
 | E2E | Login; criar; concluir; verificar os dois saldos e totais neutros; reabrir; logout. | CA-30, CA-33, CA-37–40, CA-44 | Playwright com dados fictícios e evidência sanitizada. |
 | Aceitação manual | Clareza dos lados, bloqueio de mesma conta, transições, filtros, vazio, indisponibilidade e mobile. | CA-01–03, CA-16–23, CA-30–36, CA-41, CA-45 | Checklist e capturas sanitizadas; exigida na implementação de interface. |
+
+Testes futuros unitários e de serviço devem cobrir `completedAt` antes, igual e depois do corte, futuro e cortes distintos por conta. A integração PostgreSQL comprovará filtros por `completedAt`, owner, precisão decimal e plano de índices; web e E2E verificarão ambos os saldos, neutralidade e histórico preservado.
 
 Testes futuros devem cobrir explicitamente virada de mês/ano, ano bissexto, limite monetário, zero/negativo, nenhum arredondamento, soma consolidada antes/depois e concorrência repetível. Nesta unidade exclusivamente documental, testes de runtime são não aplicáveis.
 
@@ -632,3 +643,4 @@ Não há dúvida aberta que altere comportamento, escopo, dados, segurança ou d
 | Data | Alteração | Motivo | Autor | Aprovador, quando aplicável |
 |---|---|---|---|---|
 | 2026-08-07 | Criação da SPEC-006 com status inicial aprovado. | Definir transferências internas antes de qualquer implementação. | Equipe PlannerFin | Responsável do produto, via tarefa |
+| 2026-08-08 | Definição de `completedAt` e corte individual por conta. | Evitar dupla contagem sem alterar a neutralidade econômica. | Codex Cloud | Tarefa `PROMPT-FIX-SPECS-SALDO-INICIAL-CORTE-TEMPORAL.md` |

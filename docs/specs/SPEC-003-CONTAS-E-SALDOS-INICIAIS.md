@@ -10,7 +10,7 @@
 | Título | `Contas financeiras e saldos iniciais` |
 | Responsável | `Codex Cloud` |
 | Data de criação | `2026-08-07` |
-| Última atualização | `2026-08-07` |
+| Última atualização | `2026-08-08` |
 | Tarefa relacionada | `PROMPT-SPEC-003-CONTAS-E-SALDOS-INICIAIS.md` |
 | Documentos relacionados | `docs/specs/README.md`; `docs/specs/SPEC-002-AUTENTICACAO-E-ISOLAMENTO-POR-USUARIO.md`; `docs/process/GIT-WORKFLOW.md`; `docs/quality/DEFINITION-OF-DONE.md`; `docs/quality/TEST-STRATEGY.md`; documentos de produto; `ADR-003`, `ADR-004` e `ADR-006` |
 
@@ -78,6 +78,36 @@ A autenticação e o contexto autenticado existem, mas não há modelo, API ou i
 - O saldo inicial não cria lançamento artificial, receita ou despesa e não altera totais de receitas ou despesas.
 - Até existirem lançamentos, a interface pode apresentar esse valor apenas como **Saldo inicial** ou **Posição inicial**, junto da data; não pode rotulá-lo como saldo atual.
 - Armazenar valor e data na própria conta é a solução deliberadamente simples enquanto não há lançamentos. Histórico completo de mudanças dependerá de outra SPEC.
+
+### 9.2.1 Corte temporal e fórmula canônica do saldo realizado
+
+`openingBalance` representa o saldo realizado da conta **ao final** do dia civil `openingBalanceDate`: todos os efeitos de caixa ocorridos até e inclusive esse dia já estão incorporados nessa posição. Movimentos anteriores ou exatamente no corte podem permanecer cadastrados, mas não são somados novamente ao saldo da conta.
+
+Para cada conta e data civil `D >= openingBalanceDate`, a fórmula canônica é:
+
+```text
+realizedBalance(D) =
+  openingBalance
++ Σ FinancialTransaction PAID INCOME.actualAmount
+- Σ FinancialTransaction PAID EXPENSE.actualAmount
+- Σ FinancialTransfer COMPLETED outgoing.actualAmount
++ Σ FinancialTransfer COMPLETED incoming.actualAmount
+- Σ CardInvoicePayment.amount
++ Σ DebtFunding.amount
+- Σ (DebtPayment.principalAmount + DebtPayment.interestAmount + DebtPayment.feeAmount)
+```
+
+Cada termo inclui exclusivamente eventos cuja janela seja `openingBalanceDate < effectiveDate <= D`. A data efetiva é `paidAt` para `FinancialTransaction`, `completedAt` para `FinancialTransfer`, `paymentDate` para `CardInvoicePayment`, `fundingDate` para `DebtFunding` e `paymentDate` para `DebtPayment`. `createdAt`, `updatedAt`, `dueDate` e datas de competência nunca substituem a data efetiva de caixa.
+
+O saldo realizado atual usa `D = hoje civil`, com relógio e data civil consistentes no backend e controláveis em testes. Evento com data efetiva igual ao corte já pertence ao saldo inicial; por isso, o limite inferior é estritamente `>`. Evento posterior a hoje não compõe o saldo atual, ainda que seu registro já esteja `PAID` ou `COMPLETED`; passa a compor quando o respectivo dia civil chegar.
+
+A regra já aprovada de aceitar `openingBalanceDate` futura é preservada. Enquanto hoje for anterior ao corte, não se deriva saldo realizado atual a partir de uma posição futura; a interface apresenta apenas a posição inicial futura e sua data, sem rotulá-la como saldo atual. Nenhum contrato de criação ou edição passa a proibir datas futuras nesta correção documental.
+
+O corte pertence à conta. Assim, cada lado de uma transferência é avaliado contra o `openingBalanceDate` da respectiva conta, mesmo que isso inclua o evento no saldo de uma ponta e o exclua do saldo da outra. Essa diferença temporal não transforma transferência em receita ou despesa nem rompe sua neutralidade econômica.
+
+Movimentos anteriores ou iguais ao corte continuam no histórico e disponíveis para relatórios de receita, despesa, competência, dívida e demais visões aplicáveis. O corte evita dupla contagem somente no saldo de caixa da `FinancialAccount`; não apaga, reclassifica ou oculta eventos e não altera suas regras econômicas.
+
+Quando a conta ativa puder ser editada, mudar `openingBalance` recalcula derivadamente o saldo realizado. Mudar `openingBalanceDate` altera somente a janela de agregação. Em ambos os casos, nenhum movimento é criado, apagado ou reescrito, e os bloqueios de edição já aprovados permanecem.
 
 ### 9.3 Ciclo de vida
 
@@ -400,6 +430,27 @@ Logs estruturados mínimos podem registrar operação (`create`, `list`, `get`, 
 ### `CA-24 — Saldo inicial não é receita ou despesa`
 **Dado** qualquer saldo inicial **Quando** a conta é criada ou editada **Então** nenhum lançamento ou total de receita/despesa é criado ou alterado e o rótulo não indica saldo atual.
 
+### `CA-25 — Fórmula consolidada sem dupla contagem`
+**Dado** saldo inicial ao final do corte e eventos elegíveis de todas as cinco fontes **Quando** calcula `realizedBalance(D)` **Então** aplica a fórmula canônica, inclui cada efeito uma vez somente na janela `openingBalanceDate < effectiveDate <= D` e não cria fonte artificial.
+
+### `CA-26 — Evento futuro fora do saldo atual`
+**Dado** evento `PAID` ou `COMPLETED` com data efetiva posterior a hoje **Quando** calcula o saldo atual **Então** o evento não é agregado até o respectivo dia civil, sem usar timestamps técnicos ou vencimento.
+
+### `CA-27 — Histórico anterior preservado`
+**Dado** evento anterior ou igual ao corte **Quando** consulta o histórico **Então** o evento continua visível e inalterado, embora não componha novamente o saldo da conta.
+
+### `CA-28 — Relatórios preservados`
+**Dado** movimentos antes, no dia e depois do corte **Quando** gera relatório aplicável de receita, despesa, competência ou custos **Então** todos continuam disponíveis segundo as regras econômicas do relatório, independentemente do corte exclusivo do saldo de caixa.
+
+### `CA-29 — Edição do valor inicial`
+**Dado** conta ativa cuja edição é permitida **Quando** altera `openingBalance` **Então** o saldo realizado é recalculado derivadamente e nenhum movimento é criado, apagado ou reescrito.
+
+### `CA-30 — Edição da data inicial`
+**Dado** conta ativa cuja edição é permitida **Quando** altera `openingBalanceDate` **Então** somente a janela de agregação muda e o histórico permanece intacto.
+
+### `CA-31 — Corte futuro preservado`
+**Dado** `openingBalanceDate` futura válida **Quando** consulta a conta antes do corte **Então** vê a posição inicial futura e sua data, sem saldo atual derivado nem proibição nova no contrato.
+
 ## 23. Testes obrigatórios
 
 | Nível | Cenários mínimos | Critérios relacionados | Evidência esperada |
@@ -410,6 +461,8 @@ Logs estruturados mínimos podem registrar operação (`create`, `list`, `get`, 
 | Web com mocks controlados | Estado vazio, criação, edição, arquivamento, filtro, reativação, validações, API indisponível e redirecionamento sem sessão. | CA-01–CA-04, CA-11–CA-12, CA-15, CA-17–CA-22, CA-24 | Testes de componentes/integração identificados como mockados. |
 | E2E | Login, criar, visualizar, editar, arquivar, incluir arquivadas, reativar e logout. | CA-01, CA-10–CA-13, CA-15, CA-17–CA-21 | Playwright contra aplicação e banco de teste reais, com dados sintéticos. |
 | Aceitação manual | Responsividade, rótulos, foco, confirmação, erros e ausência de domínios excluídos. | CA-11, CA-22–CA-24 | Checklist e capturas sanitizadas quando a implementação existir. |
+
+Na implementação futura, os testes unitários cobrirão cada fonte com data efetiva `<`, `=` e `>` ao corte, limite `<= hoje`, futuro e transferência com cortes distintos. Testes de serviço cobrirão `realizedBalance`, edição de `openingBalance`/`openingBalanceDate` e histórico intacto. A integração PostgreSQL verificará filtros pelas datas efetivas, owner, precisão decimal e índices/plano quando aplicável. Testes web comprovarão saldo e edição corretos sem ocultar movimentos; o E2E usará saldo inicial histórico e eventos antes, no dia e depois do corte para obter total exato sem dupla contagem.
 
 ## 24. Arquivos permitidos
 
@@ -484,7 +537,7 @@ Além da [Definition of Done do projeto](../quality/DEFINITION-OF-DONE.md), a im
 - [ ] Isolamento por usuário foi provado com dois usuários e `404` cruzado.
 - [ ] Telas mínimas responsivas, estados e rótulo inequívoco de saldo inicial foram entregues.
 - [ ] Testes unitários, integração real, contrato, web e E2E aplicáveis passaram e distinguem mocks de PostgreSQL real.
-- [ ] Todos os 24 critérios de aceite foram atendidos e evidências obrigatórias anexadas.
+- [ ] Todos os 31 critérios de aceite foram atendidos e evidências obrigatórias anexadas.
 - [ ] Nenhuma funcionalidade fora do escopo foi criada.
 - [ ] Workflow de CI permaneceu inalterado e desativado.
 
@@ -493,3 +546,4 @@ Além da [Definition of Done do projeto](../quality/DEFINITION-OF-DONE.md), a im
 | Data | Alteração | Motivo | Autor | Aprovador, quando aplicável |
 |---|---|---|---|---|
 | `2026-08-07` | Criação da SPEC-003 com status Aprovada. | Autorizar e delimitar a primeira unidade financeira futura. | `Codex Cloud` | Tarefa `PROMPT-SPEC-003-CONTAS-E-SALDOS-INICIAIS.md` |
+| `2026-08-08` | Clarificação do corte temporal e da fórmula canônica do saldo realizado. | Evitar dupla contagem de efeitos já incorporados ao saldo inicial. | `Codex Cloud` | Tarefa `PROMPT-FIX-SPECS-SALDO-INICIAL-CORTE-TEMPORAL.md` |

@@ -10,7 +10,7 @@
 | Título | Dívidas e financiamentos |
 | Responsável | Equipe Planner Fin |
 | Data de criação | `2026-08-07` |
-| Última atualização | `2026-08-07` |
+| Última atualização | `2026-08-08` |
 | Tarefa relacionada | `PROMPT-SPEC-009-DIVIDAS-E-FINANCIAMENTOS.md` |
 | Documentos relacionados | [`SPEC-002`](SPEC-002-AUTENTICACAO-E-ISOLAMENTO-POR-USUARIO.md) a [`SPEC-008`](SPEC-008-CARTOES-DE-CREDITO-E-FATURAS.md); [`ADR-001`](../adr/ADR-001-ARQUITETURA-GERAL.md) a [`ADR-006`](../adr/ADR-006-ESTRATEGIA-DE-TESTES.md); [visão](../product/VISION.md), [escopo](../product/SCOPE.md), [princípios](../product/PRODUCT-PRINCIPLES.md), [modelo TO-BE](../product/TO-BE-PRODUCT-MODEL.md), [Definition of Done](../quality/DEFINITION-OF-DONE.md), [estratégia de testes](../quality/TEST-STRATEGY.md), [processo de SPECs](README.md) e [fluxo Git](../process/GIT-WORKFLOW.md) |
 
@@ -139,20 +139,16 @@ outstandingPrincipal = originalPrincipal
 
 Também são derivados: principal pago, juros/tarifas pagos e pendentes, total futuro contratado das parcelas `PENDING`, quantidade paga/pendente, parcelas vencidas e próxima parcela. A próxima parcela é a `PENDING` de menor `(dueDate, installmentNumber)`; se não houver, é `null`. Nenhuma dessas projeções é fonte persistida independente.
 
-Saldo realizado da conta:
+Saldo realizado da conta segue a fórmula canônica da SPEC-003. Para uma data civil `D >= openingBalanceDate`, os termos deste domínio são:
 
 ```text
-openingBalance
-+ FinancialTransaction PAID INCOME
-- FinancialTransaction PAID EXPENSE
-- FinancialTransfer COMPLETED de saída
-+ FinancialTransfer COMPLETED de entrada
-- CardInvoicePayment
-+ DebtFunding
-- DebtPayment.total
++ Σ DebtFunding.amount
+    quando openingBalanceDate < fundingDate <= D
+- Σ (DebtPayment.principalAmount + DebtPayment.interestAmount + DebtPayment.feeAmount)
+    quando openingBalanceDate < paymentDate <= D
 ```
 
-`DebtFunding` aumenta saldo sem aumentar receita. `DebtPayment.total` reduz saldo uma vez; somente seus juros/tarifas aumentam despesa. No financiamento de bem, o produto não reconhece automaticamente ativo nem despesa de principal: o cadastro apenas acompanha a obrigação e esta limitação deve aparecer na UI.
+`fundingDate` e `paymentDate` são as respectivas e únicas datas efetivas de caixa; `dueDate`, competência, `createdAt` e `updatedAt` nunca as substituem. Evento anterior ou igual ao corte permanece no histórico sem voltar ao saldo, e evento futuro só integra o saldo atual quando o dia chegar. `DebtFunding` aumenta saldo sem aumentar receita. `DebtPayment` reduz saldo uma vez pela soma exata dos três componentes; principal continua fora de despesa, enquanto somente juros e tarifas aumentam o custo financeiro. No financiamento de bem, o produto não reconhece automaticamente ativo nem despesa de principal: o cadastro apenas acompanha a obrigação e esta limitação deve aparecer na UI.
 
 ### 9.8 Edição
 
@@ -646,6 +642,15 @@ Métricas: contagem/latência/erro por operação e código; conflitos de unique
 ### `CA-74 — Fluxo E2E sem dupla contagem`
 **Dado** usuário logado com conta **Quando** cria `LOAN` com funding, paga parcelas com juros, quita e sai **Então** saldo recebe funding e pagamentos uma vez, receita não aumenta, principal não vira despesa e apenas juros/tarifas aumentam custo.
 
+### `CA-75 — Funding antes, no corte e depois`
+**Dado** fundings com `fundingDate` anterior, igual e posterior ao corte **Quando** calcula `realizedBalance(D)` **Então** soma somente o posterior que também seja `<= D`, preserva o histórico e não aumenta receita.
+
+### `CA-76 — Pagamento de dívida antes, no corte e depois`
+**Dado** pagamentos com `paymentDate` anterior, igual e posterior ao corte **Quando** calcula `realizedBalance(D)` **Então** subtrai os três componentes somente do posterior que também seja `<= D`; principal não vira despesa e juros/tarifas continuam custo financeiro.
+
+### `CA-77 — Eventos de dívida futuros`
+**Dado** funding ou pagamento com data efetiva posterior a hoje **Quando** calcula o saldo atual **Então** não agrega o evento até o dia civil efetivo e mantém seu registro disponível no histórico e nos relatórios.
+
 ## 23. Testes obrigatórios
 
 | Nível | Cenários mínimos | Critérios relacionados | Evidência esperada |
@@ -656,6 +661,8 @@ Métricas: contagem/latência/erro por operação e código; conflitos de unique
 | Web | Vazio, cadastro, cronograma, funding, detalhe, overdue, pay, quitação, edição, archive/restore, indisponibilidade, redirect e responsividade | CA-67 a CA-73 | Testes de componente/integração e evidência visual sanitizada |
 | E2E | Login, conta, `LOAN` com funding, saldo sem receita, parcelas, amortização, juros/tarifas únicos, quitação e logout | CA-74 | Fluxo crítico automatizado com dados fictícios |
 | Aceitação manual | Clareza de origem, cronograma, obrigação versus custo, bloqueios, acessibilidade e móvel/desktop | CA-04 a CA-10, CA-67 a CA-74 | Checklist e capturas sanitizadas; exigido na implementação futura |
+
+Testes futuros unitários e de serviço devem cobrir `fundingDate` e `paymentDate` antes, iguais e depois do corte, hoje e futuro, além da decomposição econômica do pagamento. A integração PostgreSQL verificará filtros pelas datas efetivas, owner, precisão decimal e planos aplicáveis; web e E2E comprovarão saldo exato, histórico preservado e ausência de receita/despesa de principal artificiais.
 
 Dados de teste serão inteiramente fictícios. A implementação futura executará lint, typecheck, unitários, integração PostgreSQL, contrato, web/E2E e build conforme comandos então existentes. Nesta entrega somente documental, testes de produto e screenshot não são aplicáveis; verificações documentais e de escopo são obrigatórias.
 
@@ -747,7 +754,7 @@ Para esta entrega documental:
 - [x] SPEC criada com status `Aprovada` no único arquivo autorizado.
 - [x] Entidades, tipos, funding, cronograma, pagamento, dinheiro, efeitos, derivações, estados, edição e archive definidos.
 - [x] Segurança, concorrência, persistência, contratos HTTP, paginação e web futuros definidos.
-- [x] Pelo menos 55 critérios Dado/Quando/Então definidos (74 cenários).
+- [x] Pelo menos 55 critérios Dado/Quando/Então definidos (77 cenários).
 - [x] Riscos, limitações e testes futuros em todos os níveis aplicáveis documentados.
 - [x] Nenhuma dependência, código, Prisma, migration, endpoint, tela, seed ou CI alterado.
 - [x] Todas as decisões obrigatórias registradas e nenhuma dúvida aberta.
@@ -759,3 +766,4 @@ Para esta entrega documental:
 | Data | Alteração | Motivo | Autor | Aprovador, quando aplicável |
 |---|---|---|---|---|
 | `2026-08-07` | Criação da SPEC-009 com status Aprovada | Definir dívidas e financiamentos antes da implementação | Equipe Planner Fin | Solicitante da tarefa |
+| `2026-08-08` | Definição das datas efetivas e janelas de funding e pagamento. | Evitar dupla contagem preservando receita, principal e custos financeiros. | `Codex Cloud` | Tarefa `PROMPT-FIX-SPECS-SALDO-INICIAL-CORTE-TEMPORAL.md` |

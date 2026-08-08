@@ -10,7 +10,7 @@
 | Título | Cartões de crédito e faturas |
 | Responsável | Equipe Planner Fin |
 | Data de criação | `2026-08-07` |
-| Última atualização | `2026-08-07` |
+| Última atualização | `2026-08-08` |
 | Tarefa relacionada | `PROMPT-SPEC-008-CARTOES-E-FATURAS.md` |
 | Documentos relacionados | `SPEC-002` a `SPEC-007`; `ADR-001` a `ADR-006`; documentos de produto, qualidade e processo |
 
@@ -146,18 +146,14 @@ soma(FinancialTransaction com status PAID e type EXPENSE)
 
 O pagamento nunca integra despesas. A parcela entra uma única vez, inclusive antes da quitação.
 
-Saldo realizado da `FinancialAccount`:
+Saldo realizado da `FinancialAccount` segue a fórmula canônica da SPEC-003. Para o termo de cartão em uma data civil `D >= openingBalanceDate`:
 
 ```text
-openingBalance
-+ FinancialTransaction PAID INCOME
-- FinancialTransaction PAID EXPENSE
-- FinancialTransfer COMPLETED de saída
-+ FinancialTransfer COMPLETED de entrada
-- CardInvoicePayment
+- Σ CardInvoicePayment.amount
+    quando openingBalanceDate < paymentDate <= D
 ```
 
-A compra não reduz saldo bancário antes do pagamento. O pagamento reduz exatamente uma vez o saldo da conta, na `paymentDate`. A obrigação do cartão é a soma das parcelas em faturas `OPEN` e `CLOSED` e exclui faturas `PAID`.
+A compra não reduz saldo bancário antes do pagamento. O pagamento reduz exatamente uma vez o saldo da conta, na `paymentDate`, sua única data efetiva de caixa; `dueDate`, competência, `createdAt` e `updatedAt` não podem substituí-la. Pagamento anterior ou igual ao corte permanece no histórico, mas não volta ao saldo; pagamento futuro só entra no saldo atual quando o dia chegar. O pagamento continua fora de despesa. A obrigação do cartão é a soma das parcelas em faturas `OPEN` e `CLOSED` e exclui faturas `PAID`.
 
 ### 9.9 Concorrência
 
@@ -600,6 +596,12 @@ Registrar eventos técnicos sanitizados de criação/edição/archive/restore de
 ### `CA-68 — Fluxo E2E sem duplicação`
 **Dado** usuário logado com conta/categoria **Quando** cria cartão, compra parcelada, fecha e paga **Então** vê parcelas/fatura, uma saída no saldo e despesa não duplicada, podendo sair com segurança.
 
+### `CA-69 — Pagamento antes, no corte e depois`
+**Dado** pagamentos de fatura com `paymentDate` anterior, igual e posterior ao corte **Quando** calcula `realizedBalance(D)` **Então** subtrai somente o posterior que também seja `<= D`, preserva todos no histórico e não cria despesa pelo pagamento.
+
+### `CA-70 — Pagamento futuro`
+**Dado** pagamento de fatura com `paymentDate` posterior a hoje **Quando** calcula o saldo atual **Então** não o subtrai até o dia civil efetivo, sem usar vencimento, competência ou timestamp técnico.
+
 ## 23. Testes obrigatórios
 
 | Nível | Cenários mínimos | Critérios relacionados | Evidência esperada |
@@ -610,6 +612,8 @@ Registrar eventos técnicos sanitizados de criação/edição/archive/restore de
 | Web | Vazio, cadastro, 1x/Nx, parcelas, faturas, close/pay, conta, archive/restore, loading, erro, API indisponível, redirect e responsividade | CA-63 a CA-67 | Testes de componentes/integração web e evidência visual sanitizada |
 | E2E | Login, cartão, compra parcelada, fatura, close, pay, saldo, despesa única e logout | CA-68 | Fluxo crítico automatizado aprovado com dados fictícios |
 | Aceitação manual | Clareza da competência, distribuição, estados, mensagem de pagamento, acessibilidade e viewport móvel/desktop | CA-14, CA-31, CA-36, CA-64 a CA-68 | Checklist e capturas sanitizadas; exigido na futura implementação |
+
+Testes futuros unitários e de serviço devem cobrir `paymentDate` antes, igual e depois do corte, hoje e futuro. A integração PostgreSQL verificará filtro por `paymentDate`, owner, precisão decimal e plano aplicável; web e E2E comprovarão saldo correto, despesa única pelas parcelas e pagamentos sempre visíveis.
 
 Dados de teste são inteiramente fictícios. Não usar PAN/CVV real. A futura implementação deverá executar lint, typecheck, unitários, integração, contrato, web/E2E e build conforme comandos então existentes. Nesta entrega somente documental, essas execuções de produto são não aplicáveis; verificações documentais e de escopo são obrigatórias.
 
@@ -689,7 +693,7 @@ Para esta entrega documental:
 
 - [x] SPEC criada com status `Aprovada` e somente no arquivo autorizado.
 - [x] Modelo conceitual, ciclo, centavos, estados, pagamento, efeitos financeiros, segurança, concorrência, persistência e web futuros definidos.
-- [x] Pelo menos 50 critérios Dado/Quando/Então definidos (68 cenários).
+- [x] Pelo menos 50 critérios Dado/Quando/Então definidos (70 cenários).
 - [x] Riscos e testes futuros em todos os níveis aplicáveis documentados.
 - [x] Nenhuma dependência, código, Prisma, migration, endpoint, tela ou CI alterado.
 - [x] Verificações documentais e revisão de escopo previstas para a entrega.
@@ -701,3 +705,4 @@ Para esta entrega documental:
 | Data | Alteração | Motivo | Autor | Aprovador, quando aplicável |
 |---|---|---|---|---|
 | `2026-08-07` | Criação da SPEC-008 com status Aprovada | Definir cartões e faturas antes da implementação | Equipe Planner Fin | Solicitante da tarefa |
+| `2026-08-08` | Definição de `paymentDate` e da janela do pagamento no saldo. | Evitar dupla contagem sem transformar pagamento em despesa. | `Codex Cloud` | Tarefa `PROMPT-FIX-SPECS-SALDO-INICIAL-CORTE-TEMPORAL.md` |
