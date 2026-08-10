@@ -519,6 +519,21 @@ export interface BudgetCategoryInput {
   limitAmount: string;
 }
 export interface BudgetTotals {
+  realizedExpense: string;
+  committedExpense: string;
+  remainingAgainstRealized: string;
+  remainingAgainstCommitted: string;
+  realizedPercent: string;
+  committedPercent: string;
+  unbudgetedRealizedExpense: string;
+  unbudgetedCommittedExpense: string;
+  uncategorizedDebtCostRealized: string;
+  uncategorizedDebtCostCommitted: string;
+}
+export interface PublicMonthlyBudgetCategory {
+  categoryId: string;
+  categoryName: string;
+  categoryArchived: boolean;
   limitAmount: string;
   realizedExpense: string;
   committedExpense: string;
@@ -527,28 +542,20 @@ export interface BudgetTotals {
   realizedPercent: string;
   committedPercent: string;
 }
-export interface PublicMonthlyBudgetCategory extends BudgetTotals {
-  categoryId: string;
-  categoryName: string;
-  categoryArchived: boolean;
-}
-export interface PublicMonthlyBudget extends BudgetTotals {
+export interface PublicMonthlyBudget {
   id: string;
   month: string;
   totalLimit: string;
   notes: string | null;
+  totals: BudgetTotals;
   categories: PublicMonthlyBudgetCategory[];
-  unbudgetedRealizedExpense: string;
-  unbudgetedCommittedExpense: string;
-  uncategorizedDebtCostRealized: string;
-  uncategorizedDebtCostCommitted: string;
   createdAt: string;
   updatedAt: string;
 }
 export interface CreateMonthlyBudgetRequest {
   month: string;
   totalLimit: string;
-  notes: string | null;
+  notes?: string | null;
   categories: BudgetCategoryInput[];
 }
 export interface UpdateMonthlyBudgetRequest {

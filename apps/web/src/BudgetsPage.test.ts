@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import BudgetsPage from './pages/BudgetsPage.vue';
 vi.mock('./auth', () => ({ authenticatedFetch: vi.fn() }));
 import { authenticatedFetch } from './auth';
@@ -9,24 +9,40 @@ const projected = {
   id: '00000000-0000-4000-8000-000000000010',
   month: '2026-08',
   totalLimit: '100.00',
-  limitAmount: '100.00',
   notes: null,
-  realizedExpense: '120.00',
-  committedExpense: '130.00',
-  remainingAgainstRealized: '-20.00',
-  remainingAgainstCommitted: '-30.00',
-  realizedPercent: '120.00',
-  committedPercent: '130.00',
+  totals: {
+    realizedExpense: '120.00',
+    committedExpense: '130.00',
+    remainingAgainstRealized: '-20.00',
+    remainingAgainstCommitted: '-30.00',
+    realizedPercent: '120.00',
+    committedPercent: '130.00',
+    unbudgetedRealizedExpense: '120.00',
+    unbudgetedCommittedExpense: '130.00',
+    uncategorizedDebtCostRealized: '0.00',
+    uncategorizedDebtCostCommitted: '0.00',
+  },
   categories: [],
-  unbudgetedRealizedExpense: '120.00',
-  unbudgetedCommittedExpense: '130.00',
-  uncategorizedDebtCostRealized: '0.00',
-  uncategorizedDebtCostCommitted: '0.00',
   createdAt: '',
   updatedAt: '',
 };
 describe('tela de orçamento mensal', () => {
   beforeEach(() => vi.mocked(authenticatedFetch).mockReset());
+  afterEach(() => {
+    vi.useRealTimers();
+    delete process.env.TZ;
+  });
+  it('usa o mês civil local quando o UTC já avançou', async () => {
+    process.env.TZ = 'America/Los_Angeles';
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-01T00:30:00.000Z'));
+    vi.mocked(authenticatedFetch).mockReturnValue(response({ error: {} }, 404));
+
+    mount(BudgetsPage);
+    await flushPromises();
+
+    expect(vi.mocked(authenticatedFetch).mock.calls[1]![0]).toBe('/budgets?month=2026-08');
+  });
   it('diferencia mês sem orçamento de falha de rede e permite criar sem categorias', async () => {
     vi.mocked(authenticatedFetch)
       .mockReturnValueOnce(response([]))
@@ -43,8 +59,11 @@ describe('tela de orçamento mensal', () => {
     await wrapper.get('form').trigger('submit');
     await flushPromises();
     expect(
-      JSON.parse(vi.mocked(authenticatedFetch).mock.calls.at(-1)![1]!.body as string).categories,
-    ).toEqual([]);
+      JSON.parse(vi.mocked(authenticatedFetch).mock.calls.at(-1)![1]!.body as string),
+    ).toMatchObject({
+      categories: [],
+      notes: null,
+    });
   });
   it('mostra valores negativos, percentual acima de 100 e campos explicativos vindos da API', async () => {
     vi.mocked(authenticatedFetch)
