@@ -28,6 +28,7 @@ model User {
   financialDebts        FinancialDebt[]
   debtFundings          DebtFunding[]
   debtPayments          DebtPayment[]
+  monthlyBudgets        MonthlyBudget[]
 }
 
 enum FinancialCategoryType {
@@ -61,9 +62,39 @@ model FinancialCategory {
   financialTransactions FinancialTransaction[]
   recurrenceRules       RecurrenceRule[]
   cardPurchases         CardPurchase[]
+  monthlyBudgetCategories MonthlyBudgetCategory[]
 
   @@unique([userId, type, normalizedName])
   @@index([userId])
+}
+
+model MonthlyBudget {
+  id         String                  @id @default(uuid()) @db.Uuid
+  userId     String                  @db.Uuid
+  month      String                  @db.Char(7)
+  totalLimit Decimal                 @db.Decimal(19, 2)
+  notes      String?                 @db.VarChar(2000)
+  createdAt  DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime                @updatedAt @db.Timestamptz(3)
+  user       User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  categories MonthlyBudgetCategory[]
+
+  @@unique([userId, month])
+  @@index([userId])
+}
+
+model MonthlyBudgetCategory {
+  id          String            @id @default(uuid()) @db.Uuid
+  budgetId    String            @db.Uuid
+  categoryId  String            @db.Uuid
+  limitAmount Decimal           @db.Decimal(19, 2)
+  createdAt   DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @db.Timestamptz(3)
+  budget      MonthlyBudget     @relation(fields: [budgetId], references: [id], onDelete: Restrict)
+  category    FinancialCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@unique([budgetId, categoryId])
+  @@index([categoryId])
 }
 
 enum FinancialAccountType {
