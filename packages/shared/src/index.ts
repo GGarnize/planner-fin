@@ -513,3 +513,57 @@ export interface PayDebtInstallmentResponse {
 }
 export type DebtDueFilter = 'overdue' | 'upcoming' | 'all';
 export type DebtArchivedFilter = 'false' | 'true' | 'all';
+
+export interface BudgetCategoryInput {
+  categoryId: string;
+  limitAmount: string;
+}
+export interface BudgetTotals {
+  limitAmount: string;
+  realizedExpense: string;
+  committedExpense: string;
+  remainingAgainstRealized: string;
+  remainingAgainstCommitted: string;
+  realizedPercent: string;
+  committedPercent: string;
+}
+export interface PublicMonthlyBudgetCategory extends BudgetTotals {
+  categoryId: string;
+  categoryName: string;
+  categoryArchived: boolean;
+}
+export interface PublicMonthlyBudget extends BudgetTotals {
+  id: string;
+  month: string;
+  totalLimit: string;
+  notes: string | null;
+  categories: PublicMonthlyBudgetCategory[];
+  unbudgetedRealizedExpense: string;
+  unbudgetedCommittedExpense: string;
+  uncategorizedDebtCostRealized: string;
+  uncategorizedDebtCostCommitted: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface CreateMonthlyBudgetRequest {
+  month: string;
+  totalLimit: string;
+  notes: string | null;
+  categories: BudgetCategoryInput[];
+}
+export interface UpdateMonthlyBudgetRequest {
+  totalLimit?: string;
+  notes?: string | null;
+  categories?: BudgetCategoryInput[];
+}
+export interface CopyMonthlyBudgetRequest {
+  targetMonth: string;
+}
+export type MonthlyBudgetErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'UNAUTHORIZED'
+  | 'NOT_FOUND'
+  | 'BUDGET_MONTH_CONFLICT'
+  | 'CATEGORY_TYPE_MISMATCH'
+  | 'RELATED_RESOURCE_ARCHIVED'
+  | 'INTERNAL_ERROR';
