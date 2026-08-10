@@ -11,10 +11,11 @@ import RecurrencesPage from './pages/RecurrencesPage.vue';
 import CardsPage from './pages/CardsPage.vue';
 import DebtsPage from './pages/DebtsPage.vue';
 import BudgetsPage from './pages/BudgetsPage.vue';
+import DashboardPage from './pages/DashboardPage.vue';
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', redirect: '/conta' },
+    { path: '/', redirect: '/dashboard' },
     { path: '/login', component: LoginPage, meta: { public: true } },
     { path: '/cadastro', component: RegisterPage, meta: { public: true } },
     { path: '/conta', component: AccountPage },
@@ -28,6 +29,7 @@ export const router = createRouter({
     { path: '/debts', component: DebtsPage },
     { path: '/debts/:id', component: DebtsPage },
     { path: '/budgets', component: BudgetsPage },
+    { path: '/dashboard', component: DashboardPage },
   ],
 });
 let restored = false;
@@ -38,5 +40,5 @@ router.beforeEach(async (to) => {
   }
   if (!to.meta.public && !authState.token)
     return { path: '/login', query: { redirect: to.fullPath } };
-  if (to.meta.public && authState.token) return '/conta';
+  if (to.meta.public && authState.token) return '/dashboard';
 });

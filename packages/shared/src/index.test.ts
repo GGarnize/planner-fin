@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   HEALTH_RESPONSE,
   type BudgetTotals,
+  type DashboardResponse,
   type PublicFinancialAccount,
   type PublicMonthlyBudget,
 } from './index';
@@ -64,5 +65,77 @@ describe('contrato público de conta financeira', () => {
   it('aceita saldo realizado decimal ou indisponível', () => {
     expect(account('123.45').realizedBalance).toBe('123.45');
     expect(account(null).realizedBalance).toBeNull();
+  });
+});
+
+describe('contrato público do dashboard', () => {
+  it('tipa o shape completo, nulável e sem campos internos', () => {
+    const dashboard: DashboardResponse = {
+      month: '2026-08',
+      generatedAt: '2026-08-10T12:00:00.000Z',
+      cashPosition: {
+        totalRealizedBalance: null,
+        availableAccountCount: 2,
+        unavailableAccountCount: 1,
+      },
+      monthlyFlow: {
+        incomeRealized: '1950.00',
+        incomePlanned: '3000.00',
+        expenseRealized: '705.00',
+        expenseCommitted: '1025.00',
+        realizedNet: '1245.00',
+        plannedNet: '1975.00',
+      },
+      budget: null,
+      upcomingTransactions: [
+        {
+          id: 't',
+          type: 'INCOME',
+          description: 'Receita',
+          plannedAmount: '1.00',
+          dueDate: '2026-08-10',
+          categoryName: null,
+          overdue: false,
+        },
+      ],
+      cardInvoices: [
+        {
+          invoiceId: 'i',
+          cardId: 'c',
+          cardName: 'Cartão',
+          referenceMonth: '2026-08',
+          status: 'CLOSED',
+          total: '1.00',
+          dueDate: '2026-08-10',
+          projectedOverdue: false,
+        },
+      ],
+      debtInstallments: [
+        {
+          debtId: 'd',
+          installmentId: 'p',
+          creditorName: 'Credor',
+          installmentNumber: 1,
+          dueDate: '2026-08-10',
+          totalAmount: '1.00',
+          projectedStatus: 'PENDING',
+          principalAmount: '1.00',
+          interestAmount: '0.00',
+          feeAmount: '0.00',
+        },
+      ],
+      expenseByCategory: {
+        categories: [{ categoryId: 'x', categoryName: 'Casa', amount: '1.00' }],
+        uncategorizedDebtCostRealized: '0.00',
+      },
+      counters: {
+        overdueTransactions: 0,
+        upcomingTransactions: 1,
+        unpaidCardInvoices: 1,
+        overdueDebtInstallments: 0,
+      },
+    };
+    expect(dashboard.cashPosition.totalRealizedBalance).toBeNull();
+    expect('userId' in dashboard).toBe(false);
   });
 });

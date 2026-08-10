@@ -21,7 +21,7 @@ async function submit() {
     const destination =
       typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
         ? route.query.redirect
-        : '/conta';
+        : '/dashboard';
     await router.push(destination);
   } catch (e) {
     password.value = '';

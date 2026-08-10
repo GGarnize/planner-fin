@@ -14,6 +14,7 @@ import { CardPurchasesModule } from './card-purchases/card-purchases.module';
 import { CardInvoicesModule } from './card-invoices/card-invoices.module';
 import { DebtsModule } from './debts/debts.module';
 import { BudgetsModule } from './budgets/budgets.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { BudgetsModule } from './budgets/budgets.module';
     CardInvoicesModule,
     DebtsModule,
     BudgetsModule,
+    DashboardModule,
   ],
   controllers: [HealthController],
 })
