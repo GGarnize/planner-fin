@@ -6,6 +6,7 @@ import {
   money,
   monthDateBounds,
   percent,
+  projectMonthlyExpenses,
   totals,
 } from './budget-finance';
 
@@ -35,5 +36,34 @@ describe('cálculos do orçamento mensal', () => {
   });
   it('arredonda somente o percentual final em HALF_UP', () => {
     expect(percent(new Prisma.Decimal('1.00'), new Prisma.Decimal('32.00'))).toBe('3.13');
+  });
+  it('projeta despesas mensais por uma única regra decimal canônica', () => {
+    const decimal = (value: string) => new Prisma.Decimal(value);
+    const result = projectMonthlyExpenses({
+      transactions: [
+        {
+          categoryId: 'c1',
+          categoryName: 'Casa',
+          status: 'PENDING',
+          plannedAmount: decimal('300.00'),
+          actualAmount: null,
+        },
+        {
+          categoryId: 'c1',
+          categoryName: 'Casa',
+          status: 'PAID',
+          plannedAmount: decimal('500.00'),
+          actualAmount: decimal('480.00'),
+        },
+      ],
+      installments: [{ categoryId: 'c2', categoryName: 'Compras', amount: decimal('200.00') }],
+      debtPayments: [{ interestAmount: decimal('20.00'), feeAmount: decimal('5.00') }],
+    });
+    expect(money(result.categoryValues.get('c1')!.realized)).toBe('480.00');
+    expect(money(result.categoryValues.get('c1')!.committed)).toBe('800.00');
+    expect(money(result.categorizedRealized)).toBe('680.00');
+    expect(money(result.debtCost)).toBe('25.00');
+    expect(money(result.realizedExpense)).toBe('705.00');
+    expect(money(result.committedExpense)).toBe('1025.00');
   });
 });
