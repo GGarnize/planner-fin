@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { DashboardResponse } from '@planner-fin/shared';
-import { totals } from '../budgets/budget-finance';
-import { monthDateBounds } from '../budgets/budget-finance';
+import { monthDateBounds, projectMonthlyExpenses, totals } from '../budgets/budget-finance';
 import { civilDate, civilString, currentCivilDate, installmentTotal } from '../debts/debt-finance';
 import { PrismaService } from '../prisma/prisma.service';
 import { addCivilDays, cashPosition, money, zero } from './dashboard-finance';
@@ -25,8 +24,9 @@ export class DashboardService {
     userId: string,
     month: string,
   ): Promise<DashboardResponse> {
-    const generatedAt = this.now().toISOString();
-    const today = currentCivilDate(this.now);
+    const now = this.now();
+    const generatedAt = now.toISOString();
+    const today = currentCivilDate(() => now);
     const todayDate = civilDate(today);
     const next7 = civilDate(addCivilDays(today, 7));
     const next30 = civilDate(addCivilDays(today, 30));
@@ -180,51 +180,37 @@ export class DashboardService {
     const monthly = transactions.filter((item) => item.dueDate >= from && item.dueDate < to);
     let incomeRealized = zero(),
       incomePlanned = zero();
-    const categoryValues = new Map<
-      string,
-      { name: string; realized: Prisma.Decimal; committed: Prisma.Decimal }
-    >();
-    const addCategory = (
-      id: string,
-      name: string,
-      realized: Prisma.Decimal,
-      committed: Prisma.Decimal,
-    ) => {
-      const current = categoryValues.get(id) ?? { name, realized: zero(), committed: zero() };
-      current.realized = current.realized.plus(realized);
-      current.committed = current.committed.plus(committed);
-      categoryValues.set(id, current);
-    };
     monthly.forEach((item) => {
       if (item.type === 'INCOME') {
         incomePlanned = incomePlanned.plus(item.plannedAmount);
         if (item.status === 'PAID') incomeRealized = incomeRealized.plus(item.actualAmount ?? 0);
-      } else
-        addCategory(
-          item.categoryId,
-          item.category.name,
-          item.status === 'PAID' ? (item.actualAmount ?? zero()) : zero(),
-          item.plannedAmount,
-        );
+      }
     });
-    installments.forEach((item) =>
-      addCategory(item.purchase.categoryId, item.purchase.category.name, item.amount, item.amount),
-    );
     const monthlyDebt = debtPayments.filter(
       (item) => item.paymentDate >= from && item.paymentDate < to,
     );
-    const debtCost = monthlyDebt.reduce(
-      (sum, item) => sum.plus(item.interestAmount).plus(item.feeAmount),
-      zero(),
-    );
-    let categorizedRealized = zero(),
-      categorizedCommitted = zero();
-    categoryValues.forEach((value) => {
-      categorizedRealized = categorizedRealized.plus(value.realized);
-      categorizedCommitted = categorizedCommitted.plus(value.committed);
+    const expenseProjection = projectMonthlyExpenses({
+      transactions: monthly
+        .filter((item) => item.type === 'EXPENSE')
+        .map((item) => ({
+          categoryId: item.categoryId,
+          categoryName: item.category.name,
+          status: item.status as 'PENDING' | 'PAID',
+          plannedAmount: item.plannedAmount,
+          actualAmount: item.actualAmount,
+        })),
+      installments: installments.map((item) => ({
+        categoryId: item.purchase.categoryId,
+        categoryName: item.purchase.category.name,
+        amount: item.amount,
+      })),
+      debtPayments: monthlyDebt.map((item) => ({
+        interestAmount: item.interestAmount,
+        feeAmount: item.feeAmount,
+      })),
     });
-    const expenseRealized = categorizedRealized.plus(debtCost);
-    const expenseCommitted = categorizedCommitted.plus(debtCost);
+    const expenseRealized = expenseProjection.realizedExpense;
+    const expenseCommitted = expenseProjection.committedExpense;
     const budgetTotals = budget
       ? totals(budget.totalLimit, expenseRealized, expenseCommitted)
       : null;
@@ -302,11 +288,11 @@ export class DashboardService {
         feeAmount: money(item.feeAmount),
       })),
       expenseByCategory: {
-        categories: [...categoryValues.entries()]
+        categories: [...expenseProjection.categoryValues.entries()]
           .filter(([, value]) => value.realized.greaterThan(0))
           .map(([categoryId, value]) => ({
             categoryId,
-            categoryName: value.name,
+            categoryName: value.categoryName,
             amount: money(value.realized),
           }))
           .sort(
@@ -315,7 +301,7 @@ export class DashboardService {
               a.categoryName.localeCompare(b.categoryName) ||
               a.categoryId.localeCompare(b.categoryId),
           ),
-        uncategorizedDebtCostRealized: money(debtCost),
+        uncategorizedDebtCostRealized: money(expenseProjection.debtCost),
       },
       counters: {
         overdueTransactions: eligibleTransactions.filter((item) => item.dueDate < todayDate).length,

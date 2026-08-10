@@ -8,7 +8,7 @@ import {
 import { Prisma } from '@prisma/client';
 import type { PublicMonthlyBudget } from '@planner-fin/shared';
 import { PrismaService } from '../prisma/prisma.service';
-import { money, monthDateBounds, totals } from './budget-finance';
+import { money, monthDateBounds, projectMonthlyExpenses, totals } from './budget-finance';
 import type { BudgetCategoryDto, CopyBudgetDto, CreateBudgetDto, UpdateBudgetDto } from './dto';
 
 type Tx = Prisma.TransactionClient;
@@ -240,38 +240,37 @@ export class BudgetsService {
       }),
     ]);
     const zero = new Prisma.Decimal(0);
-    const values = new Map<string, { realized: Prisma.Decimal; committed: Prisma.Decimal }>();
-    const add = (categoryId: string, realized: Prisma.Decimal, committed: Prisma.Decimal) => {
-      const current = values.get(categoryId) ?? { realized: zero, committed: zero };
-      values.set(categoryId, {
-        realized: current.realized.add(realized),
-        committed: current.committed.add(committed),
-      });
-    };
-    transactions.forEach((item) =>
-      add(
-        item.categoryId,
-        item.status === 'PAID' ? (item._sum.actualAmount ?? zero) : zero,
-        item._sum.plannedAmount ?? zero,
-      ),
-    );
-    installments.forEach((item) => add(item.purchase.categoryId, item.amount, item.amount));
-    const debtCost = (debt._sum.interestAmount ?? zero).add(debt._sum.feeAmount ?? zero);
+    const projection = projectMonthlyExpenses({
+      transactions: transactions.map((item) => ({
+        categoryId: item.categoryId,
+        categoryName: '',
+        status: item.status as 'PENDING' | 'PAID',
+        plannedAmount: item._sum.plannedAmount ?? zero,
+        actualAmount: item._sum.actualAmount,
+      })),
+      installments: installments.map((item) => ({
+        categoryId: item.purchase.categoryId,
+        categoryName: '',
+        amount: item.amount,
+      })),
+      debtPayments: [
+        {
+          interestAmount: debt._sum.interestAmount ?? zero,
+          feeAmount: debt._sum.feeAmount ?? zero,
+        },
+      ],
+    });
     const budgetedIds = new Set(budget.categories.map((item) => item.categoryId));
-    let categorizedRealized = zero,
-      categorizedCommitted = zero,
-      unbudgetedRealized = zero,
+    let unbudgetedRealized = zero,
       unbudgetedCommitted = zero;
-    values.forEach((value, categoryId) => {
-      categorizedRealized = categorizedRealized.add(value.realized);
-      categorizedCommitted = categorizedCommitted.add(value.committed);
+    projection.categoryValues.forEach((value, categoryId) => {
       if (!budgetedIds.has(categoryId)) {
         unbudgetedRealized = unbudgetedRealized.add(value.realized);
         unbudgetedCommitted = unbudgetedCommitted.add(value.committed);
       }
     });
-    const realized = categorizedRealized.add(debtCost);
-    const committed = categorizedCommitted.add(debtCost);
+    const realized = projection.realizedExpense;
+    const committed = projection.committedExpense;
     return {
       id: budget.id,
       month: budget.month,
@@ -281,12 +280,15 @@ export class BudgetsService {
         ...totals(budget.totalLimit, realized, committed),
         unbudgetedRealizedExpense: money(unbudgetedRealized),
         unbudgetedCommittedExpense: money(unbudgetedCommitted),
-        uncategorizedDebtCostRealized: money(debtCost),
-        uncategorizedDebtCostCommitted: money(debtCost),
+        uncategorizedDebtCostRealized: money(projection.debtCost),
+        uncategorizedDebtCostCommitted: money(projection.debtCost),
       },
       categories: budget.categories
         .map((item) => {
-          const value = values.get(item.categoryId) ?? { realized: zero, committed: zero };
+          const value = projection.categoryValues.get(item.categoryId) ?? {
+            realized: zero,
+            committed: zero,
+          };
           return {
             categoryId: item.categoryId,
             categoryName: item.category.name,
