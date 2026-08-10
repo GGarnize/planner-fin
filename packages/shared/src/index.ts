@@ -574,3 +574,85 @@ export type MonthlyBudgetErrorCode =
   | 'CATEGORY_TYPE_MISMATCH'
   | 'RELATED_RESOURCE_ARCHIVED'
   | 'INTERNAL_ERROR';
+
+export interface DashboardCashPosition {
+  totalRealizedBalance: string | null;
+  availableAccountCount: number;
+  unavailableAccountCount: number;
+}
+export interface DashboardMonthlyFlow {
+  incomeRealized: string;
+  incomePlanned: string;
+  expenseRealized: string;
+  expenseCommitted: string;
+  realizedNet: string;
+  plannedNet: string;
+}
+export interface DashboardBudgetSummary {
+  id: string;
+  totalLimit: string;
+  realizedExpense: string;
+  committedExpense: string;
+  remainingAgainstRealized: string;
+  remainingAgainstCommitted: string;
+  realizedPercent: string;
+  committedPercent: string;
+  exceeded: boolean;
+}
+export interface DashboardTransactionItem {
+  id: string;
+  type: 'INCOME' | 'EXPENSE';
+  description: string;
+  plannedAmount: string;
+  dueDate: string;
+  categoryName: string | null;
+  overdue: boolean;
+}
+export interface DashboardCardInvoiceItem {
+  invoiceId: string;
+  cardId: string;
+  cardName: string;
+  referenceMonth: string;
+  status: 'OPEN' | 'CLOSED';
+  total: string;
+  dueDate: string;
+  projectedOverdue: boolean;
+}
+export interface DashboardDebtInstallmentItem {
+  debtId: string;
+  installmentId: string;
+  creditorName: string;
+  installmentNumber: number;
+  dueDate: string;
+  totalAmount: string;
+  projectedStatus: 'PENDING' | 'OVERDUE';
+  principalAmount: string;
+  interestAmount: string;
+  feeAmount: string;
+}
+export interface DashboardCategoryExpense {
+  categoryId: string;
+  categoryName: string;
+  amount: string;
+}
+export interface DashboardCounters {
+  overdueTransactions: number;
+  upcomingTransactions: number;
+  unpaidCardInvoices: number;
+  overdueDebtInstallments: number;
+}
+export interface DashboardResponse {
+  month: string;
+  generatedAt: string;
+  cashPosition: DashboardCashPosition;
+  monthlyFlow: DashboardMonthlyFlow;
+  budget: DashboardBudgetSummary | null;
+  upcomingTransactions: DashboardTransactionItem[];
+  cardInvoices: DashboardCardInvoiceItem[];
+  debtInstallments: DashboardDebtInstallmentItem[];
+  expenseByCategory: {
+    categories: DashboardCategoryExpense[];
+    uncategorizedDebtCostRealized: string;
+  };
+  counters: DashboardCounters;
+}
