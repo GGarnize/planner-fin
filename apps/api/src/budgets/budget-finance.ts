@@ -27,7 +27,6 @@ export const percent = (spent: Prisma.Decimal, limit: Prisma.Decimal): string =>
   spent.mul(100).div(limit).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP).toFixed(2);
 export function totals(limit: Prisma.Decimal, realized: Prisma.Decimal, committed: Prisma.Decimal) {
   return {
-    limitAmount: money(limit),
     realizedExpense: money(realized),
     committedExpense: money(committed),
     remainingAgainstRealized: money(limit.sub(realized)),

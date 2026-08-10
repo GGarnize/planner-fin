@@ -12,6 +12,13 @@ import { money, monthDateBounds, totals } from './budget-finance';
 import type { BudgetCategoryDto, CopyBudgetDto, CreateBudgetDto, UpdateBudgetDto } from './dto';
 
 type Tx = Prisma.TransactionClient;
+export const normalizeBudgetNotes = (
+  notes: string | null | undefined,
+): string | null | undefined => {
+  if (notes === undefined) return undefined;
+  if (notes === null) return null;
+  return notes.trim() || null;
+};
 const missing = () =>
   new NotFoundException({ code: 'NOT_FOUND', message: 'Orçamento não encontrado.' });
 const invalid = (message: string) => new BadRequestException({ code: 'VALIDATION_ERROR', message });
@@ -66,9 +73,8 @@ export class BudgetsService {
     throw error;
   }
   async create(userId: string, dto: CreateBudgetDto): Promise<PublicMonthlyBudget> {
-    if (!Object.prototype.hasOwnProperty.call(dto, 'notes'))
-      throw invalid('Informe notes, mesmo que null.');
     const totalLimit = this.decimal(dto.totalLimit, 'O limite total');
+    const notes = normalizeBudgetNotes(dto.notes) ?? null;
     try {
       return await this.prisma.$transaction(
         async (tx) => {
@@ -78,7 +84,7 @@ export class BudgetsService {
               userId,
               month: dto.month,
               totalLimit,
-              notes: dto.notes,
+              notes,
               categories: {
                 create: dto.categories.map((item) => ({
                   categoryId: item.categoryId,
@@ -144,9 +150,9 @@ export class BudgetsService {
           dto.categories !== undefined &&
           (dto.categories.length !== existing.size ||
             dto.categories.some((item) => existing.get(item.categoryId) !== item.limitAmount));
+        const notes = normalizeBudgetNotes(dto.notes);
         const scalarChanged =
-          !totalLimit.equals(row.totalLimit) ||
-          (dto.notes !== undefined && dto.notes !== row.notes);
+          !totalLimit.equals(row.totalLimit) || (notes !== undefined && notes !== row.notes);
         if (categoriesChanged) {
           await tx.monthlyBudgetCategory.deleteMany({ where: { budgetId: row.id } });
           if (dto.categories!.length)
@@ -161,7 +167,7 @@ export class BudgetsService {
         if (scalarChanged)
           await tx.monthlyBudget.update({
             where: { id: row.id },
-            data: { totalLimit, ...(dto.notes === undefined ? {} : { notes: dto.notes }) },
+            data: { totalLimit, ...(notes === undefined ? {} : { notes }) },
           });
         const fresh = await tx.monthlyBudget.findUniqueOrThrow({
           where: { id: row.id },
@@ -271,7 +277,13 @@ export class BudgetsService {
       month: budget.month,
       totalLimit: money(budget.totalLimit),
       notes: budget.notes,
-      ...totals(budget.totalLimit, realized, committed),
+      totals: {
+        ...totals(budget.totalLimit, realized, committed),
+        unbudgetedRealizedExpense: money(unbudgetedRealized),
+        unbudgetedCommittedExpense: money(unbudgetedCommitted),
+        uncategorizedDebtCostRealized: money(debtCost),
+        uncategorizedDebtCostCommitted: money(debtCost),
+      },
       categories: budget.categories
         .map((item) => {
           const value = values.get(item.categoryId) ?? { realized: zero, committed: zero };
@@ -279,6 +291,7 @@ export class BudgetsService {
             categoryId: item.categoryId,
             categoryName: item.category.name,
             categoryArchived: Boolean(item.category.archivedAt),
+            limitAmount: money(item.limitAmount),
             ...totals(item.limitAmount, value.realized, value.committed),
           };
         })
@@ -287,10 +300,6 @@ export class BudgetsService {
             a.categoryName.localeCompare(b.categoryName) ||
             a.categoryId.localeCompare(b.categoryId),
         ),
-      unbudgetedRealizedExpense: money(unbudgetedRealized),
-      unbudgetedCommittedExpense: money(unbudgetedCommitted),
-      uncategorizedDebtCostRealized: money(debtCost),
-      uncategorizedDebtCostCommitted: money(debtCost),
       createdAt: budget.createdAt.toISOString(),
       updatedAt: budget.updatedAt.toISOString(),
     };

@@ -4,7 +4,10 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import type { PublicFinancialCategory, PublicMonthlyBudget } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 
-const civilMonth = () => new Date().toISOString().slice(0, 7);
+const civilMonth = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+};
 const month = ref(civilMonth());
 const budget = ref<PublicMonthlyBudget | null>(null);
 const categories = ref<PublicFinancialCategory[]>([]);
@@ -215,23 +218,30 @@ onMounted(async () => {
     <section v-if="budget && !editing" class="panel">
       <div class="actions"><button type="button" @click="startEdit">Editar</button></div>
       <h2>Totais</h2>
-      <div class="totals" :class="{ exceeded: budget.remainingAgainstCommitted.startsWith('-') }">
+      <div
+        class="totals"
+        :class="{ exceeded: budget.totals.remainingAgainstCommitted.startsWith('-') }"
+      >
         <span
           >Limite <b>{{ money(budget.totalLimit) }}</b></span
         >
         <span
           >Realizado
-          <b>{{ money(budget.realizedExpense) }} ({{ budget.realizedPercent }}%)</b></span
+          <b
+            >{{ money(budget.totals.realizedExpense) }} ({{ budget.totals.realizedPercent }}%)</b
+          ></span
         >
         <span
           >Comprometido
-          <b>{{ money(budget.committedExpense) }} ({{ budget.committedPercent }}%)</b></span
+          <b
+            >{{ money(budget.totals.committedExpense) }} ({{ budget.totals.committedPercent }}%)</b
+          ></span
         >
         <span
-          >Restante realizado <b>{{ money(budget.remainingAgainstRealized) }}</b></span
+          >Restante realizado <b>{{ money(budget.totals.remainingAgainstRealized) }}</b></span
         >
         <span
-          >Restante comprometido <b>{{ money(budget.remainingAgainstCommitted) }}</b></span
+          >Restante comprometido <b>{{ money(budget.totals.remainingAgainstCommitted) }}</b></span
         >
       </div>
       <h2>Categorias</h2>
@@ -253,13 +263,13 @@ onMounted(async () => {
       </article>
       <h2>Outras despesas</h2>
       <p>
-        Sem limite específico — Realizado: {{ money(budget.unbudgetedRealizedExpense) }} ·
-        Comprometido: {{ money(budget.unbudgetedCommittedExpense) }}
+        Sem limite específico — Realizado: {{ money(budget.totals.unbudgetedRealizedExpense) }} ·
+        Comprometido: {{ money(budget.totals.unbudgetedCommittedExpense) }}
       </p>
       <p>
         Custos de dívida não categorizados — Realizado:
-        {{ money(budget.uncategorizedDebtCostRealized) }} · Comprometido:
-        {{ money(budget.uncategorizedDebtCostCommitted) }}
+        {{ money(budget.totals.uncategorizedDebtCostRealized) }} · Comprometido:
+        {{ money(budget.totals.uncategorizedDebtCostCommitted) }}
       </p>
       <form class="copy" @submit.prevent="copy">
         <label>Copiar para <input v-model="copyMonth" type="month" required /></label

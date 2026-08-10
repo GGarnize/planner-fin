@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
-import { BudgetsService } from './budgets.service';
+import { BudgetsService, normalizeBudgetNotes } from './budgets.service';
 
 const decimal = (value: string) => new Prisma.Decimal(value);
 const category = (id: string, name: string) => ({
@@ -16,6 +16,16 @@ const category = (id: string, name: string) => ({
   updatedAt: new Date(),
 });
 describe('projeção do orçamento', () => {
+  it.each([
+    ['omitida', undefined, undefined],
+    ['nula', null, null],
+    ['vazia', '', null],
+    ['somente espaços', '   ', null],
+    ['texto', '  planejamento  ', 'planejamento'],
+  ])('normaliza nota %s', (_case, input, expected) => {
+    expect(normalizeBudgetNotes(input)).toBe(expected);
+  });
+
   it('consolida apenas as fontes aprovadas, separa sem limite e dívida, sem N+1', async () => {
     const mercado = '00000000-0000-4000-8000-000000000001';
     const lazer = '00000000-0000-4000-8000-000000000002';
@@ -79,7 +89,7 @@ describe('projeção do orçamento', () => {
       $transaction: vi.fn(async (callback: (client: unknown) => unknown) => callback(tx)),
     };
     const result = await new BudgetsService(prisma as never).getByMonth('user', '2026-08');
-    expect(result).toMatchObject({
+    expect(result.totals).toEqual({
       realizedExpense: '292.00',
       committedExpense: '392.00',
       unbudgetedRealizedExpense: '85.00',
@@ -91,9 +101,12 @@ describe('projeção do orçamento', () => {
       realizedPercent: '29.20',
       committedPercent: '39.20',
     });
+    expect(result).not.toHaveProperty('realizedExpense');
+    expect(result).not.toHaveProperty('unbudgetedRealizedExpense');
     expect(result.categories).toEqual([
       expect.objectContaining({
         categoryName: 'Lazer',
+        limitAmount: '200.00',
         realizedExpense: '120.00',
         committedExpense: '120.00',
       }),

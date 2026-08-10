@@ -19,7 +19,7 @@ export class BudgetCategoryDto {
 export class CreateBudgetDto {
   @IsString() @Matches(MONTH_PATTERN) month!: string;
   @IsString() @Matches(MONEY) totalLimit!: string;
-  @IsDefined() @IsOptional() @IsString() @MaxLength(2000) notes!: string | null;
+  @IsOptional() @IsString() @MaxLength(2000) notes?: string | null;
   @IsDefined()
   @IsArray()
   @ValidateNested({ each: true })
