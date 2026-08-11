@@ -13,12 +13,15 @@ const items = ref<PublicTransactionTemplate[]>([]),
   categories = ref<PublicFinancialCategory[]>([]),
   includeArchived = ref(false),
   showForm = ref(false),
+  showDiscardConfirm = ref(false),
+  formDirty = ref(false),
   editing = ref<PublicTransactionTemplate | null>(null),
   loading = ref(false),
   error = ref(''),
   confirming = ref<PublicTransactionTemplate | null>(null);
 const formDialog = ref<HTMLElement | null>(null),
-  archiveDialog = ref<HTMLElement | null>(null);
+  archiveDialog = ref<HTMLElement | null>(null),
+  discardDialog = ref<HTMLElement | null>(null);
 let lastTrigger: HTMLElement | null = null;
 const form = reactive({
   name: '',
@@ -84,13 +87,30 @@ async function open(item?: PublicTransactionTemplate, event?: Event) {
         },
   );
   error.value = '';
+  formDirty.value = false;
   showForm.value = true;
   await nextTick();
   formDialog.value?.querySelector<HTMLElement>('input, select, button')?.focus();
 }
 function closeForm() {
   showForm.value = false;
+  formDirty.value = false;
   void nextTick(() => lastTrigger?.focus());
+}
+function requestCloseForm() {
+  if (!formDirty.value) {
+    closeForm();
+    return;
+  }
+  showDiscardConfirm.value = true;
+}
+function confirmDiscard() {
+  showDiscardConfirm.value = false;
+  closeForm();
+}
+function cancelDiscard() {
+  showDiscardConfirm.value = false;
+  void nextTick(() => formDialog.value?.querySelector<HTMLElement>('input, select, button')?.focus());
 }
 async function save() {
   error.value = '';
@@ -143,13 +163,15 @@ function requestArchive(item: PublicTransactionTemplate, event: Event) {
 }
 function closeTopDialog() {
   if (confirming.value) cancelArchive();
-  else if (showForm.value) closeForm();
+  else if (showDiscardConfirm.value) cancelDiscard();
+  else if (showForm.value) requestCloseForm();
   else return false;
   return true;
 }
 function onKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return;
   if (confirming.value) cancelArchive();
+  else if (showDiscardConfirm.value) cancelDiscard();
   else if (!showForm.value) return;
   // O formulário não é descartado por Escape: o cancelamento explícito evita perda acidental.
   event.preventDefault();
@@ -202,6 +224,11 @@ watch(confirming, async (value) => {
   if (!value) return;
   await nextTick();
   archiveDialog.value?.querySelector<HTMLElement>('button')?.focus();
+});
+watch(showDiscardConfirm, async (value) => {
+  if (!value) return;
+  await nextTick();
+  discardDialog.value?.querySelector<HTMLElement>('button')?.focus();
 });
 </script>
 <template>
@@ -260,6 +287,7 @@ watch(confirming, async (value) => {
         aria-modal="true"
         aria-labelledby="template-form-title"
         @submit.prevent="save"
+        @input="formDirty = true"
       >
         <h2 id="template-form-title">{{ editing ? 'Editar' : 'Novo' }} modelo</h2>
         <p v-if="error" role="alert">{{ error }}</p>
@@ -292,7 +320,7 @@ watch(confirming, async (value) => {
             max="31" /></label
         ><label>Notas (opcional)<textarea v-model="form.notes" maxlength="2000"></textarea></label>
         <div class="actions">
-          <button type="button" class="secondary" @click="closeForm">Cancelar</button
+          <button type="button" class="secondary" @click="requestCloseForm">Cancelar</button
           ><button :disabled="loading">{{ loading ? 'Salvando…' : 'Salvar' }}</button>
         </div>
       </form>
@@ -310,6 +338,22 @@ watch(confirming, async (value) => {
         <div class="actions">
           <button class="secondary" @click="cancelArchive">Cancelar</button
           ><button class="danger" @click="archive">Arquivar</button>
+        </div>
+      </section>
+    </div>
+    <div v-if="showDiscardConfirm" class="backdrop">
+      <section
+        ref="discardDialog"
+        class="confirm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="discard-template-dialog-title"
+      >
+        <h2 id="discard-template-dialog-title">Descartar rascunho?</h2>
+        <p>As alterações não salvas do modelo serão perdidas.</p>
+        <div class="actions">
+          <button class="secondary" @click="cancelDiscard">Cancelar</button
+          ><button class="danger" @click="confirmDiscard">Descartar</button>
         </div>
       </section>
     </div>
