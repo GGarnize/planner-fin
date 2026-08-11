@@ -10,7 +10,7 @@ import type {
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 import { safeApiErrorMessage } from '../api-error';
-import { normalizeMoney, templateDefaults } from '../transaction-template';
+import { filterActiveTemplates, normalizeMoney, templateDefaults } from '../transaction-template';
 
 const route = useRoute(),
   router = useRouter();
@@ -47,14 +47,10 @@ const form = reactive({
 const compatibleCategories = computed(() =>
   categories.value.filter((c) => !c.archivedAt && c.type === form.type),
 );
-const activeTemplates = computed(() => templates.value.filter((template) => !template.archivedAt));
-const filteredTemplates = computed(() => {
-  const query = templateSearch.value.trim().toLocaleLowerCase('pt-BR');
-  if (!query) return activeTemplates.value;
-  return activeTemplates.value.filter((template) =>
-    `${template.name} ${template.description}`.toLocaleLowerCase('pt-BR').includes(query),
-  );
-});
+const activeTemplates = computed(() => filterActiveTemplates(templates.value, ''));
+const filteredTemplates = computed(() =>
+  filterActiveTemplates(templates.value, templateSearch.value),
+);
 async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>[1]): Promise<T> {
   const response = await authenticatedFetch(path, init);
   const body = await response.json().catch(() => ({}));
