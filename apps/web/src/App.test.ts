@@ -7,7 +7,7 @@ describe('App', () =>
   it('renderiza login acessível', async () => {
     const router = createRouter({
       history: createMemoryHistory(),
-      routes: [{ path: '/', component: LoginPage }],
+      routes: [{ path: '/', component: LoginPage, meta: { public: true } }],
     });
     await router.push('/');
     await router.isReady();

@@ -12,6 +12,7 @@ import CardsPage from './pages/CardsPage.vue';
 import DebtsPage from './pages/DebtsPage.vue';
 import BudgetsPage from './pages/BudgetsPage.vue';
 import DashboardPage from './pages/DashboardPage.vue';
+import MorePage from './pages/MorePage.vue';
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -30,6 +31,7 @@ export const router = createRouter({
     { path: '/debts/:id', component: DebtsPage },
     { path: '/budgets', component: BudgetsPage },
     { path: '/dashboard', component: DashboardPage },
+    { path: '/mais', component: MorePage },
   ],
 });
 let restored = false;

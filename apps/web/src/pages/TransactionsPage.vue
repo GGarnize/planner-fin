@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, inject, onMounted, reactive, ref, watch } from 'vue';
+import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded } from 'vue-router';
 import type {
   FinancialTransactionStatus,
   FinancialTransactionType,
@@ -8,6 +9,8 @@ import type {
   PublicFinancialTransaction,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+const route = inject(routeLocationKey, { query: {} } as RouteLocationNormalizedLoaded);
+const router = inject(routerKey, null);
 type Page = {
   data: PublicFinancialTransaction[];
   page: { limit: number; nextCursor: string | null };
@@ -114,6 +117,10 @@ function openCreate(type: FinancialTransactionType = 'EXPENSE') {
     paidAt: '',
   });
   showForm.value = true;
+}
+function openCreateFromRoute() {
+  const type = route.query.create;
+  if (type === 'INCOME' || type === 'EXPENSE') openCreate(type);
 }
 function openEdit(item: PublicFinancialTransaction) {
   editing.value = item;
@@ -246,7 +253,13 @@ function clearFilters() {
 }
 onMounted(() => {
   void Promise.all([load(), loadRelations()]);
+  openCreateFromRoute();
 });
+watch(() => route.query.create, openCreateFromRoute);
+function closeCreate() {
+  showForm.value = false;
+  if (route.query.create) void router?.replace({ path: '/transactions' });
+}
 </script>
 <template>
   <main class="transactions-page">
@@ -389,7 +402,7 @@ onMounted(() => {
           Reabra primeiro para alterar conta, categoria, natureza, previsto ou vencimento.
         </p>
         <div class="actions">
-          <button type="button" class="secondary" @click="showForm = false">Cancelar</button
+          <button type="button" class="secondary" @click="closeCreate">Cancelar</button
           ><button :disabled="loading">Salvar</button>
         </div>
       </form>

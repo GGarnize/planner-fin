@@ -46,6 +46,13 @@ describe('DashboardPage', () => {
     expect(wrapper.text()).not.toContain('R$ 1.500,00');
     expect(wrapper.text()).toContain('Resultado planejado/comprometido');
     expect(wrapper.findAll('.actions a')).toHaveLength(5);
+    expect(wrapper.get('.quick-actions a[href="/transfers"]').text()).toBe('Transferir');
+    expect(wrapper.get('.quick-actions .primary-action').text()).toBe('+ Novo lançamento');
+    expect(
+      wrapper
+        .find('.position-panel')
+        .element.compareDocumentPosition(wrapper.find('.summary-panel').element),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
   it('permite tentar novamente após erro unitário', async () => {
     vi.mocked(authenticatedFetch)
