@@ -41,7 +41,7 @@ describe('AuthenticatedShell', () => {
     expect(wrapper.get('[role=dialog]').text()).toContain('Receita');
     await wrapper.findAll('[role=dialog] div button')[1]!.trigger('click');
     await flushPromises();
-    expect(router.currentRoute.value.fullPath).toBe('/transactions?create=EXPENSE');
+    expect(router.currentRoute.value.fullPath).toBe('/transactions/new?type=EXPENSE');
   });
 
   it('fecha a escolha global por Escape e pelo Back Android antes de navegar', async () => {
