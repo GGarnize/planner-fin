@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+/* global Event, HTMLButtonElement, HTMLElement, KeyboardEvent, window */
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import type {
   PublicFinancialAccount,
   PublicFinancialCategory,
   PublicRecurrence,
+  PublicTransactionTemplate,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import { safeApiErrorMessage } from '../api-error';
+import { filterActiveTemplates, normalizeMoney } from '../transaction-template';
 const items = ref<PublicRecurrence[]>([]),
   accounts = ref<PublicFinancialAccount[]>([]),
   categories = ref<PublicFinancialCategory[]>([]),
@@ -13,6 +17,19 @@ const items = ref<PublicRecurrence[]>([]),
   saving = ref(false),
   error = ref(''),
   editing = ref<PublicRecurrence | null>(null);
+const templates = ref<PublicTransactionTemplate[]>([]),
+  templateError = ref(''),
+  templateWarning = ref(''),
+  selectedTemplate = ref<PublicTransactionTemplate | null>(null),
+  pendingTemplate = ref<PublicTransactionTemplate | null>(null),
+  templateSearch = ref(''),
+  showTemplates = ref(false),
+  showConfirm = ref(false),
+  dirty = ref(false),
+  calendarDirty = ref(false);
+const templateTrigger = ref<HTMLButtonElement | null>(null),
+  templateDialog = ref<HTMLElement | null>(null),
+  confirmDialog = ref<HTMLElement | null>(null);
 const form = reactive({
   kind: 'TRANSACTION',
   transactionType: 'EXPENSE',
@@ -34,6 +51,10 @@ const activeAccounts = computed(() => accounts.value.filter((x) => !x.archivedAt
 const activeCategories = computed(() =>
   categories.value.filter((x) => !x.archivedAt && x.type === form.transactionType),
 );
+const activeTemplates = computed(() => filterActiveTemplates(templates.value, ''));
+const filteredTemplates = computed(() =>
+  filterActiveTemplates(templates.value, templateSearch.value),
+);
 async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>[1]) {
   let response;
   try {
@@ -42,7 +63,7 @@ async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>
     throw new Error('API indisponível. Tente novamente.');
   }
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error?.message || 'Não foi possível concluir.');
+  if (!response.ok) throw new Error(safeApiErrorMessage(body, 'Não foi possível concluir.'));
   return body as T;
 }
 async function load() {
@@ -60,13 +81,24 @@ async function load() {
     loading.value = false;
   }
 }
+async function loadTemplates() {
+  templateError.value = '';
+  try {
+    templates.value = await api<PublicTransactionTemplate[]>('/transaction-templates');
+  } catch {
+    templates.value = [];
+    templateError.value =
+      'Não foi possível carregar os modelos. Você ainda pode preencher a recorrência manualmente.';
+  }
+}
 function payload() {
+  const plannedAmount = normalizeMoney(form.plannedAmount);
   const base = {
     frequency: form.frequency,
     startDate: form.startDate,
     endDate: form.endDate || null,
-    plannedAmount: form.plannedAmount,
-    description: form.description,
+    plannedAmount,
+    description: form.description.trim(),
     notes: form.notes || null,
   };
   const calendar =
@@ -86,6 +118,10 @@ function payload() {
   return { ...base, ...calendar, ...template, ...(editing.value ? {} : { kind: form.kind }) };
 }
 async function save() {
+  if (!normalizeMoney(form.plannedAmount)) {
+    error.value = 'Informe um valor planejado válido.';
+    return;
+  }
   saving.value = true;
   error.value = '';
   try {
@@ -105,6 +141,75 @@ async function save() {
 function edit(item: PublicRecurrence) {
   editing.value = item;
   Object.assign(form, item, { endDate: item.endDate ?? '', notes: item.notes ?? '' });
+  selectedTemplate.value = null;
+  templateWarning.value = '';
+  dirty.value = false;
+  calendarDirty.value = true;
+}
+async function openTemplates() {
+  templateSearch.value = '';
+  showTemplates.value = true;
+  await nextTick();
+  templateDialog.value?.querySelector<HTMLElement>('input, button')?.focus();
+}
+function closeTemplates() {
+  showTemplates.value = false;
+  void nextTick(() => templateTrigger.value?.focus());
+}
+function applyTemplate(template: PublicTransactionTemplate) {
+  form.transactionType = template.type;
+  form.categoryId = template.categoryAvailable ? template.categoryId : '';
+  form.accountId = template.defaultAccountAvailable ? (template.defaultAccountId ?? '') : '';
+  form.description = template.description;
+  form.plannedAmount = template.plannedAmount;
+  form.notes = template.notes ?? '';
+  if (template.dueDay && !calendarDirty.value) {
+    form.frequency = 'MONTHLY';
+    form.dayOfMonth = template.dueDay;
+  }
+  selectedTemplate.value = template;
+  templateWarning.value = '';
+  if (!template.categoryAvailable)
+    templateWarning.value +=
+      'A categoria padrão está indisponível. Escolha uma categoria ativa compatível. ';
+  if (template.defaultAccountId && !template.defaultAccountAvailable)
+    templateWarning.value += 'A conta padrão está indisponível. Escolha uma conta ativa.';
+  dirty.value = false;
+  showConfirm.value = false;
+  pendingTemplate.value = null;
+  closeTemplates();
+}
+function chooseTemplate(template: PublicTransactionTemplate) {
+  if (dirty.value || selectedTemplate.value) {
+    pendingTemplate.value = template;
+    showConfirm.value = true;
+  } else applyTemplate(template);
+}
+function cancelTemplate() {
+  pendingTemplate.value = null;
+  showConfirm.value = false;
+  void nextTick(() => templateDialog.value?.querySelector<HTMLElement>('input, button')?.focus());
+}
+function confirmTemplate() {
+  if (pendingTemplate.value) applyTemplate(pendingTemplate.value);
+}
+function closeTopDialog() {
+  if (showConfirm.value) cancelTemplate();
+  else if (showTemplates.value) closeTemplates();
+  else return false;
+  return true;
+}
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && closeTopDialog()) event.preventDefault();
+}
+function onAndroidBack(event: Event) {
+  if (closeTopDialog()) event.preventDefault();
+}
+function removeTemplate() {
+  selectedTemplate.value = null;
+}
+function markCalendarDirty() {
+  calendarDirty.value = true;
 }
 async function action(item: PublicRecurrence, name: 'pause' | 'resume' | 'archive' | 'generate') {
   if (name === 'archive' && !globalThis.confirm('Arquivar esta recorrência?')) return;
@@ -115,9 +220,32 @@ async function action(item: PublicRecurrence, name: 'pause' | 'resume' | 'archiv
     error.value = e instanceof Error ? e.message : 'Falha na operação.';
   }
 }
-const money = (v: string) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(v));
-onMounted(load);
+function money(value: string) {
+  const [integer = '0', cents = '00'] = value.split('.');
+  return `R$ ${integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${cents.padEnd(2, '0')}`;
+}
+watch(
+  () => form.transactionType,
+  () => {
+    if (!activeCategories.value.some((category) => category.id === form.categoryId))
+      form.categoryId = '';
+  },
+);
+watch(showConfirm, async (visible) => {
+  if (!visible) return;
+  await nextTick();
+  confirmDialog.value?.querySelector<HTMLElement>('button')?.focus();
+});
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown);
+  window.addEventListener('plannerfin:android-back', onAndroidBack, true);
+  void load();
+  void loadTemplates();
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('plannerfin:android-back', onAndroidBack, true);
+});
 </script>
 <template>
   <main class="recurrences">
@@ -136,7 +264,17 @@ onMounted(load);
     </p>
     <section class="panel">
       <h2>{{ editing ? 'Editar recorrência' : 'Nova recorrência' }}</h2>
-      <form @submit.prevent="save">
+      <form @submit.prevent="save" @input="dirty = true">
+        <div v-if="form.kind === 'TRANSACTION'" class="template-action">
+          <button ref="templateTrigger" type="button" class="secondary" @click="openTemplates">
+            Usar modelo...</button
+          ><span v-if="selectedTemplate"
+            >Modelo: {{ selectedTemplate.name }}
+            <button type="button" class="link" @click="removeTemplate">Remover</button></span
+          >
+        </div>
+        <p v-if="templateError" class="warning" role="alert">{{ templateError }}</p>
+        <p v-if="templateWarning" class="warning" role="alert">{{ templateWarning }}</p>
         <div class="grid">
           <label
             >Tipo<select v-model="form.kind" :disabled="!!editing">
@@ -144,15 +282,24 @@ onMounted(load);
               <option value="TRANSFER">Transferência</option>
             </select></label
           ><label
-            >Frequência<select v-model="form.frequency">
+            >Frequência<select v-model="form.frequency" @change="markCalendarDirty">
               <option value="WEEKLY">Semanal</option>
               <option value="MONTHLY">Mensal</option>
               <option value="YEARLY">Anual</option>
             </select></label
-          ><label>Início<input v-model="form.startDate" type="date" required /></label
-          ><label>Fim (opcional)<input v-model="form.endDate" type="date" /></label
+          ><label
+            >Início<input
+              v-model="form.startDate"
+              type="date"
+              required
+              @change="markCalendarDirty" /></label
+          ><label
+            >Fim (opcional)<input
+              v-model="form.endDate"
+              type="date"
+              @change="markCalendarDirty" /></label
           ><label v-if="form.frequency === 'WEEKLY'"
-            >Dia da semana<select v-model.number="form.dayOfWeek">
+            >Dia da semana<select v-model.number="form.dayOfWeek" @change="markCalendarDirty">
               <option v-for="n in 7" :key="n" :value="n">{{ n }}</option>
             </select></label
           ><label v-else
@@ -161,14 +308,16 @@ onMounted(load);
               type="number"
               min="1"
               max="31"
-              required /></label
+              required
+              @change="markCalendarDirty" /></label
           ><label v-if="form.frequency === 'YEARLY'"
             >Mês<input
               v-model.number="form.monthOfYear"
               type="number"
               min="1"
               max="12"
-              required /></label
+              required
+              @change="markCalendarDirty" /></label
           ><template v-if="form.kind === 'TRANSACTION'"
             ><label
               >Natureza<select v-model="form.transactionType">
@@ -209,6 +358,7 @@ onMounted(load);
           ><label
             >Valor planejado<input
               v-model="form.plannedAmount"
+              inputmode="decimal"
               placeholder="0.00"
               required /></label
           ><label>Descrição<input v-model="form.description" maxlength="200" required /></label
@@ -263,6 +413,49 @@ onMounted(load);
         </article>
       </div>
     </section>
+    <div v-if="showTemplates" class="backdrop" @click.self="closeTemplates">
+      <section
+        ref="templateDialog"
+        class="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="template-title"
+      >
+        <h2 id="template-title">Usar modelo</h2>
+        <label v-if="activeTemplates.length >= 8"
+          >Buscar modelos<input v-model="templateSearch" type="search"
+        /></label>
+        <p v-if="!activeTemplates.length">Nenhum modelo ativo.</p>
+        <p v-else-if="!filteredTemplates.length">Nenhum modelo encontrado para esta busca.</p>
+        <button
+          v-for="template in filteredTemplates"
+          :key="template.id"
+          type="button"
+          class="template-option"
+          @click="chooseTemplate(template)"
+        >
+          <b>{{ template.name }}</b
+          ><span>{{ template.description }} · {{ template.plannedAmount }}</span>
+        </button>
+        <button type="button" class="secondary" @click="closeTemplates">Cancelar</button>
+      </section>
+    </div>
+    <div v-if="showConfirm" class="backdrop">
+      <section
+        ref="confirmDialog"
+        class="confirm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="replace-title"
+      >
+        <h2 id="replace-title">Substituir campos?</h2>
+        <p>Aplicar este modelo e substituir os campos já preenchidos?</p>
+        <div class="actions">
+          <button type="button" class="secondary" @click="cancelTemplate">Cancelar</button
+          ><button type="button" @click="confirmTemplate">Aplicar modelo</button>
+        </div>
+      </section>
+    </div>
   </main>
 </template>
 <style scoped>
@@ -319,6 +512,41 @@ article {
   flex-wrap: wrap;
   margin-top: 1rem;
 }
+.template-action {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.backdrop {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: #0f172a88;
+}
+.sheet,
+.confirm {
+  width: min(100%, 30rem);
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: white;
+}
+.template-option {
+  width: 100%;
+  display: grid;
+  margin: 0.5rem 0;
+  text-align: left;
+}
+.template-option span {
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+}
 .secondary {
   background: #e8efff;
   color: #173b7a;
@@ -356,6 +584,14 @@ article {
   }
   article {
     display: block;
+  }
+  .backdrop {
+    align-items: end;
+    padding: 0;
+  }
+  .sheet {
+    border-radius: 1rem 1rem 0 0;
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
   }
 }
 </style>

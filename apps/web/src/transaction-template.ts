@@ -42,3 +42,16 @@ export function templateDefaults(template: PublicTransactionTemplate, year: numb
     paidAt: '',
   };
 }
+
+export function filterActiveTemplates(
+  templates: PublicTransactionTemplate[],
+  search: string,
+): PublicTransactionTemplate[] {
+  const query = search.trim().toLocaleLowerCase('pt-BR');
+  return templates.filter(
+    (template) =>
+      !template.archivedAt &&
+      (!query ||
+        `${template.name} ${template.description}`.toLocaleLowerCase('pt-BR').includes(query)),
+  );
+}
