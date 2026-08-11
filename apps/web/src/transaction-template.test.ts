@@ -1,7 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { civilDueDate, templateDefaults, templateErrorMessage } from './transaction-template';
+import {
+  civilDueDate,
+  normalizeMoney,
+  templateDefaults,
+  templateErrorMessage,
+} from './transaction-template';
 
 describe('modelos de lançamento', () => {
+  it.each([
+    ['1800', '1800.00'],
+    ['1800,5', '1800.50'],
+    ['1800.50', '1800.50'],
+    ['99999999999999999.99', '99999999999999999.99'],
+  ])('normaliza dinheiro por string sem perder precisão: %s', (input, expected) => {
+    expect(normalizeMoney(input)).toBe(expected);
+  });
+  it.each(['', '0', '-1.00', '1e3', '1,234.50', '1.001', '100000000000000000.00'])(
+    'rejeita formato monetário inválido: %s',
+    (input) => expect(normalizeMoney(input)).toBeNull(),
+  );
   it('limita o dia ao último dia civil sem conversão de fuso', () => {
     expect(civilDueDate(2024, 2, 31)).toBe('2024-02-29');
     expect(civilDueDate(2025, 2, 31)).toBe('2025-02-28');
