@@ -92,6 +92,50 @@ export interface UpdateFinancialCategoryRequest {
 export type ListFinancialCategoriesResponse = PublicFinancialCategory[];
 
 export type FinancialTransactionType = 'INCOME' | 'EXPENSE';
+export type TransactionTemplateType = FinancialTransactionType;
+export interface CreateTransactionTemplateRequest {
+  name: string;
+  type: TransactionTemplateType;
+  categoryId: string;
+  description: string;
+  plannedAmount: string;
+  defaultAccountId?: string | null;
+  notes?: string | null;
+  dueDay?: number | null;
+}
+export type UpdateTransactionTemplateRequest = Partial<CreateTransactionTemplateRequest>;
+export interface PublicTransactionTemplate {
+  id: string;
+  name: string;
+  type: TransactionTemplateType;
+  categoryId: string;
+  categoryAvailable: boolean;
+  description: string;
+  plannedAmount: string;
+  defaultAccountId: string | null;
+  defaultAccountAvailable: boolean;
+  notes: string | null;
+  dueDay: number | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface TransactionTemplateListQuery {
+  type?: TransactionTemplateType;
+  includeArchived?: boolean;
+  q?: string;
+}
+export type ListTransactionTemplatesResponse = PublicTransactionTemplate[];
+export type TransactionTemplateErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'UNAUTHORIZED'
+  | 'TEMPLATE_NOT_FOUND'
+  | 'RELATED_RESOURCE_NOT_FOUND'
+  | 'TEMPLATE_NAME_CONFLICT'
+  | 'CATEGORY_TYPE_MISMATCH'
+  | 'RELATED_RESOURCE_ARCHIVED'
+  | 'TEMPLATE_ARCHIVED'
+  | 'INTERNAL_ERROR';
 export type FinancialTransactionStatus = 'PENDING' | 'PAID';
 export interface PublicFinancialTransaction {
   id: string;

@@ -29,6 +29,7 @@ model User {
   debtFundings          DebtFunding[]
   debtPayments          DebtPayment[]
   monthlyBudgets        MonthlyBudget[]
+  transactionTemplates  TransactionTemplate[]
 }
 
 enum FinancialCategoryType {
@@ -63,6 +64,7 @@ model FinancialCategory {
   recurrenceRules       RecurrenceRule[]
   cardPurchases         CardPurchase[]
   monthlyBudgetCategories MonthlyBudgetCategory[]
+  transactionTemplates    TransactionTemplate[]
 
   @@unique([userId, type, normalizedName])
   @@index([userId])
@@ -127,8 +129,34 @@ model FinancialAccount {
   cardInvoicePayments        CardInvoicePayment[]
   debtFundings               DebtFunding[]
   debtPayments               DebtPayment[]
+  transactionTemplates       TransactionTemplate[] @relation("TemplateDefaultAccount")
 
   @@index([userId])
+}
+
+model TransactionTemplate {
+  id               String                   @id @default(uuid()) @db.Uuid
+  userId           String                   @db.Uuid
+  name             String                   @db.VarChar(80)
+  normalizedName   String                   @db.VarChar(80)
+  type             FinancialTransactionType
+  categoryId       String                   @db.Uuid
+  description      String                   @db.VarChar(200)
+  plannedAmount    Decimal                  @db.Decimal(19, 2)
+  defaultAccountId String?                  @db.Uuid
+  notes            String?                  @db.VarChar(2000)
+  dueDay           Int?
+  archivedAt       DateTime?                @db.Timestamptz(3)
+  createdAt        DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime                 @updatedAt @db.Timestamptz(3)
+  user             User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  category         FinancialCategory        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  defaultAccount   FinancialAccount?        @relation("TemplateDefaultAccount", fields: [defaultAccountId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, normalizedName])
+  @@index([userId, archivedAt, normalizedName, id])
+  @@index([categoryId])
+  @@index([defaultAccountId])
 }
 
 enum DebtType {
