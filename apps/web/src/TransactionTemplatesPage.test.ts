@@ -5,6 +5,7 @@ vi.mock('./auth', () => ({ authenticatedFetch: vi.fn() }));
 import { authenticatedFetch } from './auth';
 const ok = (data: unknown) => Promise.resolve({ ok: true, json: async () => data } as Response);
 const category = { id: 'c', name: 'Moradia', type: 'EXPENSE', archivedAt: null };
+const incomeCategory = { id: 'ci', name: 'Salário', type: 'INCOME', archivedAt: null };
 const account = { id: 'a', name: 'Conta', archivedAt: null };
 const template = {
   id: 't',
@@ -30,7 +31,7 @@ describe('gestão de modelos', () => {
         path === '/accounts'
           ? ok([account])
           : path === '/categories'
-            ? ok([category])
+            ? ok([category, incomeCategory])
             : ok([template]),
       ),
   );
@@ -55,5 +56,27 @@ describe('gestão de modelos', () => {
           ([path, init]) => path === '/transaction-templates/t/archive' && init?.method === 'POST',
         ),
     ).toBe(true);
+  });
+  it('limpa a categoria incompatível ao mudar a natureza do modelo', async () => {
+    const wrapper = mount(TransactionTemplatesPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    await wrapper.get('.secondary').trigger('click');
+    const dialog = wrapper.get('form[role="dialog"]');
+    await dialog.get('select').setValue('INCOME');
+    expect((dialog.findAll('select')[1]!.element as HTMLSelectElement).value).toBe('');
+  });
+  it('fecha a confirmação com Escape e com Back Android', async () => {
+    const wrapper = mount(TransactionTemplatesPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    await wrapper.get('.danger').trigger('click');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('.confirm').exists()).toBe(false);
+    await wrapper.get('.danger').trigger('click');
+    const back = new Event('plannerfin:android-back', { cancelable: true });
+    window.dispatchEvent(back);
+    await wrapper.vm.$nextTick();
+    expect(back.defaultPrevented).toBe(true);
+    expect(wrapper.find('.confirm').exists()).toBe(false);
   });
 });

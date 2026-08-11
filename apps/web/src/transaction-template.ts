@@ -1,5 +1,12 @@
 import type { PublicTransactionTemplate } from '@planner-fin/shared';
 
+export function normalizeMoney(value: string): string | null {
+  const normalized = value.trim().replace(',', '.');
+  const match = /^(0|[1-9]\d{0,16})(?:\.(\d{1,2}))?$/.exec(normalized);
+  if (!match || /^0(?:\.0{1,2})?$/.test(normalized)) return null;
+  return `${match[1]}.${(match[2] ?? '').padEnd(2, '0')}`;
+}
+
 export function civilDueDate(year: number, month: number, dueDay: number): string {
   const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
   const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+/* global Event, HTMLButtonElement, HTMLElement, KeyboardEvent, window */
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type {
   FinancialTransactionType,
@@ -8,7 +9,8 @@ import type {
   PublicTransactionTemplate,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
-import { templateDefaults } from '../transaction-template';
+import { safeApiErrorMessage } from '../api-error';
+import { normalizeMoney, templateDefaults } from '../transaction-template';
 
 const route = useRoute(),
   router = useRouter();
@@ -24,6 +26,10 @@ const showTemplates = ref(false),
   showConfirm = ref(false),
   detailsOpen = ref(false),
   dirty = ref(false);
+const templateSearch = ref('');
+const templateTrigger = ref<HTMLButtonElement | null>(null),
+  templateDialog = ref<HTMLElement | null>(null),
+  confirmDialog = ref<HTMLElement | null>(null);
 const form = reactive({
   type: (route.query.type === 'INCOME' ? 'INCOME' : 'EXPENSE') as FinancialTransactionType,
   status: 'PENDING',
@@ -39,15 +45,30 @@ const form = reactive({
 const compatibleCategories = computed(() =>
   categories.value.filter((c) => !c.archivedAt && c.type === form.type),
 );
+const activeTemplates = computed(() => templates.value.filter((template) => !template.archivedAt));
+const filteredTemplates = computed(() => {
+  const query = templateSearch.value.trim().toLocaleLowerCase('pt-BR');
+  if (!query) return activeTemplates.value;
+  return activeTemplates.value.filter((template) =>
+    `${template.name} ${template.description}`.toLocaleLowerCase('pt-BR').includes(query),
+  );
+});
 async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>[1]): Promise<T> {
   const response = await authenticatedFetch(path, init);
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error?.message ?? 'Não foi possível concluir a operação.');
+  if (!response.ok)
+    throw new Error(safeApiErrorMessage(body, 'Não foi possível concluir a operação.'));
   return body as T;
 }
-function normalizeMoney(value: string) {
-  const v = value.trim().replace(',', '.');
-  return /^(?:0*[1-9]\d*)(?:\.\d{1,2})?$/.test(v) ? `${Number(v).toFixed(2)}` : null;
+async function openTemplates() {
+  templateSearch.value = '';
+  showTemplates.value = true;
+  await nextTick();
+  templateDialog.value?.querySelector<HTMLElement>('input, button')?.focus();
+}
+function closeTemplates() {
+  showTemplates.value = false;
+  void nextTick(() => templateTrigger.value?.focus());
 }
 function apply(template: PublicTransactionTemplate) {
   const now = new Date();
@@ -60,7 +81,7 @@ function apply(template: PublicTransactionTemplate) {
   if (template.defaultAccountId && !template.defaultAccountAvailable)
     templateWarning.value += 'A conta padrão não está disponível. Escolha uma conta ativa.';
   dirty.value = false;
-  showTemplates.value = false;
+  closeTemplates();
 }
 function choose(template: PublicTransactionTemplate) {
   if (dirty.value || selectedTemplate.value) {
@@ -78,6 +99,19 @@ function confirmTemplate() {
 function cancelTemplate() {
   pendingTemplate.value = null;
   showConfirm.value = false;
+  void nextTick(() => templateDialog.value?.querySelector<HTMLElement>('input, button')?.focus());
+}
+function closeTopDialog() {
+  if (showConfirm.value) cancelTemplate();
+  else if (showTemplates.value) closeTemplates();
+  else return false;
+  return true;
+}
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && closeTopDialog()) event.preventDefault();
+}
+function onAndroidBack(event: Event) {
+  if (closeTopDialog()) event.preventDefault();
 }
 function removeTemplate() {
   selectedTemplate.value = null;
@@ -125,6 +159,8 @@ async function save() {
   }
 }
 onMounted(async () => {
+  window.addEventListener('keydown', onKeydown);
+  window.addEventListener('plannerfin:android-back', onAndroidBack, true);
   try {
     [accounts.value, categories.value, templates.value] = await Promise.all([
       api<PublicFinancialAccount[]>('/accounts'),
@@ -134,6 +170,22 @@ onMounted(async () => {
   } catch {
     error.value = 'Não foi possível carregar os dados do formulário.';
   }
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('plannerfin:android-back', onAndroidBack, true);
+});
+watch(
+  () => form.type,
+  () => {
+    if (!compatibleCategories.value.some((category) => category.id === form.categoryId))
+      form.categoryId = '';
+  },
+);
+watch(showConfirm, async (visible) => {
+  if (!visible) return;
+  await nextTick();
+  confirmDialog.value?.querySelector<HTMLElement>('button')?.focus();
 });
 </script>
 <template>
@@ -145,7 +197,8 @@ onMounted(async () => {
     <form novalidate @submit.prevent="save" @input="dirty = true">
       <p v-if="error" role="alert">{{ error }}</p>
       <div class="template-action">
-        <button type="button" class="secondary" @click="showTemplates = true">Usar modelo...</button
+        <button ref="templateTrigger" type="button" class="secondary" @click="openTemplates">
+          Usar modelo...</button
         ><span v-if="selectedTemplate"
           >Modelo: {{ selectedTemplate.name }}
           <button type="button" class="link" @click="removeTemplate">Remover</button></span
@@ -196,24 +249,35 @@ onMounted(async () => {
         ><button :disabled="loading" type="submit">{{ loading ? 'Salvando…' : 'Salvar' }}</button>
       </div>
     </form>
-    <div v-if="showTemplates" class="backdrop" @click.self="showTemplates = false">
-      <section class="sheet" role="dialog" aria-modal="true" aria-label="Escolher modelo">
-        <h2>Usar modelo</h2>
-        <p v-if="!templates.length">Nenhum modelo ativo.</p>
-        <button
-          v-for="t in templates.filter((t) => !t.archivedAt)"
-          :key="t.id"
-          class="template"
-          @click="choose(t)"
-        >
+    <div v-if="showTemplates" class="backdrop" @click.self="closeTemplates">
+      <section
+        ref="templateDialog"
+        class="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="template-dialog-title"
+      >
+        <h2 id="template-dialog-title">Usar modelo</h2>
+        <label v-if="activeTemplates.length >= 8"
+          >Buscar modelos<input v-model="templateSearch" type="search"
+        /></label>
+        <p v-if="!activeTemplates.length">Nenhum modelo ativo.</p>
+        <p v-else-if="!filteredTemplates.length">Nenhum modelo encontrado para esta busca.</p>
+        <button v-for="t in filteredTemplates" :key="t.id" class="template" @click="choose(t)">
           <b>{{ t.name }}</b
           ><span>{{ t.description }} · {{ t.plannedAmount }}</span></button
-        ><button class="secondary" @click="showTemplates = false">Cancelar</button>
+        ><button class="secondary" @click="closeTemplates">Cancelar</button>
       </section>
     </div>
     <div v-if="showConfirm" class="backdrop">
-      <section class="confirm" role="dialog" aria-modal="true">
-        <h2>Substituir campos?</h2>
+      <section
+        ref="confirmDialog"
+        class="confirm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="replace-dialog-title"
+      >
+        <h2 id="replace-dialog-title">Substituir campos?</h2>
         <p>Aplicar este modelo e substituir os campos já preenchidos?</p>
         <div>
           <button class="secondary" @click="cancelTemplate">Cancelar</button

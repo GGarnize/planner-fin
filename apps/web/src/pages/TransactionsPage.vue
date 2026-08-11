@@ -9,6 +9,7 @@ import type {
   PublicFinancialTransaction,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import { safeApiErrorMessage } from '../api-error';
 const route = inject(routeLocationKey, { query: {} } as RouteLocationNormalizedLoaded);
 const router = inject(routerKey, null);
 type Page = {
@@ -61,16 +62,7 @@ async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>
   const response = await authenticatedFetch(path, init);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    const detail = Array.isArray(body.error?.details)
-      ? body.error.details.find((item: unknown) =>
-          Boolean(item && typeof item === 'object' && 'message' in item),
-        )
-      : undefined;
-    throw new Error(
-      (detail && typeof detail.message === 'string' && detail.message) ||
-        body.error?.message ||
-        'Não foi possível concluir a operação.',
-    );
+    throw new Error(safeApiErrorMessage(body, 'Não foi possível concluir a operação.'));
   }
   return response.json() as Promise<T>;
 }

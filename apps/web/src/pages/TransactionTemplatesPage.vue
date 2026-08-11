@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+/* global Event, HTMLElement, KeyboardEvent, window */
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import type {
   PublicFinancialAccount,
   PublicFinancialCategory,
   PublicTransactionTemplate,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
-import { templateErrorMessage } from '../transaction-template';
+import { normalizeMoney, templateErrorMessage } from '../transaction-template';
 const items = ref<PublicTransactionTemplate[]>([]),
   accounts = ref<PublicFinancialAccount[]>([]),
   categories = ref<PublicFinancialCategory[]>([]),
@@ -16,6 +17,9 @@ const items = ref<PublicTransactionTemplate[]>([]),
   loading = ref(false),
   error = ref(''),
   confirming = ref<PublicTransactionTemplate | null>(null);
+const formDialog = ref<HTMLElement | null>(null),
+  archiveDialog = ref<HTMLElement | null>(null);
+let lastTrigger: HTMLElement | null = null;
 const form = reactive({
   name: '',
   type: 'EXPENSE',
@@ -52,7 +56,8 @@ async function load() {
     loading.value = false;
   }
 }
-function open(item?: PublicTransactionTemplate) {
+async function open(item?: PublicTransactionTemplate, event?: Event) {
+  lastTrigger = event?.currentTarget instanceof HTMLElement ? event.currentTarget : null;
   editing.value = item ?? null;
   Object.assign(
     form,
@@ -80,14 +85,21 @@ function open(item?: PublicTransactionTemplate) {
   );
   error.value = '';
   showForm.value = true;
+  await nextTick();
+  formDialog.value?.querySelector<HTMLElement>('input, select, button')?.focus();
+}
+function closeForm() {
+  showForm.value = false;
+  void nextTick(() => lastTrigger?.focus());
 }
 async function save() {
   error.value = '';
+  const plannedAmount = normalizeMoney(form.plannedAmount);
   if (
     !form.name.trim() ||
     !form.categoryId ||
     !form.description.trim() ||
-    !/^\d+(?:[.,]\d{1,2})?$/.test(form.plannedAmount)
+    !plannedAmount
   ) {
     error.value = 'Preencha nome, categoria, descrição e valor positivo.';
     return;
@@ -107,19 +119,43 @@ async function save() {
         type: form.type,
         categoryId: form.categoryId,
         description: form.description.trim(),
-        plannedAmount: Number(form.plannedAmount.replace(',', '.')).toFixed(2),
+        plannedAmount,
         defaultAccountId: form.defaultAccountId || null,
         notes: form.notes || null,
         dueDay,
       }),
     });
-    showForm.value = false;
+    closeForm();
     await load();
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Falha ao salvar.';
   } finally {
     loading.value = false;
   }
+}
+function cancelArchive() {
+  confirming.value = null;
+  void nextTick(() => lastTrigger?.focus());
+}
+function requestArchive(item: PublicTransactionTemplate, event: Event) {
+  lastTrigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  confirming.value = item;
+}
+function closeTopDialog() {
+  if (confirming.value) cancelArchive();
+  else if (showForm.value) closeForm();
+  else return false;
+  return true;
+}
+function onKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return;
+  if (confirming.value) cancelArchive();
+  else if (!showForm.value) return;
+  // O formulário não é descartado por Escape: o cancelamento explícito evita perda acidental.
+  event.preventDefault();
+}
+function onAndroidBack(event: Event) {
+  if (closeTopDialog()) event.preventDefault();
 }
 async function archive() {
   if (!confirming.value) return;
@@ -140,6 +176,8 @@ async function restore(item: PublicTransactionTemplate) {
   }
 }
 onMounted(async () => {
+  window.addEventListener('keydown', onKeydown);
+  window.addEventListener('plannerfin:android-back', onAndroidBack, true);
   try {
     [accounts.value, categories.value] = await Promise.all([
       api<PublicFinancialAccount[]>('/accounts'),
@@ -150,6 +188,21 @@ onMounted(async () => {
     error.value = 'Não foi possível carregar os modelos.';
   }
 });
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('plannerfin:android-back', onAndroidBack, true);
+});
+watch(
+  () => form.type,
+  () => {
+    if (!compatible.value.some((category) => category.id === form.categoryId)) form.categoryId = '';
+  },
+);
+watch(confirming, async (value) => {
+  if (!value) return;
+  await nextTick();
+  archiveDialog.value?.querySelector<HTMLElement>('button')?.focus();
+});
 </script>
 <template>
   <main class="templates-page">
@@ -158,7 +211,7 @@ onMounted(async () => {
         <router-link to="/mais">← Mais</router-link>
         <h1>Modelos de lançamento</h1>
       </div>
-      <button @click="open()">Novo modelo</button>
+      <button @click="open(undefined, $event)">Novo modelo</button>
     </header>
     <label class="toggle"
       ><input v-model="includeArchived" type="checkbox" @change="load" /> Incluir arquivados</label
@@ -192,16 +245,23 @@ onMounted(async () => {
           ><template v-if="item.dueDay"> · Dia {{ item.dueDay }}</template>
         </p>
         <div class="actions">
-          <button class="secondary" @click="open(item)">Editar</button
-          ><button v-if="!item.archivedAt" class="danger" @click="confirming = item">
+          <button class="secondary" @click="open(item, $event)">Editar</button
+          ><button v-if="!item.archivedAt" class="danger" @click="requestArchive(item, $event)">
             Arquivar</button
           ><button v-else @click="restore(item)">Restaurar</button>
         </div>
       </article>
     </section>
     <div v-if="showForm" class="backdrop">
-      <form novalidate @submit.prevent="save">
-        <h2>{{ editing ? 'Editar' : 'Novo' }} modelo</h2>
+      <form
+        ref="formDialog"
+        novalidate
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="template-form-title"
+        @submit.prevent="save"
+      >
+        <h2 id="template-form-title">{{ editing ? 'Editar' : 'Novo' }} modelo</h2>
         <p v-if="error" role="alert">{{ error }}</p>
         <label>Nome<input v-model="form.name" maxlength="120" required /></label
         ><label
@@ -232,17 +292,23 @@ onMounted(async () => {
             max="31" /></label
         ><label>Notas (opcional)<textarea v-model="form.notes" maxlength="2000"></textarea></label>
         <div class="actions">
-          <button type="button" class="secondary" @click="showForm = false">Cancelar</button
+          <button type="button" class="secondary" @click="closeForm">Cancelar</button
           ><button :disabled="loading">{{ loading ? 'Salvando…' : 'Salvar' }}</button>
         </div>
       </form>
     </div>
     <div v-if="confirming" class="backdrop">
-      <section class="confirm" role="dialog" aria-modal="true">
-        <h2>Arquivar modelo?</h2>
+      <section
+        ref="archiveDialog"
+        class="confirm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="archive-dialog-title"
+      >
+        <h2 id="archive-dialog-title">Arquivar modelo?</h2>
         <p>Ele deixará de aparecer em “Usar modelo...”.</p>
         <div class="actions">
-          <button class="secondary" @click="confirming = null">Cancelar</button
+          <button class="secondary" @click="cancelArchive">Cancelar</button
           ><button class="danger" @click="archive">Arquivar</button>
         </div>
       </section>
