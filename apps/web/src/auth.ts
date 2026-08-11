@@ -124,7 +124,13 @@ export async function authenticatedFetch(path: string, init: RequestInit = {}): 
     credentials: 'include',
   });
   if (response.status === 401 && retryAllowed) {
-    await refreshOnce();
+    try {
+      await refreshOnce();
+    } catch {
+      authState.token = null;
+      authState.user = null;
+      return response;
+    }
     response = await fetch(`${api}${path}`, {
       ...init,
       headers: { ...init.headers, Authorization: `Bearer ${authState.token ?? ''}` },

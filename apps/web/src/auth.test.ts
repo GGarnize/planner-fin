@@ -107,4 +107,46 @@ describe('auth client Android/web', () => {
     expect(response.status).toBe(401);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+
+  it('limpa a sessão sem repetir o GET quando o refresh após 401 falha', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ csrfToken: 'csrf-renovado' }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }));
+    vi.stubGlobal('fetch', fetch);
+    const { authenticatedFetch, authState } = await loadAuth();
+    authState.token = 'access-expirado';
+    authState.user = authResponse.user;
+
+    const response = await authenticatedFetch('/accounts');
+
+    expect(response.status).toBe(401);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(authState.token).toBeNull();
+    expect(authState.user).toBeNull();
+  });
+
+  it('limpa a sessão depois do segundo 401 sem uma terceira tentativa', async () => {
+    const fetch = vi.fn(async (url: string) => {
+      if (url.endsWith('/auth/csrf'))
+        return new Response(JSON.stringify({ csrfToken: 'csrf' }), { status: 200 });
+      if (url.endsWith('/auth/refresh'))
+        return new Response(JSON.stringify(authResponse), { status: 200 });
+      return new Response('{}', { status: 401 });
+    });
+    vi.stubGlobal('fetch', fetch);
+    const { authenticatedFetch, authState } = await loadAuth();
+    authState.token = 'access-expirado';
+    authState.user = authResponse.user;
+
+    const response = await authenticatedFetch('/accounts');
+
+    expect(response.status).toBe(401);
+    expect(fetch.mock.calls.filter(([url]) => String(url).endsWith('/accounts'))).toHaveLength(2);
+    expect(authState.token).toBeNull();
+    expect(authState.user).toBeNull();
+  });
 });
