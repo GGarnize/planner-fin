@@ -75,5 +75,4 @@ Se uma seção do template não se aplicar, escreva **“Não aplicável”** e 
 | [SPEC-010](SPEC-010-ORCAMENTO-MENSAL.md) | Orçamento mensal | Consulte o documento |
 | [SPEC-011](SPEC-011-DASHBOARD-FINANCEIRO.md) | Dashboard financeiro | Consulte o documento |
 | [SPEC-012](SPEC-012-ANDROID-INTERNO-CAPACITOR.md) | Android interno com Capacitor | Consulte o documento |
-| [SPEC-013](SPEC-013-UX-MOBILE-FIRST-E-NAVEGACAO-PRINCIPAL.md) | UX mobile-first e navegação principal | Em revisão |
-
+| [SPEC-013](SPEC-013-UX-MOBILE-FIRST-E-NAVEGACAO-PRINCIPAL.md) | UX mobile-first e navegação principal | Aprovada |
