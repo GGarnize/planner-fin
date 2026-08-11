@@ -76,3 +76,4 @@ Se uma seção do template não se aplicar, escreva **“Não aplicável”** e 
 | [SPEC-011](SPEC-011-DASHBOARD-FINANCEIRO.md) | Dashboard financeiro | Consulte o documento |
 | [SPEC-012](SPEC-012-ANDROID-INTERNO-CAPACITOR.md) | Android interno com Capacitor | Consulte o documento |
 | [SPEC-013](SPEC-013-UX-MOBILE-FIRST-E-NAVEGACAO-PRINCIPAL.md) | UX mobile-first e navegação principal | Aprovada |
+| [SPEC-014](SPEC-014-MODELOS-DE-LANCAMENTO-E-INTEGRACAO-COM-RECORRENCIAS.md) | Modelos de lançamento e integração com recorrências | Em revisão |
