@@ -16,9 +16,11 @@
 
 ## 2. Status
 
-`Em revisão`
+`Aprovada`
 
-Esta SPEC **não está aprovada**. A aprovação humana e a implementação devem ocorrer em tarefas posteriores e separadas.
+**Aprovada por:** solicitante da tarefa, em `2026-08-11`.
+
+A aprovação é exclusivamente documental; a implementação deve ocorrer em tarefa posterior e separada.
 
 ## 3. Confirmação do identificador e investigação AS-IS
 
@@ -460,19 +462,22 @@ Proibidos nesta tarefa: `apps/**`, `packages/**`, schema Prisma, migrations, dep
 
 O escopo de arquivos da implementação futura deverá ser autorizado após aprovação humana desta SPEC e incluir somente migration nova/schema, módulo API, contratos shared, UI/testes de modelos e integrações estritamente necessárias em lançamentos/recorrências.
 
-## 25. Dúvidas e decisões pendentes
+## 25. Dúvidas e decisões
 
-Não há ambiguidade funcional interna identificada. Entretanto, todas as decisões deste documento — especialmente unicidade global por owner, `dueDay`, ausência de paginação e ausência de vínculo de origem — permanecem **pendentes de aprovação humana**, coerentemente com o status `Em revisão`.
+Não há ambiguidade funcional interna nem dúvida bloqueante aberta. As decisões deste documento — especialmente unicidade global por owner, `dueDay`, ausência de paginação e ausência de vínculo de origem — foram aprovadas pelo solicitante da tarefa em `2026-08-11`.
+
+A aprovação formal não alterou requisitos, os 32 critérios de aceite, campos de `TransactionTemplate`, política de ownership, unicidade por `normalizedName`, `dueDay`, conta padrão opcional, tratamento de categoria/conta arquivadas, independência entre modelo, recorrência e lançamento, API REST proposta, persistência futura, escopo, riscos, testes ou rollback.
 
 ## 26. Definition of Done específica
 
-Para aprovação futura:
+Para aprovação documental:
 
-- [ ] Diagnóstico AS-IS e compatibilidade com SPEC-007 revisados por pessoa autorizada.
-- [ ] Conceitos modelo/recorrência/lançamento continuam distintos.
-- [ ] Campos, ownership, arquivamento, API, migration, UX e rollback são aceitos.
-- [ ] Todos os 32 critérios são mensuráveis e têm cobertura prevista.
-- [ ] Pagamento por terceiro permanece evolução separada.
+- [x] Diagnóstico AS-IS e compatibilidade com SPEC-007 revisados por pessoa autorizada.
+- [x] Conceitos modelo/recorrência/lançamento continuam distintos.
+- [x] Campos, ownership, arquivamento, API, migration, UX e rollback são aceitos.
+- [x] Todos os 32 critérios são mensuráveis e têm cobertura prevista.
+- [x] Pagamento por terceiro permanece evolução separada.
+- [x] Aprovação humana registrada em `2026-08-11` sem mudança das seções funcionais.
 
 Para implementação futura:
 
@@ -488,3 +493,4 @@ Para implementação futura:
 | Data | Alteração | Motivo | Autor | Aprovação |
 |---|---|---|---|---|
 | `2026-08-11` | Criação da SPEC-014 com status `Em revisão`. | Definir modelos de lançamento como defaults independentes e sua integração por cópia com recorrências. | `Codex Cloud` | Pendente de revisão humana |
+| `2026-08-11` | Aprovação formal da SPEC-014, sem alteração de requisitos, dos 32 critérios de aceite ou das decisões documentadas. | Registrar a aprovação humana da direção funcional sem mudança semântica. | `Codex Cloud` | Solicitante da tarefa |
