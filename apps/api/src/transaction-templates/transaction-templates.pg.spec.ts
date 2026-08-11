@@ -22,8 +22,24 @@ const archivedAt = new Date('2026-08-11T11:00:00.000Z');
 
 function db() {
   if (!databaseUrl) throw new Error('SPEC014_DATABASE_URL ausente');
-  if (!databaseUrl.includes('spec014')) throw new Error('Use um banco sintetico SPEC-014.');
+  const url = new URL(databaseUrl);
+  const databaseName = decodeURIComponent(url.pathname.replace(/^\//, ''));
+  const allowedHost = ['localhost', '127.0.0.1'].includes(url.hostname);
+  if (
+    process.env.SPEC014_ALLOW_DESTRUCTIVE_TESTS !== 'true' ||
+    !allowedHost ||
+    !databaseName.startsWith('planner_fin_spec014_')
+  )
+    throw new Error('Use opt-in explicito e banco local sintetico planner_fin_spec014_*.');
   return new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+}
+
+async function assertSafeDatabase(prisma: PrismaClient) {
+  const [{ current_database: databaseName }] = await prisma.$queryRaw<
+    Array<{ current_database: string }>
+  >`select current_database()`;
+  if (!databaseName.startsWith('planner_fin_spec014_'))
+    throw new Error('Banco conectado nao e sintetico da SPEC-014.');
 }
 
 function service(prisma: PrismaClient) {
@@ -157,12 +173,28 @@ async function expectRejectsWithCode(promise: Promise<unknown>, code: string) {
   await expect(promise).rejects.toMatchObject({ response: { code } });
 }
 
+async function expectPrismaError(
+  promise: Promise<unknown>,
+  code: string,
+): Promise<Prisma.PrismaClientKnownRequestError> {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+    const known = error as Prisma.PrismaClientKnownRequestError;
+    expect(known.code).toBe(code);
+    return known;
+  }
+  throw new Error(`Esperava erro Prisma ${code}`);
+}
+
 describePg('modelos de lancamento com PostgreSQL real', () => {
   let prisma: PrismaClient;
 
   beforeAll(async () => {
     prisma = db();
     await prisma.$connect();
+    await assertSafeDatabase(prisma);
   });
 
   beforeEach(async () => {
@@ -173,7 +205,7 @@ describePg('modelos de lancamento com PostgreSQL real', () => {
     await prisma.$disconnect();
   });
 
-  it('aplica constraints reais de valor, dueDay, unique e FKs', async () => {
+  it('aplica constraints reais de valor, precisao Decimal, dueDay, unique e FKs', async () => {
     await expect(
       createTemplate(prisma, '66666666-6666-4666-8666-666666666660', {
         plannedAmount: new Prisma.Decimal('0.00'),
@@ -185,12 +217,36 @@ describePg('modelos de lancamento com PostgreSQL real', () => {
       }),
     ).rejects.toThrow();
     await expect(
-      createTemplate(prisma, '66666666-6666-4666-8666-666666666662', { dueDay: 0 }),
+      createTemplate(prisma, '66666666-6666-4666-8666-666666666669', {
+        plannedAmount: new Prisma.Decimal('100000000000000000.00'),
+      }),
+    ).rejects.toThrow();
+    await createTemplate(prisma, '66666666-6666-4666-8666-666666666659', {
+      plannedAmount: new Prisma.Decimal('99999999999999999.99'),
+      dueDay: 1,
+    });
+    await createTemplate(prisma, '66666666-6666-4666-8666-666666666658', {
+      name: 'Condominio',
+      normalizedName: 'condominio',
+      dueDay: 31,
+    });
+    await expect(
+      createTemplate(prisma, '66666666-6666-4666-8666-666666666662', {
+        name: 'Dia Zero',
+        normalizedName: 'dia zero',
+        dueDay: 0,
+      }),
     ).rejects.toThrow();
     await expect(
-      createTemplate(prisma, '66666666-6666-4666-8666-666666666663', { dueDay: 32 }),
+      createTemplate(prisma, '66666666-6666-4666-8666-666666666663', {
+        name: 'Dia Trinta e Dois',
+        normalizedName: 'dia trinta e dois',
+        dueDay: 32,
+      }),
     ).rejects.toThrow();
     await createTemplate(prisma, '66666666-6666-4666-8666-666666666664', {
+      name: 'Maior Valor',
+      normalizedName: 'maior valor',
       plannedAmount: new Prisma.Decimal('12345678901234567.89'),
       dueDay: null,
     });
@@ -213,6 +269,15 @@ describePg('modelos de lancamento com PostgreSQL real', () => {
         defaultAccountId: '88888888-8888-4888-8888-888888888888',
       }),
     ).rejects.toThrow();
+  });
+
+  it('bloqueia hard delete de user, categoria e conta referenciados por FK RESTRICT', async () => {
+    await createTemplate(prisma, '66666666-6666-4666-8666-666666666650');
+    await expect(
+      prisma.financialCategory.delete({ where: { id: expenseCategoryA } }),
+    ).rejects.toThrow();
+    await expect(prisma.financialAccount.delete({ where: { id: accountA } })).rejects.toThrow();
+    await expect(prisma.user.delete({ where: { id: userA } })).rejects.toThrow();
   });
 
   it('isola owner, normaliza nome e traduz conflito equivalente', async () => {
@@ -243,6 +308,14 @@ describePg('modelos de lancamento com PostgreSQL real', () => {
       }),
       'TEMPLATE_NAME_CONFLICT',
     );
+    const rawDuplicateError = await expectPrismaError(
+      createTemplate(prisma, '66666666-6666-4666-8666-666666666657', {
+        name: 'ALUGUEL',
+        normalizedName: 'aluguel',
+      }),
+      'P2002',
+    );
+    expect(rawDuplicateError.meta?.target).toEqual(['userId', 'normalizedName']);
     await expect(
       templates.create(userB, {
         name: 'aluguel',
