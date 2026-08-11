@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import type {
   FinancialTransactionStatus,
   FinancialTransactionType,
@@ -17,6 +17,8 @@ const items = ref<PublicFinancialTransaction[]>([]),
   categories = ref<PublicFinancialCategory[]>([]);
 const loading = ref(false),
   error = ref(''),
+  formError = ref(''),
+  payFormError = ref(''),
   nextCursor = ref<string | null>(null),
   showForm = ref(false),
   editing = ref<PublicFinancialTransaction | null>(null),
@@ -55,7 +57,16 @@ async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>
   const response = await authenticatedFetch(path, init);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.error?.message || 'Não foi possível concluir a operação.');
+    const detail = Array.isArray(body.error?.details)
+      ? body.error.details.find((item: unknown) =>
+          Boolean(item && typeof item === 'object' && 'message' in item),
+        )
+      : undefined;
+    throw new Error(
+      (detail && typeof detail.message === 'string' && detail.message) ||
+        body.error?.message ||
+        'Não foi possível concluir a operação.',
+    );
   }
   return response.json() as Promise<T>;
 }
@@ -89,6 +100,7 @@ async function loadRelations() {
 }
 function openCreate(type: FinancialTransactionType = 'EXPENSE') {
   editing.value = null;
+  formError.value = '';
   Object.assign(form, {
     type,
     status: 'PENDING',
@@ -105,6 +117,7 @@ function openCreate(type: FinancialTransactionType = 'EXPENSE') {
 }
 function openEdit(item: PublicFinancialTransaction) {
   editing.value = item;
+  formError.value = '';
   Object.assign(form, {
     ...item,
     notes: item.notes ?? '',
@@ -113,9 +126,36 @@ function openEdit(item: PublicFinancialTransaction) {
   });
   showForm.value = true;
 }
+function normalizeMoney(value: string): string | null {
+  const normalized = value.trim().replace(',', '.');
+  const match = /^(?:0|[1-9][0-9]{0,16})(?:\.([0-9]{1,2}))?$/.exec(normalized);
+  if (!match || /^0(?:\.0{1,2})?$/.test(normalized)) return null;
+  return `${normalized.split('.')[0]}.${(match[1] ?? '').padEnd(2, '0')}`;
+}
+function validateForm(): { plannedAmount: string; actualAmount?: string } | null {
+  if (!form.accountId) formError.value = 'Selecione uma conta.';
+  else if (!form.categoryId) formError.value = 'Selecione uma categoria.';
+  else if (!compatibleCategories.value.some((category) => category.id === form.categoryId))
+    formError.value = 'Selecione uma categoria compatível com a natureza do lançamento.';
+  else if (!form.description.trim()) formError.value = 'Informe a descrição.';
+  else if (!normalizeMoney(form.plannedAmount))
+    formError.value = 'Informe um valor previsto positivo com até duas casas decimais.';
+  else if (!form.dueDate) formError.value = 'Informe o vencimento.';
+  else if (form.status === 'PAID' && !normalizeMoney(form.actualAmount))
+    formError.value = 'Informe um valor realizado positivo com até duas casas decimais.';
+  else if (form.status === 'PAID' && !form.paidAt) formError.value = 'Informe a data do pagamento.';
+  else
+    return {
+      plannedAmount: normalizeMoney(form.plannedAmount)!,
+      ...(form.status === 'PAID' ? { actualAmount: normalizeMoney(form.actualAmount)! } : {}),
+    };
+  return null;
+}
 async function save() {
+  formError.value = '';
+  const amounts = validateForm();
+  if (!amounts) return;
   loading.value = true;
-  error.value = '';
   const body: Record<string, unknown> = editing.value
     ? { description: form.description, notes: form.notes || null }
     : {
@@ -125,16 +165,18 @@ async function save() {
         status: form.status,
         description: form.description,
         notes: form.notes || null,
-        plannedAmount: form.plannedAmount,
+        plannedAmount: amounts.plannedAmount,
         dueDate: form.dueDate,
-        ...(form.status === 'PAID' ? { actualAmount: form.actualAmount, paidAt: form.paidAt } : {}),
+        ...(form.status === 'PAID'
+          ? { actualAmount: amounts.actualAmount, paidAt: form.paidAt }
+          : {}),
       };
   if (editing.value?.status === 'PENDING')
     Object.assign(body, {
       accountId: form.accountId,
       categoryId: form.categoryId,
       type: form.type,
-      plannedAmount: form.plannedAmount,
+      plannedAmount: amounts.plannedAmount,
       dueDate: form.dueDate,
     });
   try {
@@ -146,25 +188,42 @@ async function save() {
     showForm.value = false;
     await load();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Falha ao salvar.';
+    formError.value = e instanceof Error ? e.message : 'Falha ao salvar.';
   } finally {
     loading.value = false;
   }
 }
 async function pay() {
   if (!paying.value) return;
+  payFormError.value = '';
+  const actualAmount = normalizeMoney(payForm.actualAmount);
+  if (!actualAmount) {
+    payFormError.value = 'Informe um valor realizado positivo com até duas casas decimais.';
+    return;
+  }
+  if (!payForm.paidAt) {
+    payFormError.value = 'Informe a data do pagamento.';
+    return;
+  }
   try {
     await api(`/transactions/${paying.value.id}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payForm),
+      body: JSON.stringify({ actualAmount, paidAt: payForm.paidAt }),
     });
     paying.value = null;
     await load();
   } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Falha ao pagar.';
+    payFormError.value = e instanceof Error ? e.message : 'Falha ao pagar.';
   }
 }
+watch(
+  () => form.type,
+  () => {
+    if (!compatibleCategories.value.some((category) => category.id === form.categoryId))
+      form.categoryId = '';
+  },
+);
 async function reopen(item: PublicFinancialTransaction) {
   try {
     await api(`/transactions/${item.id}/reopen`, {
@@ -263,6 +322,7 @@ onMounted(() => {
             v-if="item.status === 'PENDING'"
             @click="
               paying = item;
+              payFormError = '';
               payForm.actualAmount = item.plannedAmount;
               payForm.paidAt = item.dueDate;
             "
@@ -274,8 +334,9 @@ onMounted(() => {
     </section>
     <button v-if="nextCursor" :disabled="loading" @click="load(true)">Carregar mais</button>
     <div v-if="showForm" class="modal" role="dialog" aria-modal="true">
-      <form @submit.prevent="save">
+      <form novalidate @submit.prevent="save">
         <h2>{{ editing ? 'Editar lançamento' : 'Novo lançamento' }}</h2>
+        <p v-if="formError" role="alert">{{ formError }}</p>
         <label
           >Natureza<select v-model="form.type" :disabled="editing?.status === 'PAID'">
             <option value="INCOME">Receita</option>
@@ -334,8 +395,9 @@ onMounted(() => {
       </form>
     </div>
     <div v-if="paying" class="modal" role="dialog" aria-modal="true">
-      <form @submit.prevent="pay">
+      <form novalidate @submit.prevent="pay">
         <h2>Marcar como pago</h2>
+        <p v-if="payFormError" role="alert">{{ payFormError }}</p>
         <label
           >Valor realizado<input
             v-model="payForm.actualAmount"
