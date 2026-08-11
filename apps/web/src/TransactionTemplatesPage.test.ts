@@ -79,4 +79,19 @@ describe('gestão de modelos', () => {
     expect(back.defaultPrevented).toBe(true);
     expect(wrapper.find('.confirm').exists()).toBe(false);
   });
+  it('pede confirmacao no Back Android antes de descartar modelo sujo', async () => {
+    const wrapper = mount(TransactionTemplatesPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    await wrapper.get('.secondary').trigger('click');
+    const name = wrapper.get('input[maxlength="120"]');
+    await name.setValue('Modelo em edicao');
+    const back = new Event('plannerfin:android-back', { cancelable: true });
+    window.dispatchEvent(back);
+    await wrapper.vm.$nextTick();
+    expect(back.defaultPrevented).toBe(true);
+    expect(wrapper.find('.confirm').text()).toContain('Descartar rascunho');
+    await wrapper.get('.confirm .secondary').trigger('click');
+    expect(wrapper.find('.confirm').exists()).toBe(false);
+    expect((name.element as HTMLInputElement).value).toBe('Modelo em edicao');
+  });
 });

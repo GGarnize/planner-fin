@@ -102,4 +102,16 @@ describe('novo lançamento com modelos', () => {
     await wrapper.get('.confirm .secondary').trigger('click');
     expect((description.element as HTMLInputElement).value).toBe('Meu rascunho');
   });
+  it('pede confirmacao antes de sair com rascunho manual sujo', async () => {
+    const wrapper = await mounted(1);
+    await wrapper.get('input[maxlength="200"]').setValue('Rascunho manual');
+    await wrapper.get('.save .secondary').trigger('click');
+    expect(wrapper.find('.confirm').text()).toContain('Descartar rascunho');
+    expect(back).not.toHaveBeenCalled();
+    await wrapper.get('.confirm .secondary').trigger('click');
+    expect(wrapper.find('.confirm').exists()).toBe(false);
+    expect((wrapper.get('input[maxlength="200"]').element as HTMLInputElement).value).toBe(
+      'Rascunho manual',
+    );
+  });
 });

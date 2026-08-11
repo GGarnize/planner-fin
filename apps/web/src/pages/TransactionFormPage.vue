@@ -24,12 +24,14 @@ const selectedTemplate = ref<PublicTransactionTemplate | null>(null),
   pendingTemplate = ref<PublicTransactionTemplate | null>(null);
 const showTemplates = ref(false),
   showConfirm = ref(false),
+  showDiscardConfirm = ref(false),
   detailsOpen = ref(false),
   dirty = ref(false);
 const templateSearch = ref('');
 const templateTrigger = ref<HTMLButtonElement | null>(null),
   templateDialog = ref<HTMLElement | null>(null),
-  confirmDialog = ref<HTMLElement | null>(null);
+  confirmDialog = ref<HTMLElement | null>(null),
+  discardDialog = ref<HTMLElement | null>(null);
 const form = reactive({
   type: (route.query.type === 'INCOME' ? 'INCOME' : 'EXPENSE') as FinancialTransactionType,
   status: 'PENDING',
@@ -101,8 +103,24 @@ function cancelTemplate() {
   showConfirm.value = false;
   void nextTick(() => templateDialog.value?.querySelector<HTMLElement>('input, button')?.focus());
 }
+function requestLeave() {
+  if (!dirty.value) {
+    router.back();
+    return;
+  }
+  showDiscardConfirm.value = true;
+}
+function confirmDiscard() {
+  dirty.value = false;
+  showDiscardConfirm.value = false;
+  router.back();
+}
+function cancelDiscard() {
+  showDiscardConfirm.value = false;
+}
 function closeTopDialog() {
-  if (showConfirm.value) cancelTemplate();
+  if (showDiscardConfirm.value) cancelDiscard();
+  else if (showConfirm.value) cancelTemplate();
   else if (showTemplates.value) closeTemplates();
   else return false;
   return true;
@@ -111,7 +129,14 @@ function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && closeTopDialog()) event.preventDefault();
 }
 function onAndroidBack(event: Event) {
-  if (closeTopDialog()) event.preventDefault();
+  if (closeTopDialog()) {
+    event.preventDefault();
+    return;
+  }
+  if (dirty.value) {
+    showDiscardConfirm.value = true;
+    event.preventDefault();
+  }
 }
 function removeTemplate() {
   selectedTemplate.value = null;
@@ -187,11 +212,16 @@ watch(showConfirm, async (visible) => {
   await nextTick();
   confirmDialog.value?.querySelector<HTMLElement>('button')?.focus();
 });
+watch(showDiscardConfirm, async (visible) => {
+  if (!visible) return;
+  await nextTick();
+  discardDialog.value?.querySelector<HTMLElement>('button')?.focus();
+});
 </script>
 <template>
   <main class="form-page">
     <header>
-      <button class="back" aria-label="Voltar" @click="router.back()">‹</button>
+      <button class="back" aria-label="Voltar" @click="requestLeave">‹</button>
       <h1>Novo lançamento</h1>
     </header>
     <form novalidate @submit.prevent="save" @input="dirty = true">
@@ -245,7 +275,7 @@ watch(showConfirm, async (visible) => {
       </button>
       <label v-if="detailsOpen">Notas<textarea v-model="form.notes" maxlength="2000" /></label>
       <div class="save">
-        <button type="button" class="secondary" @click="router.back()">Cancelar</button
+        <button type="button" class="secondary" @click="requestLeave">Cancelar</button
         ><button :disabled="loading" type="submit">{{ loading ? 'Salvando…' : 'Salvar' }}</button>
       </div>
     </form>
@@ -282,6 +312,22 @@ watch(showConfirm, async (visible) => {
         <div>
           <button class="secondary" @click="cancelTemplate">Cancelar</button
           ><button @click="confirmTemplate">Aplicar modelo</button>
+        </div>
+      </section>
+    </div>
+    <div v-if="showDiscardConfirm" class="backdrop">
+      <section
+        ref="discardDialog"
+        class="confirm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="discard-dialog-title"
+      >
+        <h2 id="discard-dialog-title">Descartar rascunho?</h2>
+        <p>As alterações não salvas serão perdidas.</p>
+        <div>
+          <button class="secondary" @click="cancelDiscard">Cancelar</button
+          ><button @click="confirmDiscard">Descartar</button>
         </div>
       </section>
     </div>
