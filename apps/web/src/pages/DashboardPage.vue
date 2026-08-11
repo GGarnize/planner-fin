@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* global CustomEvent, Event, window */
 import { onMounted, ref } from 'vue';
 import type { DashboardResponse } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
@@ -52,6 +53,13 @@ function current() {
   month.value = civilMonth();
   void load();
 }
+function startNewTransaction(event: Event) {
+  window.dispatchEvent(
+    new CustomEvent('plannerfin:new-transaction', {
+      detail: { trigger: event.currentTarget },
+    }),
+  );
+}
 onMounted(load);
 </script>
 
@@ -94,10 +102,11 @@ onMounted(load);
           ><router-link to="/accounts">Ver contas</router-link>
         </section>
         <div class="quick-actions">
-          <router-link
+          <button
             class="primary-action"
-            :to="{ path: '/transactions', query: { create: 'EXPENSE' } }"
-            >+ Novo lançamento</router-link
+            aria-label="Criar transação pelo dashboard"
+            @click="startNewTransaction"
+            >+ Novo lançamento</button
           ><router-link to="/transfers">Transferir</router-link>
         </div>
         <section class="panel summary-panel">
@@ -293,7 +302,8 @@ onMounted(load);
   gap: 0.5rem;
   align-self: start;
 }
-.quick-actions a {
+.quick-actions a,
+.quick-actions button {
   min-height: 2.75rem;
   display: grid;
   place-items: center;

@@ -1,4 +1,6 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
+import { reactive } from 'vue';
+import { routeLocationKey, routerKey } from 'vue-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TransactionsPage from './pages/TransactionsPage.vue';
 
@@ -47,6 +49,21 @@ async function mountPage() {
   const wrapper = mount(TransactionsPage, { global: { stubs: ['router-link'] } });
   await flushPromises();
   return wrapper;
+}
+async function mountPageWithRoute(query: Record<string, unknown>) {
+  const route = reactive({ query });
+  const router = { replace: vi.fn() };
+  const wrapper = mount(TransactionsPage, {
+    global: {
+      provide: {
+        [routeLocationKey as symbol]: route,
+        [routerKey as symbol]: router,
+      },
+      stubs: ['router-link'],
+    },
+  });
+  await flushPromises();
+  return { wrapper, route, router };
 }
 async function openExpenseForm(wrapper: VueWrapper) {
   await wrapper
@@ -259,5 +276,32 @@ describe('tela de lançamentos (API mockada)', () => {
       actualAmount: '12.00',
       paidAt: '2026-08-01',
     });
+  });
+
+  it('limpa a query create apos salvar pelo fluxo global', async () => {
+    mockPage();
+    const { wrapper, router } = await mountPageWithRoute({ create: 'EXPENSE' });
+    const form = wrapper.get('.modal form');
+    const selects = form.findAll('select');
+    await selects[1]!.setValue(accountId);
+    await selects[2]!.setValue(categoryId);
+    await form.find('input[maxlength="200"]').setValue('Aluguel');
+    const inputs = form.findAll('input');
+    await inputs.find((input) => input.attributes('inputmode') === 'decimal')!.setValue('1800');
+    await inputs.find((input) => input.attributes('type') === 'date')!.setValue('2026-08-10');
+    await form.trigger('submit');
+    await flushPromises();
+
+    expect(router.replace).toHaveBeenCalledWith({ path: '/transactions' });
+    expect(wrapper.find('.modal').exists()).toBe(false);
+  });
+
+  it('fecha o modal quando Back remove a query create sem sair da tela', async () => {
+    mockPage();
+    const { wrapper, route } = await mountPageWithRoute({ create: 'INCOME' });
+    expect(wrapper.find('.modal').exists()).toBe(true);
+    route.query = {};
+    await flushPromises();
+    expect(wrapper.find('.modal').exists()).toBe(false);
   });
 });

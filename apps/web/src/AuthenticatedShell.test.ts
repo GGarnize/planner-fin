@@ -43,4 +43,20 @@ describe('AuthenticatedShell', () => {
     await flushPromises();
     expect(router.currentRoute.value.fullPath).toBe('/transactions?create=EXPENSE');
   });
+
+  it('fecha a escolha global por Escape e pelo Back Android antes de navegar', async () => {
+    const { wrapper } = await mountShell();
+    await wrapper.get('.global-fab').trigger('click');
+    expect(wrapper.find('[role=dialog]').exists()).toBe(true);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await flushPromises();
+    expect(wrapper.find('[role=dialog]').exists()).toBe(false);
+
+    await wrapper.get('.global-fab').trigger('click');
+    const back = new Event('plannerfin:android-back', { cancelable: true });
+    const notCancelled = window.dispatchEvent(back);
+    await flushPromises();
+    expect(notCancelled).toBe(false);
+    expect(wrapper.find('[role=dialog]').exists()).toBe(false);
+  });
 });

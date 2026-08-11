@@ -48,6 +48,11 @@ describe('DashboardPage', () => {
     expect(wrapper.findAll('.actions a')).toHaveLength(5);
     expect(wrapper.get('.quick-actions a[href="/transfers"]').text()).toBe('Transferir');
     expect(wrapper.get('.quick-actions .primary-action').text()).toBe('+ Novo lançamento');
+    const eventSpy = vi.fn();
+    window.addEventListener('plannerfin:new-transaction', eventSpy);
+    await wrapper.get('.quick-actions .primary-action').trigger('click');
+    expect(eventSpy).toHaveBeenCalledTimes(1);
+    window.removeEventListener('plannerfin:new-transaction', eventSpy);
     expect(
       wrapper
         .find('.position-panel')
