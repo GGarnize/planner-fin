@@ -218,6 +218,15 @@ export class TransactionTemplatesService {
     return row;
   }
   private unique(error: unknown) {
-    return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002')
+      return false;
+    const target = error.meta?.target;
+    return (
+      target === 'TransactionTemplate_userId_normalizedName_key' ||
+      (Array.isArray(target) &&
+        target.includes('userId') &&
+        target.includes('normalizedName') &&
+        target.length === 2)
+    );
   }
 }
