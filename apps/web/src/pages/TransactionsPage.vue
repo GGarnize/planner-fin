@@ -121,6 +121,7 @@ function openCreate(type: FinancialTransactionType = 'EXPENSE') {
 function openCreateFromRoute() {
   const type = route.query.create;
   if (type === 'INCOME' || type === 'EXPENSE') openCreate(type);
+  else if (showForm.value && !editing.value) showForm.value = false;
 }
 function openEdit(item: PublicFinancialTransaction) {
   editing.value = item;
@@ -193,6 +194,7 @@ async function save() {
       body: JSON.stringify(body),
     });
     showForm.value = false;
+    if (!editing.value && route.query.create) await router?.replace({ path: '/transactions' });
     await load();
   } catch (e) {
     formError.value = e instanceof Error ? e.message : 'Falha ao salvar.';

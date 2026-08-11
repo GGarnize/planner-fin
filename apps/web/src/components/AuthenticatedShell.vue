@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+/* global CustomEvent, Event, HTMLElement, KeyboardEvent, window */
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 const route = useRoute();
 const router = useRouter();
 const choosingType = ref(false);
+const typeDialog = ref<HTMLElement | null>(null);
+let lastTrigger: HTMLElement | null = null;
 const primary = [
   { label: 'Início', icon: 'home', to: '/dashboard', matches: ['/dashboard'] },
   { label: 'Lançamentos', icon: 'receipt_long', to: '/transactions', matches: ['/transactions'] },
@@ -28,10 +31,48 @@ const primary = [
 const active = (item: (typeof primary)[number]) =>
   item.matches.some((path) => route.path === path || route.path.startsWith(`${path}/`));
 const showGlobalAction = computed(() => primary.some((item) => active(item)));
+async function openChooser(event?: Event) {
+  if (event) lastTrigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+  choosingType.value = true;
+  await nextTick();
+  typeDialog.value?.focus();
+}
+function closeChooser() {
+  choosingType.value = false;
+  void nextTick(() => lastTrigger?.focus());
+}
 async function create(type: 'INCOME' | 'EXPENSE') {
   choosingType.value = false;
   await router.push({ path: '/transactions', query: { create: type } });
 }
+function onKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || !choosingType.value) return;
+  event.preventDefault();
+  closeChooser();
+}
+function onAndroidBack(event: Event) {
+  if (!choosingType.value) return;
+  event.preventDefault();
+  closeChooser();
+}
+function onGlobalCreate(event: Event) {
+  const trigger =
+    event instanceof CustomEvent && event.detail?.trigger instanceof HTMLElement
+      ? event.detail.trigger
+      : undefined;
+  lastTrigger = trigger ?? null;
+  void openChooser();
+}
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown);
+  window.addEventListener('plannerfin:android-back', onAndroidBack);
+  window.addEventListener('plannerfin:new-transaction', onGlobalCreate);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('plannerfin:android-back', onAndroidBack);
+  window.removeEventListener('plannerfin:new-transaction', onGlobalCreate);
+});
 </script>
 
 <template>
@@ -47,14 +88,14 @@ async function create(type: 'INCOME' | 'EXPENSE') {
           >{{ item.label }}</router-link
         >
       </nav>
-      <button v-if="showGlobalAction" @click="choosingType = true">+ Novo lançamento</button>
+      <button v-if="showGlobalAction" @click="openChooser">+ Novo lançamento</button>
     </header>
     <div class="shell-content"><slot /></div>
     <button
       v-if="showGlobalAction"
       class="global-fab"
       aria-label="Novo lançamento"
-      @click="choosingType = true"
+      @click="openChooser"
     >
       <span aria-hidden="true">+</span>
     </button>
@@ -74,13 +115,15 @@ async function create(type: 'INCOME' | 'EXPENSE') {
       v-if="choosingType"
       class="choice-backdrop"
       role="presentation"
-      @click.self="choosingType = false"
+      @click.self="closeChooser"
     >
       <section
+        ref="typeDialog"
         class="choice-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-transaction-title"
+        tabindex="-1"
       >
         <h2 id="new-transaction-title">Novo lançamento</h2>
         <p>O que você quer registrar?</p>
@@ -88,7 +131,7 @@ async function create(type: 'INCOME' | 'EXPENSE') {
           <button @click="create('INCOME')">Receita</button
           ><button @click="create('EXPENSE')">Despesa</button>
         </div>
-        <button class="cancel" @click="choosingType = false">Cancelar</button>
+        <button class="cancel" @click="closeChooser">Cancelar</button>
       </section>
     </div>
   </div>
