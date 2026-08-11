@@ -16,9 +16,9 @@
 
 ## 2. Status
 
-`Em revisão`
+`Aprovada`
 
-**Aprovada por:** pendente.
+**Aprovada por:** solicitante da tarefa, em `2026-08-11`.
 
 ## 3. Contexto
 
@@ -590,7 +590,7 @@ Nesta unidade documental, rollback é `git revert` do commit documental e não a
 | `D-02` | Formulário integral em modal? | teclado e feedback | Equipe PlannerFin | Resolvida: página dedicada no mobile; sheets só para escolhas curtas |
 | `D-03` | Modelos entram nesta entrega? | domínio e escopo | Equipe PlannerFin | Resolvida: somente ponto de extensão futuro, sem UI/regra |
 
-Nenhuma dúvida bloqueante permanece para revisão desta SPEC. A aprovação humana do documento continua pendente e é requisito para implementação.
+Nenhuma dúvida bloqueante permanece para implementação desta SPEC. A aprovação humana do documento foi registrada em 2026-08-11.
 
 ## 30. Decisões aprovadas
 
@@ -598,7 +598,7 @@ Nenhuma dúvida bloqueante permanece para revisão desta SPEC. A aprovação hum
 |---|---|---|---|
 | 2026-08-11 | Elaborar SPEC documental mobile-first sem implementar UI | tarefa atual | limita alterações a `docs/specs/**` |
 | 2026-08-11 | Preservar Vue 3, Quasar, Capacitor e regras existentes | tarefa atual/ADRs | nenhum segundo frontend ou backend |
-| 2026-08-11 | Proposta de bottom navigation, ação global e padrões descritos | pendente de aprovação humana da SPEC | não autoriza implementação enquanto status for Em revisão |
+| 2026-08-11 | Bottom navigation, ação global e padrões descritos | solicitante da tarefa | autoriza futura implementação conforme o escopo aprovado da SPEC |
 
 ## 31. Definition of Done específica
 
@@ -609,7 +609,7 @@ Nenhuma dúvida bloqueante permanece para revisão desta SPEC. A aprovação hum
 - [x] Template completo, escopo, arquivos, riscos, rollback e critérios verificáveis registrados.
 - [x] Índice de SPECs atualizado.
 - [x] Nenhum arquivo de `apps/**`, dependência, API, migration ou regra financeira alterado.
-- [ ] Revisão e aprovação humana registradas; pendente no PR.
+- [x] Revisão e aprovação humana registradas em 2026-08-11.
 
 ### Para a futura implementação
 
@@ -626,3 +626,4 @@ Nenhuma dúvida bloqueante permanece para revisão desta SPEC. A aprovação hum
 | Data | Alteração | Motivo | Autor | Aprovador, quando aplicável |
 |---|---|---|---|---|
 | 2026-08-11 | Criação da SPEC-013 e inclusão no índice | definir UX mobile-first observada no Android | Equipe PlannerFin | pendente |
+| 2026-08-11 | Aprovação formal da SPEC-013, sem alteração de requisitos ou decisões | registrar a aprovação humana da direção funcional | Equipe PlannerFin | solicitante da tarefa |
