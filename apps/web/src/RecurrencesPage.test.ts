@@ -61,6 +61,21 @@ describe('RecurrencesPage', () => {
     expect(wrapper.find('form').exists()).toBe(true);
   });
 
+  it('nÃ£o mostra aÃ§Ã£o nem aviso de modelos em recorrÃªncia de transferÃªncia', async () => {
+    vi.mocked(authenticatedFetch).mockImplementation((path) => {
+      if (path === '/transaction-templates') return Promise.reject(new Error('offline'));
+      if (path === '/accounts?includeArchived=true')
+        return response([account, { id: 'b', name: 'Conta sintÃ©tica B', archivedAt: null }]);
+      if (path === '/categories?includeArchived=true') return response(categories);
+      return response([]);
+    });
+    const wrapper = mount(RecurrencesPage);
+    await flushPromises();
+    await wrapper.get('form select').setValue('TRANSFER');
+    expect(wrapper.text()).not.toContain('Usar modelo');
+    expect(wrapper.text()).not.toContain('VocÃª ainda pode preencher a recorrÃªncia manualmente');
+  });
+
   it('oculta busca com 7 modelos, mostra com 8 e filtra com trim sem diferenciar caixa', async () => {
     const seven = await mounted(7);
     expect(seven.find('input[type="search"]').exists()).toBe(false);
@@ -155,6 +170,23 @@ describe('RecurrencesPage', () => {
     await flushPromises();
     expect(wrapper.find('.sheet').exists()).toBe(false);
     expect(document.activeElement).toBe(wrapper.get('.template-action > button').element);
+    wrapper.unmount();
+  });
+
+  it('Back da WebView fecha confirmaÃ§Ã£o e seletor pelo histÃ³rico modal', async () => {
+    mockApi();
+    const wrapper = mount(RecurrencesPage, { attachTo: document.body });
+    await flushPromises();
+    await wrapper.get('.template-action > button').trigger('click');
+    await wrapper.get('input[maxlength="200"]').setValue('Rascunho');
+    await wrapper.get('.template-option').trigger('click');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('.confirm').exists()).toBe(false);
+    expect(wrapper.find('.sheet').exists()).toBe(true);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('.sheet').exists()).toBe(false);
     wrapper.unmount();
   });
 });

@@ -58,6 +58,48 @@ describe('runtime Android', () => {
     expect(mocked.exitApp).not.toHaveBeenCalled();
   });
 
+  it('nÃ£o navega quando uma tela consome o Back Android', async () => {
+    mocked.native = true;
+    mocked.platform = 'android';
+    const router = {
+      currentRoute: { value: { path: '/recurrences' } },
+      back: vi.fn(),
+    };
+    const listener = (event: Event) => event.preventDefault();
+    window.addEventListener('plannerfin:android-back', listener);
+    const { installAndroidBackHandler } = await import('./mobile');
+    installAndroidBackHandler(router as never);
+    const handler = mocked.addListener.mock.calls[0][1];
+
+    handler({ canGoBack: true });
+
+    expect(router.back).not.toHaveBeenCalled();
+    expect(mocked.exitApp).not.toHaveBeenCalled();
+    window.removeEventListener('plannerfin:android-back', listener);
+  });
+
+  it('trata fechamento de diÃ¡logo como Back consumido no WebView Android', async () => {
+    mocked.native = true;
+    mocked.platform = 'android';
+    document.body.innerHTML = '<div class="backdrop"><section role="dialog"></section></div>';
+    const router = {
+      currentRoute: { value: { path: '/recurrences' } },
+      back: vi.fn(),
+    };
+    const listener = () => document.querySelector('.backdrop')?.remove();
+    window.addEventListener('plannerfin:android-back', listener);
+    const { installAndroidBackHandler } = await import('./mobile');
+    installAndroidBackHandler(router as never);
+    const handler = mocked.addListener.mock.calls[0][1];
+
+    handler({ canGoBack: true });
+
+    expect(router.back).not.toHaveBeenCalled();
+    expect(mocked.exitApp).not.toHaveBeenCalled();
+    window.removeEventListener('plannerfin:android-back', listener);
+    document.body.innerHTML = '';
+  });
+
   it.each(['/', '/dashboard'])(
     'sai na raiz Android %s mesmo com histórico da WebView',
     async (path) => {
