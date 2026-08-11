@@ -58,4 +58,22 @@ Se uma seção do template não se aplicar, escreva **“Não aplicável”** e 
 - [Definition of Done](../quality/DEFINITION-OF-DONE.md)
 - [Estratégia de testes](../quality/TEST-STRATEGY.md)
 
+## Índice de especificações
+
+| SPEC | Título | Status |
+|---|---|---|
+| [SPEC-000](SPEC-000-SCAFFOLD-TECNICO.md) | Scaffold técnico | Consulte o documento |
+| [SPEC-001](SPEC-001-CI-VALIDACAO-SCAFFOLD.md) | CI e validação do scaffold | Consulte o documento |
+| [SPEC-002](SPEC-002-AUTENTICACAO-E-ISOLAMENTO-POR-USUARIO.md) | Autenticação e isolamento por usuário | Consulte o documento |
+| [SPEC-003](SPEC-003-CONTAS-E-SALDOS-INICIAIS.md) | Contas financeiras e saldos iniciais | Consulte o documento |
+| [SPEC-004](SPEC-004-CATEGORIAS-FINANCEIRAS.md) | Categorias financeiras | Consulte o documento |
+| [SPEC-005](SPEC-005-LANCAMENTOS-FINANCEIROS.md) | Lançamentos financeiros básicos | Consulte o documento |
+| [SPEC-006](SPEC-006-TRANSFERENCIAS-ENTRE-CONTAS.md) | Transferências entre contas | Consulte o documento |
+| [SPEC-007](SPEC-007-RECORRENCIAS-FINANCEIRAS.md) | Recorrências financeiras | Consulte o documento |
+| [SPEC-008](SPEC-008-CARTOES-DE-CREDITO-E-FATURAS.md) | Cartões de crédito e faturas | Consulte o documento |
+| [SPEC-009](SPEC-009-DIVIDAS-E-FINANCIAMENTOS.md) | Dívidas e financiamentos | Consulte o documento |
+| [SPEC-010](SPEC-010-ORCAMENTO-MENSAL.md) | Orçamento mensal | Consulte o documento |
+| [SPEC-011](SPEC-011-DASHBOARD-FINANCEIRO.md) | Dashboard financeiro | Consulte o documento |
+| [SPEC-012](SPEC-012-ANDROID-INTERNO-CAPACITOR.md) | Android interno com Capacitor | Consulte o documento |
+| [SPEC-013](SPEC-013-UX-MOBILE-FIRST-E-NAVEGACAO-PRINCIPAL.md) | UX mobile-first e navegação principal | Em revisão |
 
