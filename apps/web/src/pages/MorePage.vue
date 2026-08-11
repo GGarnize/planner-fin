@@ -9,6 +9,7 @@ const groups = [
       ['Contas', '/accounts', 'account_balance'],
       ['Categorias', '/categories', 'category'],
       ['Transferências', '/transfers', 'swap_horiz'],
+      ['Modelos de lançamento', '/transaction-templates', 'content_copy'],
     ],
   },
   { title: 'Planejamento', items: [['Recorrências', '/recurrences', 'event_repeat']] },

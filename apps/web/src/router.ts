@@ -13,6 +13,8 @@ import DebtsPage from './pages/DebtsPage.vue';
 import BudgetsPage from './pages/BudgetsPage.vue';
 import DashboardPage from './pages/DashboardPage.vue';
 import MorePage from './pages/MorePage.vue';
+import TransactionFormPage from './pages/TransactionFormPage.vue';
+import TransactionTemplatesPage from './pages/TransactionTemplatesPage.vue';
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -23,6 +25,8 @@ export const router = createRouter({
     { path: '/accounts', component: AccountsPage },
     { path: '/categories', component: CategoriesPage },
     { path: '/transactions', component: TransactionsPage },
+    { path: '/transactions/new', component: TransactionFormPage },
+    { path: '/transaction-templates', component: TransactionTemplatesPage },
     { path: '/transfers', component: TransfersPage },
     { path: '/recurrences', component: RecurrencesPage },
     { path: '/cards', component: CardsPage },

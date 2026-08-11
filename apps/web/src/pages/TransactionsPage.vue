@@ -26,6 +26,7 @@ const loading = ref(false),
   showForm = ref(false),
   editing = ref<PublicFinancialTransaction | null>(null),
   paying = ref<PublicFinancialTransaction | null>(null);
+const filtersOpen = ref(false);
 const filters = reactive({
   accountId: '',
   categoryId: '',
@@ -102,6 +103,10 @@ async function loadRelations() {
   }
 }
 function openCreate(type: FinancialTransactionType = 'EXPENSE') {
+  if (router && typeof router.push === 'function') {
+    void router.push({ path: '/transactions/new', query: { type } });
+    return;
+  }
   editing.value = null;
   formError.value = '';
   Object.assign(form, {
@@ -282,7 +287,15 @@ function closeCreate() {
     <p v-if="error" role="alert">
       {{ error }} <button class="link" @click="load()">Tentar novamente</button>
     </p>
-    <section class="filters" aria-label="Filtros">
+    <div class="filter-summary">
+      <button class="secondary" :aria-expanded="filtersOpen" @click="filtersOpen = !filtersOpen">
+        Filtros {{ Object.values(filters).some(Boolean) ? 'ativos' : '' }}
+      </button>
+      <button v-if="Object.values(filters).some(Boolean)" class="link" @click="clearFilters">
+        Limpar filtros
+      </button>
+    </div>
+    <section v-show="filtersOpen" class="filters" aria-label="Filtros avançados">
       <select v-model="filters.accountId">
         <option value="">Todas as contas</option>
         <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.name }}</option></select
@@ -446,6 +459,12 @@ function closeCreate() {
   gap: 0.75rem;
   margin: 1.5rem 0;
 }
+.filter-summary {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 1rem 0;
+}
 .list {
   display: grid;
   gap: 1rem;
@@ -513,6 +532,16 @@ textarea {
   }
   .actions {
     flex-wrap: wrap;
+  }
+  .transactions-page > header nav {
+    display: none;
+  }
+  .filters {
+    margin: 0.5rem 0 1rem;
+    grid-template-columns: 1fr;
+  }
+  .list article {
+    padding: 1rem;
   }
 }
 </style>

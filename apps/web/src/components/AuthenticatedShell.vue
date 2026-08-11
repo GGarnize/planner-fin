@@ -25,6 +25,7 @@ const primary = [
       '/cards',
       '/debts',
       '/conta',
+      '/transaction-templates',
     ],
   },
 ];
@@ -43,7 +44,7 @@ function closeChooser() {
 }
 async function create(type: 'INCOME' | 'EXPENSE') {
   choosingType.value = false;
-  await router.push({ path: '/transactions', query: { create: type } });
+  await router.push({ path: '/transactions/new', query: { type } });
 }
 function onKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape' || !choosingType.value) return;
@@ -111,12 +112,7 @@ onBeforeUnmount(() => {
         ><span>{{ item.label }}</span>
       </router-link>
     </nav>
-    <div
-      v-if="choosingType"
-      class="choice-backdrop"
-      role="presentation"
-      @click.self="closeChooser"
-    >
+    <div v-if="choosingType" class="choice-backdrop" role="presentation" @click.self="closeChooser">
       <section
         ref="typeDialog"
         class="choice-dialog"
