@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/http-exception.filter';
 import { loadApiConfig } from './config/env';
+import { isCorsOriginAllowed } from './cors';
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
@@ -17,8 +18,7 @@ async function bootstrap(): Promise<void> {
       origin: string | undefined,
       callback: (error: Error | null, allowed?: boolean) => void,
     ) => {
-      if (!origin || config.corsOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error('Origem CORS não permitida.'), false);
+      return callback(null, isCorsOriginAllowed(origin, config.corsOrigins));
     },
     credentials: true,
   });

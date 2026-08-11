@@ -6,6 +6,7 @@ import { API_CONFIG, type AuthenticatedContext } from './auth.types';
 @Injectable()
 export class TokenService {
   constructor(
+    @Inject(JwtService)
     private readonly jwt: JwtService,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
   ) {}
