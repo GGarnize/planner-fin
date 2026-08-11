@@ -27,7 +27,9 @@ import { randomToken } from './auth.utils';
 @Controller('auth')
 export class AuthController {
   constructor(
+    @Inject(AuthService)
     private readonly auth: AuthService,
+    @Inject(RateLimitService)
     private readonly limits: RateLimitService,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
   ) {}

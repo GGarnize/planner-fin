@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { DashboardResponse } from '@planner-fin/shared';
 import { monthDateBounds, projectMonthlyExpenses, totals } from '../budgets/budget-finance';
@@ -10,6 +10,7 @@ import { addCivilDays, cashPosition, money, zero } from './dashboard-finance';
 export class DashboardService {
   constructor(
     private readonly prisma: PrismaService,
+    @Optional()
     private readonly now: () => Date = () => new Date(),
   ) {}
 

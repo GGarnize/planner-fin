@@ -79,4 +79,12 @@ function scan(dir, pattern, matches = []) {
 const storageMatches = scan('src', /localStorage|sessionStorage|indexedDB/);
 if (storageMatches.length) fail(`storage JS proibido encontrado em ${storageMatches.join(', ')}.`);
 
+const networkSecurityMatches = scan('android/app/src', /certificates\s+src="user"/);
+const nonDebugTrustMatches = networkSecurityMatches.filter(
+  (path) => !path.replaceAll('\\', '/').startsWith('android/app/src/debug/'),
+);
+if (nonDebugTrustMatches.length) {
+  fail(`CA de usuÃ¡rio sÃ³ pode ser confiada em debug: ${nonDebugTrustMatches.join(', ')}.`);
+}
+
 console.log(`Android validado: PlannerFin ${webPackage.version} (${versionCodeMatch[1]}).`);

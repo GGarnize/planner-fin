@@ -26,7 +26,9 @@ const INVALID = { code: 'INVALID_CREDENTIALS', message: 'E-mail ou senha inváli
 export class AuthService {
   private sentinelHash?: Promise<string>;
   constructor(
+    @Inject(PrismaService)
     private readonly prisma: PrismaService,
+    @Inject(TokenService)
     private readonly tokens: TokenService,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
   ) {}
