@@ -17,7 +17,7 @@ describe('loadApiConfig', () => {
     expect(loadApiConfig()).toMatchObject({
       port: 3000,
       databaseUrl: process.env.DATABASE_URL,
-      corsOrigin: 'http://localhost:9000',
+      corsOrigins: ['http://localhost:9000'],
       accessTokenSeconds: 900,
       refreshTokenSeconds: 2592000,
       cookieSecure: false,
@@ -44,4 +44,27 @@ describe('loadApiConfig', () => {
     process.env.REFRESH_HMAC_SECRET = 'placeholder'.padEnd(32, 'x');
     expect(() => loadApiConfig()).toThrow('REFRESH_HMAC_SECRET deve conter');
   });
+});
+
+describe('allowlist CORS', () => {
+  const valid = () => {
+    process.env.DATABASE_URL = 'postgresql://local:local@localhost:5432/local';
+    process.env.JWT_SECRET = 'jwt-local-sintetico-ABCDEF-1234567890-xyz';
+    process.env.REFRESH_HMAC_SECRET = 'hmac-local-sintetico-9876543210-ZYX-fed';
+  };
+  it('aceita, normaliza espaços e remove duplicatas', () => {
+    valid();
+    process.env.API_CORS_ORIGINS =
+      ' http://localhost:9000 , https://localhost,http://localhost:9000 ';
+    expect(loadApiConfig().corsOrigins).toEqual(['http://localhost:9000', 'https://localhost']);
+  });
+  it.each(['*', '', 'https://example.test/path', 'https://*.example.test', 'invalida'])(
+    'rejeita configuração inválida %j',
+    (origins) => {
+      valid();
+      process.env.API_CORS_ORIGINS = origins;
+      if (!origins) process.env.API_CORS_ORIGIN = '';
+      expect(() => loadApiConfig()).toThrow('API_CORS_ORIGINS');
+    },
+  );
 });

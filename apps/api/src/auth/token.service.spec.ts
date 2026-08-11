@@ -4,7 +4,7 @@ import { TokenService } from './token.service';
 const config = {
   port: 3000,
   databaseUrl: 'postgresql://x',
-  corsOrigin: 'http://localhost:9000',
+  corsOrigins: ['http://localhost:9000'],
   jwtSecret: 'a'.repeat(32),
   refreshHmacSecret: 'b'.repeat(32),
   jwtIssuer: 'planner-fin-api',

@@ -1,0 +1,110 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mockedMobile = vi.hoisted(() => ({ android: false }));
+vi.mock('./mobile', () => ({ isAndroidNative: () => mockedMobile.android }));
+
+const authResponse = {
+  accessToken: 'access-token',
+  expiresIn: 900,
+  user: {
+    id: 'user-id',
+    name: 'Pessoa Teste',
+    email: 'pessoa@example.test',
+    createdAt: '2026-08-10T00:00:00.000Z',
+  },
+};
+
+async function loadAuth() {
+  vi.resetModules();
+  return import('./auth');
+}
+
+describe('auth client Android/web', () => {
+  beforeEach(() => {
+    mockedMobile.android = false;
+    vi.unstubAllGlobals();
+  });
+
+  it('preserva URL relativa no browser', async () => {
+    const { resolveApiBaseUrl } = await loadAuth();
+    expect(resolveApiBaseUrl('/api')).toBe('/api');
+    expect(resolveApiBaseUrl()).toBe('http://localhost:3000/api');
+  });
+
+  it('exige URL absoluta /api no Android', async () => {
+    const { resolveApiBaseUrl } = await loadAuth();
+    mockedMobile.android = true;
+    expect(() => resolveApiBaseUrl('/api')).toThrow('absoluta');
+    expect(() => resolveApiBaseUrl('https://api.example.test')).toThrow('/api');
+    expect(resolveApiBaseUrl('https://api.example.test/api')).toBe('https://api.example.test/api');
+  });
+
+  it('faz bootstrap CSRF antes do restore e usa credenciais com header em memória', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: 'csrf-1' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(authResponse), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ csrfToken: 'csrf-2' }), { status: 200 }),
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    const { restore, authState } = await loadAuth();
+    await restore();
+
+    expect(fetch).toHaveBeenNthCalledWith(1, 'http://localhost:3000/api/auth/csrf', {
+      credentials: 'include',
+    });
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost:3000/api/auth/refresh',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        headers: expect.objectContaining({ 'X-CSRF-Token': 'csrf-1' }),
+      }),
+    );
+    expect(authState.token).toBe('access-token');
+    expect(authState.csrfToken).toBe('csrf-2');
+  });
+
+  it('compartilha um refresh para GETs simultâneos com 401', async () => {
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/auth/csrf')) {
+        return new Response(JSON.stringify({ csrfToken: 'csrf' }), { status: 200 });
+      }
+      if (url.endsWith('/auth/refresh')) {
+        return new Response(JSON.stringify(authResponse), { status: 200 });
+      }
+      const authorization = (init?.headers as Record<string, string> | undefined)?.Authorization;
+      return new Response('{}', { status: authorization === 'Bearer access-token' ? 200 : 401 });
+    });
+    vi.stubGlobal('fetch', fetch);
+    const { authenticatedFetch, authState } = await loadAuth();
+    authState.token = 'expired-token';
+    authState.csrfToken = 'csrf';
+
+    const calls = [
+      authenticatedFetch('/users/me'),
+      authenticatedFetch('/accounts'),
+      authenticatedFetch('/budgets'),
+    ];
+    const responses = await Promise.all(calls);
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200]);
+    expect(fetch.mock.calls.filter(([url]) => String(url).endsWith('/auth/refresh'))).toHaveLength(
+      1,
+    );
+  });
+
+  it('não repete mutações automaticamente após 401', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('{}', { status: 401 }));
+    vi.stubGlobal('fetch', fetch);
+    const { authenticatedFetch } = await loadAuth();
+
+    const response = await authenticatedFetch('/accounts', { method: 'POST' });
+
+    expect(response.status).toBe(401);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});

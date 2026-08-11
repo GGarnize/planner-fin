@@ -3,10 +3,19 @@ dist/
 coverage/
 playwright-report/
 test-results/
+.tools/
+artifacts/
 .env
 .env.*
 !.env.example
 apps/api/.env
 apps/web/.env
+apps/web/android/local.properties
+apps/web/android/**/build/
+apps/web/android/.gradle/
+apps/web/android/*.jks
+apps/web/android/*.keystore
+*.apk
+*.aab
 
 *.tsbuildinfo

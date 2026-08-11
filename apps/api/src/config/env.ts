@@ -1,7 +1,7 @@
 export interface ApiConfig {
   port: number;
   databaseUrl: string;
-  corsOrigin: string;
+  corsOrigins: string[];
   jwtSecret: string;
   refreshHmacSecret: string;
   jwtIssuer: string;
@@ -37,10 +37,34 @@ export function loadApiConfig(): ApiConfig {
   const databaseUrl = required('DATABASE_URL');
   if (!/^postgres(ql)?:\/\//.test(databaseUrl))
     throw new Error('Configuração inválida: DATABASE_URL deve usar PostgreSQL.');
-  const corsOrigin = process.env.API_CORS_ORIGIN ?? 'http://localhost:9000';
-  const origin = new URL(corsOrigin);
-  if (!['http:', 'https:'].includes(origin.protocol) || origin.origin !== corsOrigin)
-    throw new Error('Configuração inválida: API_CORS_ORIGIN deve ser uma origem HTTP explícita.');
+  const configuredOrigins =
+    process.env.API_CORS_ORIGINS ?? process.env.API_CORS_ORIGIN ?? 'http://localhost:9000';
+  const entries = configuredOrigins.split(',').map((value) => value.trim());
+  if (entries.some((value) => !value || value === '*'))
+    throw new Error(
+      'Configuração inválida: API_CORS_ORIGINS exige origens explícitas e não aceita wildcard.',
+    );
+  const corsOrigins = [
+    ...new Set(
+      entries.map((value) => {
+        let parsed: URL;
+        try {
+          parsed = new URL(value);
+        } catch {
+          throw new Error('Configuração inválida: API_CORS_ORIGINS contém URL inválida.');
+        }
+        if (
+          value.includes('*') ||
+          !['http:', 'https:'].includes(parsed.protocol) ||
+          parsed.origin !== value
+        )
+          throw new Error(
+            'Configuração inválida: API_CORS_ORIGINS deve conter somente origens HTTP explícitas.',
+          );
+        return parsed.origin;
+      }),
+    ),
+  ];
   const jwtSecret = strongSecret('JWT_SECRET');
   const refreshHmacSecret = strongSecret('REFRESH_HMAC_SECRET');
   if (jwtSecret === refreshHmacSecret)
@@ -48,7 +72,7 @@ export function loadApiConfig(): ApiConfig {
   return {
     port,
     databaseUrl,
-    corsOrigin,
+    corsOrigins,
     jwtSecret,
     refreshHmacSecret,
     jwtIssuer: process.env.JWT_ISSUER ?? 'planner-fin-api',

@@ -21,7 +21,8 @@ export class CsrfGuard implements CanActivate {
     const valid =
       cookie &&
       header &&
-      origin === this.config.corsOrigin &&
+      !!origin &&
+      this.config.corsOrigins.includes(origin) &&
       cookie.length === header.length &&
       timingSafeEqual(Buffer.from(cookie), Buffer.from(header));
     if (!valid)
