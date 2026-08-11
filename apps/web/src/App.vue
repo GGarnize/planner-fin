@@ -7,8 +7,12 @@
 </template>
 <style>
 .page {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: #f5f7fb;
+  padding-top: max(24px, env(safe-area-inset-top));
+  padding-right: max(24px, env(safe-area-inset-right));
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  padding-left: max(24px, env(safe-area-inset-left));
 }
 .card {
   width: min(100%, 32rem);

@@ -1,0 +1,76 @@
+apply plugin: 'com.android.application'
+
+import groovy.json.JsonSlurper
+
+def webPackage = new JsonSlurper().parse(file('../../package.json'))
+def plannerFinVersionName = webPackage.version
+def plannerFinVersionCode = 1
+def hasInternalSigning = System.getenv("PLANNER_FIN_KEYSTORE_FILE") &&
+        System.getenv("PLANNER_FIN_KEYSTORE_PASSWORD") &&
+        System.getenv("PLANNER_FIN_KEY_ALIAS") &&
+        System.getenv("PLANNER_FIN_KEY_PASSWORD")
+
+android {
+    namespace = "com.plannerfin.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.plannerfin.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode plannerFinVersionCode
+        versionName plannerFinVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        internal {
+            if (hasInternalSigning) {
+                storeFile file(System.getenv("PLANNER_FIN_KEYSTORE_FILE"))
+                storePassword System.getenv("PLANNER_FIN_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("PLANNER_FIN_KEY_ALIAS")
+                keyPassword System.getenv("PLANNER_FIN_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        internal {
+            initWith release
+            matchingFallbacks = ['release']
+            signingConfig = signingConfigs.internal
+        }
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.any { it.name.toLowerCase().contains("internal") } && !hasInternalSigning) {
+        throw new GradleException("Assinatura internal indisponível: configure PLANNER_FIN_KEYSTORE_FILE, PLANNER_FIN_KEYSTORE_PASSWORD, PLANNER_FIN_KEY_ALIAS e PLANNER_FIN_KEY_PASSWORD.")
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
