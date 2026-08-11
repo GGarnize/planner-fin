@@ -30,6 +30,8 @@ const templates = ref<PublicTransactionTemplate[]>([]),
 const templateTrigger = ref<HTMLButtonElement | null>(null),
   templateDialog = ref<HTMLElement | null>(null),
   confirmDialog = ref<HTMLElement | null>(null);
+let templateHistoryPushed = false,
+  handlingDialogPop = false;
 const form = reactive({
   kind: 'TRANSACTION',
   transactionType: 'EXPENSE',
@@ -148,13 +150,30 @@ function edit(item: PublicRecurrence) {
 }
 async function openTemplates() {
   templateSearch.value = '';
+  pushTemplateHistory();
   showTemplates.value = true;
   await nextTick();
   templateDialog.value?.querySelector<HTMLElement>('input, button')?.focus();
 }
-function closeTemplates() {
+function closeTemplates(syncHistoryOrEvent: boolean | Event = true) {
+  const syncHistory = typeof syncHistoryOrEvent === 'boolean' ? syncHistoryOrEvent : true;
   showTemplates.value = false;
+  if (syncHistory) releaseTemplateHistory();
+  else templateHistoryPushed = false;
   void nextTick(() => templateTrigger.value?.focus());
+}
+function pushTemplateHistory() {
+  if (templateHistoryPushed) return;
+  window.history.pushState({ plannerfinDialog: 'recurrence-template' }, '', window.location.href);
+  templateHistoryPushed = true;
+}
+function releaseTemplateHistory() {
+  if (!templateHistoryPushed || handlingDialogPop) {
+    templateHistoryPushed = false;
+    return;
+  }
+  templateHistoryPushed = false;
+  window.history.back();
 }
 function applyTemplate(template: PublicTransactionTemplate) {
   form.transactionType = template.type;
@@ -193,9 +212,9 @@ function cancelTemplate() {
 function confirmTemplate() {
   if (pendingTemplate.value) applyTemplate(pendingTemplate.value);
 }
-function closeTopDialog() {
+function closeTopDialog(syncHistory = true) {
   if (showConfirm.value) cancelTemplate();
-  else if (showTemplates.value) closeTemplates();
+  else if (showTemplates.value) closeTemplates(syncHistory);
   else return false;
   return true;
 }
@@ -203,7 +222,18 @@ function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && closeTopDialog()) event.preventDefault();
 }
 function onAndroidBack(event: Event) {
-  if (closeTopDialog()) event.preventDefault();
+  if (!closeTopDialog(false)) return;
+  event.preventDefault();
+}
+function onPopState() {
+  if (!showConfirm.value && !showTemplates.value) return;
+  handlingDialogPop = true;
+  if (showConfirm.value) {
+    cancelTemplate();
+    templateHistoryPushed = false;
+    if (showTemplates.value) pushTemplateHistory();
+  } else if (showTemplates.value) closeTemplates(false);
+  handlingDialogPop = false;
 }
 function removeTemplate() {
   selectedTemplate.value = null;
@@ -239,12 +269,15 @@ watch(showConfirm, async (visible) => {
 onMounted(() => {
   window.addEventListener('keydown', onKeydown);
   window.addEventListener('plannerfin:android-back', onAndroidBack, true);
+  window.addEventListener('popstate', onPopState);
   void load();
   void loadTemplates();
 });
 onBeforeUnmount(() => {
+  if (showTemplates.value) releaseTemplateHistory();
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener('plannerfin:android-back', onAndroidBack, true);
+  window.removeEventListener('popstate', onPopState);
 });
 </script>
 <template>
@@ -273,7 +306,9 @@ onBeforeUnmount(() => {
             <button type="button" class="link" @click="removeTemplate">Remover</button></span
           >
         </div>
-        <p v-if="templateError" class="warning" role="alert">{{ templateError }}</p>
+        <p v-if="form.kind === 'TRANSACTION' && templateError" class="warning" role="alert">
+          {{ templateError }}
+        </p>
         <p v-if="templateWarning" class="warning" role="alert">{{ templateWarning }}</p>
         <div class="grid">
           <label
