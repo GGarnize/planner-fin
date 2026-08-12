@@ -380,6 +380,7 @@ model FinancialTransaction {
   paidAt           DateTime?                  @db.Date
   recurrenceRuleId String?                    @db.Uuid
   occurrenceDate   DateTime?                  @db.Date
+  deletedAt        DateTime?                  @db.Timestamptz(3)
   createdAt        DateTime                   @default(now()) @db.Timestamptz(3)
   updatedAt        DateTime                   @updatedAt @db.Timestamptz(3)
   user             User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -388,6 +389,9 @@ model FinancialTransaction {
   recurrenceRule   RecurrenceRule?            @relation(fields: [recurrenceRuleId], references: [id], onDelete: Restrict)
 
   @@unique([recurrenceRuleId, occurrenceDate])
+  @@index([userId, deletedAt, dueDate(sort: Desc), createdAt(sort: Desc), id])
+  @@index([userId, deletedAt, status, dueDate])
+  @@index([userId, deletedAt, paidAt])
   @@index([userId, dueDate(sort: Desc), createdAt(sort: Desc), id])
   @@index([userId, accountId, dueDate])
   @@index([userId, categoryId, dueDate])

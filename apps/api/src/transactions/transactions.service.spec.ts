@@ -16,6 +16,9 @@ const row = (extra = {}) => ({
   actualAmount: null,
   dueDate: new Date('2026-08-07'),
   paidAt: null,
+  recurrenceRuleId: null,
+  occurrenceDate: null,
+  deletedAt: null,
   createdAt: new Date('2026-08-07'),
   updatedAt: new Date('2026-08-07'),
   ...extra,
@@ -84,7 +87,57 @@ describe('transições de lançamentos', () => {
     const result = await s.reopen(userId, id);
     expect(result.status).toBe('PENDING');
     expect(tx.financialTransaction.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ status: 'PAID' }) }),
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'PAID', deletedAt: null }),
+      }),
+    );
+  });
+  it('remove ativo com soft delete e preserva tombstone em repeticao', async () => {
+    const deletedAt = new Date('2026-08-12T12:00:00.000Z');
+    const tx = {
+      $queryRaw: vi.fn(),
+      financialTransaction: {
+        findFirst: vi.fn().mockResolvedValueOnce(row()).mockResolvedValueOnce(row({ deletedAt })),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const s = new TransactionsService(
+      { $transaction: (fn: (x: unknown) => unknown) => fn(tx) } as never,
+      config,
+    );
+    await expect(s.remove(userId, id)).resolves.toBeUndefined();
+    await expect(s.remove(userId, id)).resolves.toBeUndefined();
+    expect(tx.financialTransaction.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.financialTransaction.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id, userId, deletedAt: null },
+        data: { deletedAt: expect.any(Date) },
+      }),
+    );
+  });
+  it('consulta e mutacoes tratam tombstone como ausente', async () => {
+    const tx = {
+      $queryRaw: vi.fn(),
+      financialTransaction: { findFirst: vi.fn().mockResolvedValue(null), updateMany: vi.fn() },
+    };
+    const s = new TransactionsService(
+      {
+        financialTransaction: tx.financialTransaction,
+        $transaction: (fn: (x: unknown) => unknown) => fn(tx),
+      } as never,
+      config,
+    );
+    await expect(s.get(userId, id)).rejects.toMatchObject({ response: { code: 'NOT_FOUND' } });
+    await expect(
+      s.pay(userId, id, { actualAmount: '10.00', paidAt: '2026-08-07' }),
+    ).rejects.toMatchObject({ response: { code: 'NOT_FOUND' } });
+  });
+  it('lista apenas lancamentos ativos', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const s = new TransactionsService({ financialTransaction: { findMany } } as never, config);
+    await s.list(userId, {});
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ deletedAt: null }) }),
     );
   });
   it('rejeita categoria incompatível e recurso arquivado', async () => {

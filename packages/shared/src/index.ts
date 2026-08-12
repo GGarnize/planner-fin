@@ -150,6 +150,7 @@ export interface PublicFinancialTransaction {
   dueDate: string;
   paidAt: string | null;
   isOverdue: boolean;
+  isRecurringOccurrence: boolean;
   createdAt: string;
   updatedAt: string;
 }

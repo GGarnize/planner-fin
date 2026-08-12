@@ -180,6 +180,18 @@ describe('DashboardService', () => {
       exceeded: true,
     });
     expect(result.expenseByCategory.uncategorizedDebtCostRealized).toBe('25.00');
+    expect(fixture.tx.financialTransaction.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'PAID', deletedAt: null }),
+      }),
+    );
+    expect(fixture.tx.financialTransaction.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({ deletedAt: null }),
+      }),
+    );
   });
   it('não soma caixa parcial quando uma conta possui corte futuro', async () => {
     const fixture = prismaFixture({

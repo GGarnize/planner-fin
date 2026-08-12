@@ -37,6 +37,7 @@ const invalid = (field = 'body') =>
     message: 'Revise os dados informados.',
     details: [{ field, message: 'Revise o valor informado.' }],
   });
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 @Injectable()
 export class TransactionsService {
   constructor(
@@ -85,6 +86,7 @@ export class TransactionsService {
         : undefined;
     const where: Prisma.FinancialTransactionWhereInput = {
       userId,
+      deletedAt: null,
       ...(query.accountId ? { accountId: query.accountId } : {}),
       ...(query.categoryId ? { categoryId: query.categoryId } : {}),
       ...(query.type ? { type: query.type } : {}),
@@ -145,36 +147,44 @@ export class TransactionsService {
   }
   async update(userId: string, id: string, dto: UpdateTransactionDto) {
     if (!Object.keys(dto).length) throw invalid();
-    return this.prisma.$transaction(async (tx) => {
-      const row = await this.find(userId, id, tx);
-      const financial = ['plannedAmount', 'dueDate', 'accountId', 'categoryId', 'type'].some(
-        (key) => key in dto,
-      );
-      if (row.status === 'PAID' && financial)
-        throw new ConflictException({
-          code: 'PAID_TRANSACTION_REQUIRES_REOPEN',
-          message: 'Reabra o lançamento antes de alterar dados financeiros.',
+    return this.prisma.$transaction(
+      async (tx) => {
+        const row = await this.find(userId, id, tx);
+        const financial = ['plannedAmount', 'dueDate', 'accountId', 'categoryId', 'type'].some(
+          (key) => key in dto,
+        );
+        if (row.status === 'PAID' && financial)
+          throw new ConflictException({
+            code: 'PAID_TRANSACTION_REQUIRES_REOPEN',
+            message: 'Reabra o lançamento antes de alterar dados financeiros.',
+          });
+        const accountId = dto.accountId ?? row.accountId,
+          categoryId = dto.categoryId ?? row.categoryId,
+          type = dto.type ?? row.type;
+        if (financial) await this.relations(tx, userId, accountId, categoryId, type);
+        const data: Prisma.FinancialTransactionUpdateInput = {
+          ...(dto.description !== undefined ? { description: dto.description } : {}),
+          ...(dto.notes !== undefined ? { notes: normalizeNotes(dto.notes) } : {}),
+          ...(dto.plannedAmount !== undefined
+            ? { plannedAmount: new Prisma.Decimal(dto.plannedAmount) }
+            : {}),
+          ...(dto.dueDate !== undefined ? { dueDate: civilDate(dto.dueDate) } : {}),
+          ...(dto.accountId !== undefined ? { account: { connect: { id: dto.accountId } } } : {}),
+          ...(dto.categoryId !== undefined
+            ? { category: { connect: { id: dto.categoryId } } }
+            : {}),
+          ...(dto.type !== undefined ? { type: dto.type } : {}),
+        };
+        if (this.same(row, data, dto)) return publicTransaction(row);
+        const changed = await tx.financialTransaction.updateMany({
+          where: { id: row.id, userId, deletedAt: null },
+          data,
         });
-      const accountId = dto.accountId ?? row.accountId,
-        categoryId = dto.categoryId ?? row.categoryId,
-        type = dto.type ?? row.type;
-      if (financial) await this.relations(tx, userId, accountId, categoryId, type);
-      const data: Prisma.FinancialTransactionUpdateInput = {
-        ...(dto.description !== undefined ? { description: dto.description } : {}),
-        ...(dto.notes !== undefined ? { notes: normalizeNotes(dto.notes) } : {}),
-        ...(dto.plannedAmount !== undefined
-          ? { plannedAmount: new Prisma.Decimal(dto.plannedAmount) }
-          : {}),
-        ...(dto.dueDate !== undefined ? { dueDate: civilDate(dto.dueDate) } : {}),
-        ...(dto.accountId !== undefined ? { account: { connect: { id: dto.accountId } } } : {}),
-        ...(dto.categoryId !== undefined ? { category: { connect: { id: dto.categoryId } } } : {}),
-        ...(dto.type !== undefined ? { type: dto.type } : {}),
-      };
-      if (this.same(row, data, dto)) return publicTransaction(row);
-      return publicTransaction(
-        await tx.financialTransaction.update({ where: { id: row.id }, data }),
-      );
-    });
+        if (!changed.count) throw notFound();
+        return publicTransaction(await this.find(userId, id, tx));
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
   async pay(userId: string, id: string, dto: PayTransactionDto) {
     return this.prisma.$transaction(
@@ -183,7 +193,7 @@ export class TransactionsService {
         const actualAmount = new Prisma.Decimal(dto.actualAmount);
         const paidAt = civilDate(dto.paidAt);
         const changed = await tx.financialTransaction.updateMany({
-          where: { id, userId, status: 'PENDING' },
+          where: { id, userId, status: 'PENDING', deletedAt: null },
           data: { status: 'PAID', actualAmount, paidAt },
         });
         const row = await this.find(userId, id, tx);
@@ -203,10 +213,29 @@ export class TransactionsService {
       async (tx) => {
         await this.find(userId, id, tx);
         await tx.financialTransaction.updateMany({
-          where: { id, userId, status: 'PAID' },
+          where: { id, userId, status: 'PAID', deletedAt: null },
           data: { status: 'PENDING', actualAmount: null, paidAt: null },
         });
         return publicTransaction(await this.find(userId, id, tx));
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
+  async remove(userId: string, id: string): Promise<void> {
+    if (!UUID_PATTERN.test(id)) throw invalid('id');
+    await this.prisma.$transaction(
+      async (tx) => {
+        const row = await this.lockAny(userId, id, tx);
+        if (row.deletedAt) return;
+        const changed = await tx.financialTransaction.updateMany({
+          where: { id, userId, deletedAt: null },
+          data: { deletedAt: new Date() },
+        });
+        if (!changed.count) {
+          const current = await this.lockAny(userId, id, tx);
+          if (current.deletedAt) return;
+          throw notFound();
+        }
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
@@ -252,11 +281,28 @@ export class TransactionsService {
     id: string,
     tx: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<FinancialTransaction> {
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))
-      throw notFound();
+    if (!UUID_PATTERN.test(id)) throw notFound();
+    const row = await tx.financialTransaction.findFirst({ where: { id, userId, deletedAt: null } });
+    if (!row) throw notFound();
+    return row;
+  }
+  private async findAny(
+    userId: string,
+    id: string,
+    tx: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<FinancialTransaction> {
+    if (!UUID_PATTERN.test(id)) throw notFound();
     const row = await tx.financialTransaction.findFirst({ where: { id, userId } });
     if (!row) throw notFound();
     return row;
+  }
+  private async lockAny(
+    userId: string,
+    id: string,
+    tx: Prisma.TransactionClient,
+  ): Promise<FinancialTransaction> {
+    await tx.$queryRaw`SELECT "id" FROM "FinancialTransaction" WHERE "id"=${id}::uuid AND "userId"=${userId}::uuid FOR UPDATE`;
+    return this.findAny(userId, id, tx);
   }
   private same(row: FinancialTransaction, _data: unknown, dto: UpdateTransactionDto) {
     return Object.entries(dto).every(([key, value]) =>

@@ -27,6 +27,9 @@ const row = (extra = {}) => ({
   actualAmount: null,
   dueDate: new Date('2026-08-06T00:00:00Z'),
   paidAt: null,
+  recurrenceRuleId: null,
+  occurrenceDate: null,
+  deletedAt: null,
   createdAt: new Date('2026-08-07T01:00:00Z'),
   updatedAt: new Date('2026-08-07T01:00:00Z'),
   ...extra,
@@ -67,6 +70,7 @@ describe('regras de lançamentos', () => {
   it('projeta valores/data e vencido sem userId', () => {
     const result = publicTransaction(row() as never, '2026-08-07');
     expect(result).not.toHaveProperty('userId');
+    expect(result).not.toHaveProperty('deletedAt');
     expect(result.plannedAmount).toBe('10.00');
     expect(result.dueDate).toBe('2026-08-06');
     expect(result.isOverdue).toBe(true);
@@ -80,6 +84,14 @@ describe('regras de lançamentos', () => {
         '2026-08-07',
       ).isOverdue,
     ).toBe(false);
+    expect(
+      publicTransaction(
+        row({
+          recurrenceRuleId: '33333333-3333-4333-8333-333333333333',
+          occurrenceDate: new Date('2026-08-06T00:00:00Z'),
+        }) as never,
+      ).isRecurringOccurrence,
+    ).toBe(true);
   });
   it('calcula saldo somente pelo realizado e pela natureza', () => {
     const rows = [

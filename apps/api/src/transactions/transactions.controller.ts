@@ -2,7 +2,9 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -80,6 +82,12 @@ export class TransactionsController {
   ) {
     if (Object.keys(query).length) throw this.invalid();
     return this.transactions.update(auth.userId, id, dto);
+  }
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@CurrentAuth() auth: AuthenticatedContext, @Param('id') id: string, @Req() req: Request) {
+    this.noInput(req);
+    return this.transactions.remove(auth.userId, id);
   }
   @Post(':id/pay') pay(
     @CurrentAuth() auth: AuthenticatedContext,

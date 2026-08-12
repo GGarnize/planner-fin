@@ -53,7 +53,12 @@ export class DashboardService {
       debts,
     ] = await Promise.all([
       tx.financialTransaction.findMany({
-        where: { userId, status: 'PAID', paidAt: { gt: earliest, lte: todayDate } },
+        where: {
+          userId,
+          status: 'PAID',
+          deletedAt: null,
+          paidAt: { gt: earliest, lte: todayDate },
+        },
         select: { accountId: true, type: true, actualAmount: true, paidAt: true },
       }),
       tx.financialTransfer.findMany({
@@ -92,6 +97,7 @@ export class DashboardService {
       tx.financialTransaction.findMany({
         where: {
           userId,
+          deletedAt: null,
           OR: [{ dueDate: { gte: from, lt: to } }, { status: 'PENDING', dueDate: { lte: next7 } }],
         },
         select: {

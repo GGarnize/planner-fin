@@ -118,7 +118,11 @@ describe('projeção do orçamento', () => {
     ]);
     expect(tx.financialTransaction.groupBy).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ type: 'EXPENSE', dueDate: expect.anything() }),
+        where: expect.objectContaining({
+          type: 'EXPENSE',
+          deletedAt: null,
+          dueDate: expect.anything(),
+        }),
       }),
     );
     expect(tx.cardInstallment.findMany).toHaveBeenCalledTimes(1);
