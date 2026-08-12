@@ -5,6 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "pnpm --filter @planner-fin/shared build && nest start --watch",
+    "dev:seed-test-user": "pnpm build && node dist/dev/seed-test-user.js",
     "build": "nest build",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
