@@ -6,6 +6,7 @@ const DEFAULT_PASSWORD = 'PlannerFinLocal123!';
 const DEFAULT_NAME = 'Conta Sintética Local';
 const LOCAL_DATABASE_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 const LOCAL_DATABASE_NAMES = new Set(['planner_fin_local', 'planner_fin_test']);
+const SYNTHETIC_EMAIL_DOMAIN = '.test';
 
 export class LocalTestSeedGuardError extends Error {
   constructor(message: string) {
@@ -83,6 +84,12 @@ export function loadLocalTestSeedConfig(env: NodeJS.ProcessEnv): LocalTestSeedCo
     );
 
   const email = normalizeEmail(env.PLANNER_FIN_TEST_EMAIL ?? DEFAULT_EMAIL);
+  const emailDomain = email.split('@')[1] ?? '';
+  if (!emailDomain.endsWith(SYNTHETIC_EMAIL_DOMAIN))
+    throw new LocalTestSeedGuardError(
+      'Fixture local recusada: PLANNER_FIN_TEST_EMAIL deve usar domínio sintético .test.',
+    );
+
   const password = env.PLANNER_FIN_TEST_PASSWORD ?? DEFAULT_PASSWORD;
   if (!passwordIsValid(password))
     throw new LocalTestSeedGuardError(
