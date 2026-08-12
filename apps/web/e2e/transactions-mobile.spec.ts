@@ -42,11 +42,11 @@ test('lançamentos mobile priorizam lista e modelo apenas copia o rascunho', asy
     'aria-expanded',
     'false',
   );
-  await expect(page.getByRole('heading', { name: 'Nenhum lançamento cadastrado' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nenhum resultado para os filtros' })).toBeVisible();
   await page.getByRole('button', { name: 'Nova despesa' }).click();
   await expect(page).toHaveURL(/transactions\/new/);
   await page.getByRole('button', { name: 'Usar modelo...' }).click();
-  await page.getByRole('button', { name: /Aluguel Aluguel sintético/ }).click();
+  await page.getByRole('button', { name: /Aluguel.*Aluguel sintético/ }).click();
   await expect(page.getByLabel('Descrição')).toHaveValue('Aluguel sintético');
   await page.getByLabel('Valor previsto').fill('1200');
   const post = page.waitForRequest(

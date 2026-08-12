@@ -28,16 +28,25 @@ const showTemplates = ref(false),
   detailsOpen = ref(false),
   dirty = ref(false);
 const templateSearch = ref('');
+const templateTypeFilter = ref<FinancialTransactionType | 'ALL'>(
+  route.query.type === 'INCOME' ? 'INCOME' : 'EXPENSE',
+);
 const templateTrigger = ref<HTMLButtonElement | null>(null),
   templateDialog = ref<HTMLElement | null>(null),
   confirmDialog = ref<HTMLElement | null>(null),
   discardDialog = ref<HTMLElement | null>(null);
+function pad(value: number) {
+  return String(value).padStart(2, '0');
+}
+function civilDateString(date = new Date()) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 const form = reactive({
   type: (route.query.type === 'INCOME' ? 'INCOME' : 'EXPENSE') as FinancialTransactionType,
   status: 'PENDING',
   plannedAmount: '',
   description: '',
-  dueDate: '',
+  dueDate: civilDateString(),
   accountId: '',
   categoryId: '',
   actualAmount: '',
@@ -47,10 +56,19 @@ const form = reactive({
 const compatibleCategories = computed(() =>
   categories.value.filter((c) => !c.archivedAt && c.type === form.type),
 );
-const activeTemplates = computed(() => filterActiveTemplates(templates.value, ''));
-const filteredTemplates = computed(() =>
-  filterActiveTemplates(templates.value, templateSearch.value),
+const activeAccounts = computed(() => accounts.value.filter((account) => !account.archivedAt));
+const activeTemplates = computed(() =>
+  filterActiveTemplates(templates.value, '').filter(
+    (template) => templateTypeFilter.value === 'ALL' || template.type === templateTypeFilter.value,
+  ),
 );
+const filteredTemplates = computed(() =>
+  filterActiveTemplates(templates.value, templateSearch.value).filter(
+    (template) => templateTypeFilter.value === 'ALL' || template.type === templateTypeFilter.value,
+  ),
+);
+const actualAmountTouched = ref(false),
+  paidAtTouched = ref(false);
 async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>[1]): Promise<T> {
   const response = await authenticatedFetch(path, init);
   const body = await response.json().catch(() => ({}));
@@ -60,6 +78,7 @@ async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>
 }
 async function openTemplates() {
   templateSearch.value = '';
+  templateTypeFilter.value = form.type;
   showTemplates.value = true;
   await nextTick();
   templateDialog.value?.querySelector<HTMLElement>('input, button')?.focus();
@@ -70,7 +89,11 @@ function closeTemplates() {
 }
 function apply(template: PublicTransactionTemplate) {
   const now = new Date();
-  Object.assign(form, templateDefaults(template, now.getFullYear(), now.getMonth() + 1));
+  const defaults = templateDefaults(template, now.getFullYear(), now.getMonth() + 1);
+  Object.assign(form, { ...defaults, dueDate: defaults.dueDate || civilDateString() });
+  actualAmountTouched.value = false;
+  paidAtTouched.value = false;
+  applySmartDefaults();
   selectedTemplate.value = template;
   templateWarning.value = '';
   if (!template.categoryAvailable)
@@ -137,6 +160,18 @@ function onAndroidBack(event: Event) {
 function removeTemplate() {
   selectedTemplate.value = null;
 }
+function applySmartDefaults() {
+  if (!form.accountId && activeAccounts.value.length === 1)
+    form.accountId = activeAccounts.value[0]!.id;
+  if (!form.categoryId && compatibleCategories.value.length === 1)
+    form.categoryId = compatibleCategories.value[0]!.id;
+}
+function touchActualAmount() {
+  actualAmountTouched.value = true;
+}
+function touchPaidAt() {
+  paidAtTouched.value = true;
+}
 async function save() {
   error.value = '';
   const plannedAmount = normalizeMoney(form.plannedAmount);
@@ -188,6 +223,7 @@ onMounted(async () => {
       api<PublicFinancialCategory[]>('/categories'),
       api<PublicTransactionTemplate[]>('/transaction-templates'),
     ]);
+    applySmartDefaults();
   } catch {
     error.value = 'Não foi possível carregar os dados do formulário.';
   }
@@ -201,6 +237,28 @@ watch(
   () => {
     if (!compatibleCategories.value.some((category) => category.id === form.categoryId))
       form.categoryId = '';
+    applySmartDefaults();
+  },
+);
+watch(
+  () => form.status,
+  (status, previous) => {
+    if (status !== 'PAID' || previous === 'PAID') return;
+    if (!actualAmountTouched.value && !form.actualAmount) form.actualAmount = form.plannedAmount;
+    if (!paidAtTouched.value && !form.paidAt) form.paidAt = form.dueDate;
+  },
+);
+watch(
+  () => form.plannedAmount,
+  () => {
+    if (form.status === 'PAID' && !actualAmountTouched.value)
+      form.actualAmount = form.plannedAmount;
+  },
+);
+watch(
+  () => form.dueDate,
+  () => {
+    if (form.status === 'PAID' && !paidAtTouched.value) form.paidAt = form.dueDate;
   },
 );
 watch(showConfirm, async (visible) => {
@@ -245,7 +303,7 @@ watch(showDiscardConfirm, async (visible) => {
       <label
         >Conta<select v-model="form.accountId" required>
           <option value="">Selecione</option>
-          <option v-for="a in accounts.filter((a) => !a.archivedAt)" :key="a.id" :value="a.id">
+          <option v-for="a in activeAccounts" :key="a.id" :value="a.id">
             {{ a.name }}
           </option>
         </select></label
@@ -263,8 +321,14 @@ watch(showDiscardConfirm, async (visible) => {
         </select></label
       >
       <template v-if="form.status === 'PAID'"
-        ><label>Valor realizado<input v-model="form.actualAmount" inputmode="decimal" /></label
-        ><label>Data do pagamento<input v-model="form.paidAt" type="date" /></label
+        ><label
+          >Valor realizado<input
+            v-model="form.actualAmount"
+            inputmode="decimal"
+            @input="touchActualAmount" /></label
+        ><label
+          >Data do pagamento<input v-model="form.paidAt" type="date" @input="touchPaidAt"
+        /></label
       ></template>
       <button type="button" class="details" @click="detailsOpen = !detailsOpen">
         {{ detailsOpen ? 'Ocultar detalhes' : 'Mais detalhes' }}
@@ -284,6 +348,33 @@ watch(showDiscardConfirm, async (visible) => {
         aria-labelledby="template-dialog-title"
       >
         <h2 id="template-dialog-title">Usar modelo</h2>
+        <div class="template-tabs" role="tablist" aria-label="Filtrar modelos por natureza">
+          <button
+            type="button"
+            :class="{ selected: templateTypeFilter === 'EXPENSE' }"
+            :aria-selected="templateTypeFilter === 'EXPENSE'"
+            role="tab"
+            @click="templateTypeFilter = 'EXPENSE'"
+          >
+            Despesa</button
+          ><button
+            type="button"
+            :class="{ selected: templateTypeFilter === 'INCOME' }"
+            :aria-selected="templateTypeFilter === 'INCOME'"
+            role="tab"
+            @click="templateTypeFilter = 'INCOME'"
+          >
+            Receita</button
+          ><button
+            type="button"
+            :class="{ selected: templateTypeFilter === 'ALL' }"
+            :aria-selected="templateTypeFilter === 'ALL'"
+            role="tab"
+            @click="templateTypeFilter = 'ALL'"
+          >
+            Todos</button
+          >
+        </div>
         <label v-if="activeTemplates.length >= 8"
           >Buscar modelos<input v-model="templateSearch" type="search"
         /></label>
@@ -291,7 +382,10 @@ watch(showDiscardConfirm, async (visible) => {
         <p v-else-if="!filteredTemplates.length">Nenhum modelo encontrado para esta busca.</p>
         <button v-for="t in filteredTemplates" :key="t.id" class="template" @click="choose(t)">
           <b>{{ t.name }}</b
-          ><span>{{ t.description }} · {{ t.plannedAmount }}</span></button
+          ><span
+            >{{ t.type === 'INCOME' ? 'Receita' : 'Despesa' }} · {{ t.description }} ·
+            {{ t.plannedAmount }}</span
+          ></button
         ><button class="secondary" @click="closeTemplates">Cancelar</button>
       </section>
     </div>
@@ -375,6 +469,20 @@ watch(showDiscardConfirm, async (visible) => {
   padding: 0.75rem;
   background: #fff4e5;
   color: #854d0e;
+}
+.template-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.template-tabs button {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+.template-tabs button.selected {
+  background: #155eef;
+  color: #fff;
 }
 .save {
   position: sticky;
