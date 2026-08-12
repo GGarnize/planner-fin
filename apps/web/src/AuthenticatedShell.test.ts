@@ -59,4 +59,15 @@ describe('AuthenticatedShell', () => {
     expect(notCancelled).toBe(false);
     expect(wrapper.find('[role=dialog]').exists()).toBe(false);
   });
+
+  it('desabilita o FAB e impede empilhar o chooser global', async () => {
+    const { wrapper } = await mountShell();
+    await wrapper.get('.global-fab').trigger('click');
+    expect(wrapper.findAll('[role=dialog]')).toHaveLength(1);
+    expect(wrapper.get('.global-fab').attributes('aria-disabled')).toBe('true');
+    expect(wrapper.get('.global-fab').attributes('tabindex')).toBe('-1');
+    await wrapper.get('.global-fab').trigger('click');
+    await flushPromises();
+    expect(wrapper.findAll('[role=dialog]')).toHaveLength(1);
+  });
 });

@@ -33,6 +33,8 @@ const active = (item: (typeof primary)[number]) =>
   item.matches.some((path) => route.path === path || route.path.startsWith(`${path}/`));
 const showGlobalAction = computed(() => primary.some((item) => active(item)));
 async function openChooser(event?: Event) {
+  if (choosingType.value || globalThis.document.querySelector('[role="dialog"], .modal, .backdrop'))
+    return;
   if (event) lastTrigger = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
   choosingType.value = true;
   await nextTick();
@@ -95,7 +97,10 @@ onBeforeUnmount(() => {
     <button
       v-if="showGlobalAction"
       class="global-fab"
+      :class="{ disabled: choosingType }"
       aria-label="Novo lançamento"
+      :aria-disabled="choosingType"
+      :tabindex="choosingType ? -1 : 0"
       @click="openChooser"
     >
       <span aria-hidden="true">+</span>
@@ -182,7 +187,7 @@ onBeforeUnmount(() => {
 }
 .choice-backdrop {
   position: fixed;
-  z-index: 30;
+  z-index: 100;
   inset: 0;
   display: grid;
   place-items: center;
@@ -269,6 +274,10 @@ onBeforeUnmount(() => {
     border-radius: 50%;
     box-shadow: 0 0.4rem 1rem #0f172a40;
     font-size: 2rem;
+  }
+  .global-fab.disabled {
+    pointer-events: none;
+    visibility: hidden;
   }
   .choice-backdrop {
     align-items: end;

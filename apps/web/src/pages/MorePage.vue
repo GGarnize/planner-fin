@@ -34,14 +34,14 @@ async function leave() {
       <router-link v-for="item in group.items" :key="item[1]" :to="item[1]"
         ><span class="material-icons" aria-hidden="true">{{ item[2] }}</span
         ><span>{{ item[0] }}</span
-        ><span aria-hidden="true">chevron_right</span></router-link
+        ><span class="material-icons" aria-hidden="true">chevron_right</span></router-link
       >
     </section>
     <section>
       <h2>Conta</h2>
       <router-link to="/conta"
         ><span class="material-icons" aria-hidden="true">person</span><span>Perfil e conta</span
-        ><span aria-hidden="true">chevron_right</span></router-link
+        ><span class="material-icons" aria-hidden="true">chevron_right</span></router-link
       ><button @click="leave">
         <span class="material-icons" aria-hidden="true">logout</span>Sair
       </button>
