@@ -12,6 +12,7 @@
     "dev": "pnpm --parallel --filter @planner-fin/api --filter @planner-fin/web dev",
     "dev:api": "pnpm --filter @planner-fin/api dev",
     "dev:web": "pnpm --filter @planner-fin/web dev",
+    "dev:seed-test-user": "pnpm --filter @planner-fin/api dev:seed-test-user",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "format": "prettier --write .",

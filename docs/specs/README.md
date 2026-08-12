@@ -77,3 +77,4 @@ Se uma seção do template não se aplicar, escreva **“Não aplicável”** e 
 | [SPEC-012](SPEC-012-ANDROID-INTERNO-CAPACITOR.md) | Android interno com Capacitor | Consulte o documento |
 | [SPEC-013](SPEC-013-UX-MOBILE-FIRST-E-NAVEGACAO-PRINCIPAL.md) | UX mobile-first e navegação principal | Aprovada |
 | [SPEC-014](SPEC-014-MODELOS-DE-LANCAMENTO-E-INTEGRACAO-COM-RECORRENCIAS.md) | Modelos de lançamento e integração com recorrências | Aprovada |
+| [SPEC-015](SPEC-015-FIXTURE-LOCAL-AUTENTICACAO-TESTES.md) | Fixture local de autenticação para testes | Aprovada |
