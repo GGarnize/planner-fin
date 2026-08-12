@@ -1,7 +1,7 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { reactive } from 'vue';
 import { routeLocationKey, routerKey } from 'vue-router';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import TransactionsPage from './pages/TransactionsPage.vue';
 
 vi.mock('./auth', () => ({ authenticatedFetch: vi.fn() }));
@@ -89,7 +89,72 @@ function submittedBody(method = 'POST') {
 }
 
 describe('tela de lançamentos (API mockada)', () => {
-  beforeEach(() => vi.mocked(authenticatedFetch).mockReset());
+  beforeEach(() => {
+    vi.mocked(authenticatedFetch).mockReset();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-12T15:00:00-03:00'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('carrega por default o mes civil atual por vencimento', async () => {
+    mockPage();
+    await mountPage();
+    const firstListCall = vi
+      .mocked(authenticatedFetch)
+      .mock.calls.find(([path]) => String(path).startsWith('/transactions?'))!;
+    expect(String(firstListCall[0])).toContain('dueDateFrom=2026-08-01');
+    expect(String(firstListCall[0])).toContain('dueDateTo=2026-08-31');
+  });
+
+  it('agrupa visualmente por hoje, futuros e anteriores sem considerar status', async () => {
+    const todayPaid = {
+      ...item,
+      id: '55555555-5555-4555-8555-555555555555',
+      status: 'PAID',
+      actualAmount: '10.00',
+      dueDate: '2026-08-12',
+      paidAt: '2026-08-12',
+      isOverdue: false,
+    };
+    const future = {
+      ...item,
+      id: '66666666-6666-4666-8666-666666666666',
+      description: 'Futuro',
+      dueDate: '2026-08-20',
+      isOverdue: false,
+    };
+    const past = { ...item, description: 'Anterior', dueDate: '2026-08-01' };
+    mockPage({ data: [future, past, todayPaid], page: { limit: 20, nextCursor: null } });
+    const wrapper = await mountPage();
+    expect(wrapper.findAll('.date-group > h2').map((heading) => heading.text())).toEqual([
+      'Hoje',
+      'Futuros',
+      'Anteriores',
+    ]);
+    expect(wrapper.findAll('.date-group')[0]!.text()).toContain('Pago');
+    expect(wrapper.findAll('.date-group')[0]!.text()).toContain('Conta');
+  });
+
+  it('diferencia pago e pendente e prioriza realizado quando pago', async () => {
+    const paid = {
+      ...item,
+      status: 'PAID',
+      actualAmount: '12.00',
+      paidAt: '2026-08-01',
+      isOverdue: false,
+    };
+    mockPage({ data: [paid, item], page: { limit: 20, nextCursor: null } });
+    const wrapper = await mountPage();
+    const paidCard = wrapper.get('.transaction-card--paid');
+    const pendingCard = wrapper.get('.transaction-card--pending');
+    expect(paidCard.get('.status-badge').text()).toBe('Pago');
+    expect(paidCard.get('.amount-main').text()).toContain('Realizado R$ 12,00');
+    expect(paidCard.get('.amount-secondary').text()).toContain('Previsto R$ 10,00');
+    expect(pendingCard.get('.status-badge').text()).toBe('Pendente');
+    expect(pendingCard.get('.amount-main').text()).toContain('Previsto R$ 10,00');
+  });
 
   it('cria PENDING com payload exatamente aderente ao contrato e recarrega a lista', async () => {
     mockPage();
@@ -111,7 +176,9 @@ describe('tela de lançamentos (API mockada)', () => {
     });
     expect(wrapper.find('.modal').exists()).toBe(false);
     expect(
-      vi.mocked(authenticatedFetch).mock.calls.filter(([path]) => path === '/transactions?'),
+      vi.mocked(authenticatedFetch).mock.calls.filter(([path]) =>
+        String(path).startsWith('/transactions?'),
+      ),
     ).toHaveLength(2);
   });
 
@@ -210,7 +277,7 @@ describe('tela de lançamentos (API mockada)', () => {
     const wrapper = await mountPage();
     const form = await openExpenseForm(wrapper);
     await form.findAll('select')[0]!.setValue('INCOME');
-    expect(form.findAll('select')[2]!.element.value).toBe('');
+    expect(form.findAll('select')[2]!.element.value).toBe(incomeCategory.id);
     expect(
       form
         .findAll('select')[2]!

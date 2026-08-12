@@ -30,13 +30,28 @@ const loading = ref(false),
   editing = ref<PublicFinancialTransaction | null>(null),
   paying = ref<PublicFinancialTransaction | null>(null);
 const filtersOpen = ref(false);
+function pad(value: number) {
+  return String(value).padStart(2, '0');
+}
+function civilDateString(date = new Date()) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+function monthBounds(date = new Date()) {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  return {
+    from: `${year}-${pad(month + 1)}-01`,
+    to: civilDateString(new Date(year, month + 1, 0)),
+  };
+}
+const defaultDueMonth = monthBounds();
 const filters = reactive({
   accountId: '',
   categoryId: '',
   type: '',
   status: '',
-  dueDateFrom: '',
-  dueDateTo: '',
+  dueDateFrom: defaultDueMonth.from,
+  dueDateTo: defaultDueMonth.to,
   paidAtFrom: '',
   paidAtTo: '',
 });
@@ -61,10 +76,38 @@ const androidBackState = globalThis as typeof globalThis & {
 const compatibleCategories = computed(() =>
   categories.value.filter((c) => !c.archivedAt && c.type === form.type),
 );
-const money = (value: string | null) =>
-  value === null
-    ? '—'
-    : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value));
+const money = (value: string | null) => {
+  if (value === null) return '—';
+  const [integer = '0', cents = ''] = value.split('.');
+  const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `R$ ${grouped},${cents.padEnd(2, '0').slice(0, 2)}`;
+};
+type TransactionGroup = {
+  key: 'today' | 'future' | 'past';
+  title: string;
+  items: PublicFinancialTransaction[];
+};
+const groupedItems = computed<TransactionGroup[]>(() => {
+  const today = civilDateString();
+  const groups: TransactionGroup[] = [
+    { key: 'today', title: 'Hoje', items: [] },
+    { key: 'future', title: 'Futuros', items: [] },
+    { key: 'past', title: 'Anteriores', items: [] },
+  ];
+  for (const item of items.value) {
+    if (item.dueDate === today) groups[0]!.items.push(item);
+    else if (item.dueDate > today) groups[1]!.items.push(item);
+    else groups[2]!.items.push(item);
+  }
+  const byNewest = (a: PublicFinancialTransaction, b: PublicFinancialTransaction) =>
+    b.dueDate.localeCompare(a.dueDate) || b.createdAt.localeCompare(a.createdAt);
+  groups[0]!.items.sort(byNewest);
+  groups[1]!.items.sort(
+    (a, b) => a.dueDate.localeCompare(b.dueDate) || b.createdAt.localeCompare(a.createdAt),
+  );
+  groups[2]!.items.sort(byNewest);
+  return groups.filter((group) => group.items.length);
+});
 async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>[1]): Promise<T> {
   const response = await authenticatedFetch(path, init);
   if (!response.ok) {
@@ -108,16 +151,21 @@ function openCreate(type: FinancialTransactionType = 'EXPENSE') {
   }
   editing.value = null;
   formError.value = '';
+  const activeAccounts = accounts.value.filter((account) => !account.archivedAt);
+  const activeCompatibleCategories = categories.value.filter(
+    (category) => !category.archivedAt && category.type === type,
+  );
   Object.assign(form, {
     type,
     status: 'PENDING',
-    accountId: '',
-    categoryId: '',
+    accountId: activeAccounts.length === 1 ? activeAccounts[0]!.id : '',
+    categoryId:
+      activeCompatibleCategories.length === 1 ? activeCompatibleCategories[0]!.id : '',
     description: '',
     notes: '',
     plannedAmount: '',
     actualAmount: '',
-    dueDate: '',
+    dueDate: civilDateString(),
     paidAt: '',
   });
   showForm.value = true;
@@ -235,6 +283,8 @@ watch(
   () => {
     if (!compatibleCategories.value.some((category) => category.id === form.categoryId))
       form.categoryId = '';
+    if (!form.categoryId && compatibleCategories.value.length === 1)
+      form.categoryId = compatibleCategories.value[0]!.id;
   },
 );
 watch(
@@ -385,19 +435,31 @@ function onPopState() {
         Limpar filtros</button
       ><button v-else @click="openCreate()">Criar lançamento</button>
     </section>
-    <section v-else class="list">
-      <article v-for="item in items" :key="item.id">
+    <section v-else class="list" aria-label="Lançamentos filtrados">
+      <section v-for="group in groupedItems" :key="group.key" class="date-group">
+        <h2>{{ group.title }}</h2>
+      <article
+        v-for="item in group.items"
+        :key="item.id"
+        class="transaction-card"
+        :class="{
+          'transaction-card--paid': item.status === 'PAID',
+          'transaction-card--pending': item.status === 'PENDING',
+        }"
+      >
         <header>
-          <h2>{{ item.description }}</h2>
-          <span>{{ item.status === 'PAID' ? 'Pago' : 'Pendente' }}</span
+          <h3>{{ item.description }}</h3>
+          <span class="status-badge">{{ item.status === 'PAID' ? 'Pago' : 'Pendente' }}</span
           ><strong v-if="item.isOverdue">Vencido</strong>
         </header>
         <p>{{ item.type === 'INCOME' ? 'Receita' : 'Despesa' }} · vencimento {{ item.dueDate }}</p>
         <div class="amounts">
-          <span
-            >Previsto <b>{{ money(item.plannedAmount) }}</b></span
-          ><span
-            >Realizado <b>{{ money(item.actualAmount) }}</b></span
+          <span class="amount-main"
+            >{{ item.status === 'PAID' ? 'Realizado' : 'Previsto' }}
+            <b>{{ money(item.status === 'PAID' ? item.actualAmount : item.plannedAmount) }}</b></span
+          ><span class="amount-secondary"
+            >{{ item.status === 'PAID' ? 'Previsto' : 'Realizado' }}
+            <b>{{ money(item.status === 'PAID' ? item.plannedAmount : item.actualAmount) }}</b></span
           >
         </div>
         <p v-if="item.notes">{{ item.notes }}</p>
@@ -416,6 +478,7 @@ function onPopState() {
           ><button v-else @click="reopen(item)">Reabrir para pendente</button>
         </div>
       </article>
+      </section>
     </section>
     <button v-if="nextCursor" :disabled="loading" @click="load(true)">Carregar mais</button>
     <div v-if="showForm" class="modal" role="dialog" aria-modal="true">
@@ -528,7 +591,16 @@ function onPopState() {
 }
 .list {
   display: grid;
-  gap: 1rem;
+  gap: 1.25rem;
+}
+.date-group {
+  display: grid;
+  gap: 0.75rem;
+}
+.date-group > h2 {
+  margin: 0;
+  font-size: 1rem;
+  color: #334155;
 }
 .list article,
 .empty,
@@ -538,19 +610,49 @@ form {
   border-radius: 1rem;
   box-shadow: 0 0.5rem 2rem #0f172a18;
 }
+.transaction-card {
+  border-left: 0.35rem solid #64748b;
+}
+.transaction-card--paid {
+  border-left-color: #15803d;
+  background: linear-gradient(90deg, #f0fdf4 0, #fff 34%);
+}
+.transaction-card--pending {
+  border-left-color: #b45309;
+}
 .list article > header {
   display: flex;
   gap: 0.75rem;
   align-items: center;
 }
-.list h2 {
+.list h3 {
   margin-right: auto;
+}
+.status-badge {
+  padding: 0.2rem 0.55rem;
+  border: 1px solid #94a3b8;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.transaction-card--paid .status-badge::before {
+  content: "✓ ";
+}
+.transaction-card--pending .status-badge::before {
+  content: "• ";
 }
 .amounts span {
   display: grid;
 }
-.amounts b {
+.amount-main b {
   font-size: 1.2rem;
+}
+.amount-secondary {
+  color: #475569;
+}
+.amount-secondary b {
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 .secondary {
   background: #e2e8f0;
