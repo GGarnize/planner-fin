@@ -79,3 +79,4 @@ Se uma seção do template não se aplicar, escreva **“Não aplicável”** e 
 | [SPEC-014](SPEC-014-MODELOS-DE-LANCAMENTO-E-INTEGRACAO-COM-RECORRENCIAS.md) | Modelos de lançamento e integração com recorrências | Aprovada |
 | [SPEC-015](SPEC-015-FIXTURE-LOCAL-AUTENTICACAO-TESTES.md) | Fixture local de autenticação para testes | Aprovada |
 | [SPEC-016](SPEC-016-UX-LANCAMENTOS-FASE-B.md) | UX de Lançamentos Fase B | Aprovada |
+| [SPEC-017](SPEC-017-EXCLUSAO-INDIVIDUAL-LANCAMENTO.md) | Exclusão individual de lançamento | Aprovada |
