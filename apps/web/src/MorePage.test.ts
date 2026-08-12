@@ -17,4 +17,24 @@ describe('MorePage', () => {
     expect(chevrons.length).toBeGreaterThan(0);
     expect(chevrons.every((icon) => icon.classes().includes('material-icons'))).toBe(true);
   });
+  it('mantém todos os grupos e rotas secundárias navegáveis', () => {
+    const wrapper = mount(MorePage, { global: { stubs: { RouterLink: RouterLinkStub } } });
+    expect(wrapper.findAll('section h2').map((heading) => heading.text())).toEqual([
+      'Movimentação',
+      'Planejamento',
+      'Crédito e compromissos',
+      'Conta',
+    ]);
+    expect(wrapper.findAllComponents(RouterLinkStub).map((link) => link.props('to'))).toEqual([
+      '/accounts',
+      '/categories',
+      '/transfers',
+      '/transaction-templates',
+      '/recurrences',
+      '/cards',
+      '/debts',
+      '/conta',
+    ]);
+    expect(wrapper.findAll('a,button')).toHaveLength(9);
+  });
 });

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-/* global CustomEvent, Event, window */
-import { onMounted, ref } from 'vue';
+/* global CustomEvent, Event, KeyboardEvent, window */
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { DashboardResponse } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 
@@ -9,25 +9,41 @@ const civilMonth = () => {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 };
 const month = ref(civilMonth());
+const selectedMonth = ref(month.value);
 const snapshot = ref<DashboardResponse | null>(null);
 const loading = ref(false);
 const error = ref('');
+const pickerOpen = ref(false);
+let loadRequest = 0;
 const money = (value: string) => {
   const match = /^(-?)(\d+)\.(\d{2})$/.exec(value);
   return match
     ? `${match[1]}R$ ${match[2]!.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${match[3]}`
     : value;
 };
-const monthLabel = () => {
-  const [year, value] = month.value.split('-').map(Number);
+const parseMonth = (value: string) => {
+  const [year, monthValue] = value.split('-').map(Number);
+  return { year: year!, monthValue: monthValue! };
+};
+const formatMonth = (year: number, monthValue: number) =>
+  `${year}-${String(monthValue).padStart(2, '0')}`;
+const addMonth = (value: string, offset: -1 | 1) => {
+  const { year, monthValue } = parseMonth(value);
+  const date = new Date(Date.UTC(year, monthValue - 1 + offset, 1));
+  return formatMonth(date.getUTCFullYear(), date.getUTCMonth() + 1);
+};
+const monthLabel = computed(() => {
+  const { year, monthValue } = parseMonth(month.value);
   const label = new Intl.DateTimeFormat('pt-BR', {
     month: 'long',
     year: 'numeric',
     timeZone: 'UTC',
-  }).format(new Date(Date.UTC(year!, value! - 1, 1)));
+  }).format(new Date(Date.UTC(year, monthValue - 1, 1)));
   return label.charAt(0).toUpperCase() + label.slice(1);
-};
+});
+const isCurrentMonth = computed(() => month.value === civilMonth());
 async function load() {
+  const request = ++loadRequest;
   loading.value = true;
   error.value = '';
   snapshot.value = null;
@@ -36,22 +52,50 @@ async function load() {
       `/dashboard?month=${encodeURIComponent(month.value)}`,
     );
     if (!response.ok) throw new Error('Não foi possível carregar o dashboard.');
-    snapshot.value = (await response.json()) as DashboardResponse;
+    const data = (await response.json()) as DashboardResponse;
+    if (request === loadRequest) snapshot.value = data;
   } catch (failure) {
+    if (request !== loadRequest) return;
     error.value = failure instanceof Error ? failure.message : 'API indisponível. Tente novamente.';
   } finally {
-    loading.value = false;
+    if (request === loadRequest) loading.value = false;
   }
 }
 function move(offset: -1 | 1) {
-  const [year, value] = month.value.split('-').map((part) => parseInt(part, 10));
-  const date = new Date(Date.UTC(year!, value! - 1 + offset, 1));
-  month.value = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+  pickerOpen.value = false;
+  month.value = addMonth(month.value, offset);
+  selectedMonth.value = month.value;
   void load();
 }
 function current() {
+  pickerOpen.value = false;
   month.value = civilMonth();
+  selectedMonth.value = month.value;
   void load();
+}
+function openPicker() {
+  selectedMonth.value = month.value;
+  pickerOpen.value = true;
+}
+function applyPicker() {
+  if (!/^\d{4}-\d{2}$/.test(selectedMonth.value)) return;
+  pickerOpen.value = false;
+  if (selectedMonth.value === month.value) return;
+  month.value = selectedMonth.value;
+  void load();
+}
+function closePicker() {
+  pickerOpen.value = false;
+}
+function onKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || !pickerOpen.value) return;
+  event.preventDefault();
+  closePicker();
+}
+function onAndroidBack(event: Event) {
+  if (!pickerOpen.value) return;
+  event.preventDefault();
+  closePicker();
 }
 function startNewTransaction(event: Event) {
   window.dispatchEvent(
@@ -60,20 +104,56 @@ function startNewTransaction(event: Event) {
     }),
   );
 }
-onMounted(load);
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown);
+  window.addEventListener('plannerfin:android-back', onAndroidBack, true);
+  void load();
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('plannerfin:android-back', onAndroidBack, true);
+});
 </script>
 
 <template>
   <main class="dashboard">
     <h1 class="sr-only">Dashboard financeiro</h1>
     <header class="period-header">
-      <button class="icon-button" aria-label="Mês anterior" @click="move(-1)">‹</button>
-      <div>
-        <strong>{{ monthLabel() }}</strong
-        ><small>{{ month }}</small>
+      <button class="icon-button" aria-label="Mês anterior" @click="move(-1)">
+        <span class="material-icons" aria-hidden="true">chevron_left</span>
+      </button>
+      <div class="period-center">
+        <button
+          type="button"
+          class="period-label"
+          :aria-expanded="pickerOpen"
+          aria-controls="dashboard-period-picker"
+          @click="openPicker"
+        >
+          <strong>{{ monthLabel }}</strong
+          ><small>{{ month }}</small>
+        </button>
+        <form
+          v-if="pickerOpen"
+          id="dashboard-period-picker"
+          class="period-picker"
+          aria-label="Selecionar mês do dashboard"
+          @submit.prevent="applyPicker"
+        >
+          <label
+            >Mês e ano
+            <input v-model="selectedMonth" type="month" required />
+          </label>
+          <div>
+            <button type="button" class="secondary" @click="closePicker">Cancelar</button>
+            <button type="submit">Aplicar</button>
+          </div>
+        </form>
       </div>
-      <button class="current-button" @click="current">Mês atual</button>
-      <button class="icon-button" aria-label="Próximo mês" @click="move(1)">›</button>
+      <button class="current-button" :disabled="isCurrentMonth" @click="current">Mês atual</button>
+      <button class="icon-button" aria-label="Próximo mês" @click="move(1)">
+        <span class="material-icons" aria-hidden="true">chevron_right</span>
+      </button>
     </header>
     <p v-if="loading" role="status">Carregando dashboard…</p>
     <section v-else-if="error" class="panel" role="alert">
@@ -106,7 +186,8 @@ onMounted(load);
             class="primary-action"
             aria-label="Criar transação pelo dashboard"
             @click="startNewTransaction"
-            >+ Novo lançamento</button
+          >
+            + Novo lançamento</button
           ><router-link to="/transfers">Transferir</router-link>
         </div>
         <section class="panel summary-panel">
@@ -180,7 +261,11 @@ onMounted(load);
               <dd>{{ money(snapshot.budget.remainingAgainstCommitted) }}</dd>
             </div>
           </dl>
-          <router-link to="/budgets">Ver orçamentos</router-link>
+          <router-link class="budget-cta" to="/budgets"
+            ><span class="material-icons" aria-hidden="true">account_balance_wallet</span
+            ><span>Ver Orçamento</span
+            ><span class="material-icons" aria-hidden="true">chevron_right</span></router-link
+          >
         </section>
         <section class="panel">
           <h2>Faturas</h2>
@@ -244,28 +329,78 @@ onMounted(load);
   align-items: center;
   margin-bottom: 0.75rem;
 }
-.period-header div {
+.period-center {
   min-width: 10rem;
+  position: relative;
   text-align: center;
 }
-.period-header strong,
-.period-header small {
+.period-label {
+  width: 100%;
+  min-height: 2.75rem;
+  display: grid;
+  place-items: center;
+  padding: 0.25rem 0.5rem;
+  color: #0f172a;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.75rem;
+}
+.period-label strong,
+.period-label small {
   display: block;
 }
-.period-header strong {
+.period-label strong {
   font-size: 1.25rem;
 }
-.period-header small {
+.period-label small {
   color: #64748b;
+}
+.period-picker {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 0.35rem);
+  left: 50%;
+  width: min(18rem, calc(100vw - 2rem));
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.75rem;
+  box-shadow: 0 0.6rem 1.8rem #0f172a26;
+  transform: translateX(-50%);
+}
+.period-picker label {
+  display: grid;
+  gap: 0.35rem;
+  text-align: left;
+  font-weight: 700;
+}
+.period-picker input {
+  min-height: 2.75rem;
+  font: inherit;
+  padding: 0.5rem;
+  border: 1px solid #94a3b8;
+  border-radius: 0.5rem;
+}
+.period-picker div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
 }
 .icon-button {
   min-width: 2.75rem;
+  min-height: 2.75rem;
   padding: 0.25rem;
   font-size: 1.5rem;
 }
 .current-button {
+  min-height: 2.75rem;
   background: #e2e8f0;
   color: #334155;
+}
+.current-button:disabled {
+  opacity: 0.55;
 }
 .sr-only {
   position: absolute;
@@ -314,6 +449,24 @@ onMounted(load);
   border-radius: 0.6rem;
   text-decoration: none;
   font-weight: 700;
+}
+.budget-cta {
+  min-height: 2.75rem;
+  display: grid;
+  grid-template-columns: 1.5rem 1fr 1.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.55rem 0.7rem;
+  color: #155eef;
+  background: #eef4ff;
+  border: 1px solid #b7cdfc;
+  border-radius: 0.65rem;
+  text-decoration: none;
+  font-weight: 700;
+}
+.budget-cta .material-icons {
+  font-size: 1.25rem;
 }
 .quick-actions .primary-action {
   color: #fff;
@@ -370,10 +523,14 @@ onMounted(load);
   }
   .period-header {
     justify-content: space-between;
+    gap: 0.35rem;
   }
-  .period-header div {
+  .period-center {
     min-width: 0;
     flex: 1;
+  }
+  .period-label strong {
+    font-size: 1rem;
   }
   .current-button {
     font-size: 0.75rem;

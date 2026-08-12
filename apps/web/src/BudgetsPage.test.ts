@@ -81,10 +81,7 @@ describe('tela de orçamento mensal', () => {
     vi.mocked(authenticatedFetch).mockReturnValue(response({ error: {} }, 404));
     const wrapper = mount(BudgetsPage);
     await flushPromises();
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'Próximo mês')!
-      .trigger('click');
+    await wrapper.get('button[aria-label="Próximo mês"]').trigger('click');
     await flushPromises();
     expect(vi.mocked(authenticatedFetch).mock.calls.at(-1)![0]).toMatch(
       /^\/budgets\?month=\d{4}-\d{2}$/,
