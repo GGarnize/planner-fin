@@ -80,3 +80,4 @@ Se uma seção do template não se aplicar, escreva **“Não aplicável”** e 
 | [SPEC-015](SPEC-015-FIXTURE-LOCAL-AUTENTICACAO-TESTES.md) | Fixture local de autenticação para testes | Aprovada |
 | [SPEC-016](SPEC-016-UX-LANCAMENTOS-FASE-B.md) | UX de Lançamentos Fase B | Aprovada |
 | [SPEC-017](SPEC-017-EXCLUSAO-INDIVIDUAL-LANCAMENTO.md) | Exclusão individual de lançamento | Aprovada |
+| [SPEC-018](SPEC-018-PERSONALIZACAO-VISUAL-USUARIO.md) | Personalização visual por usuário | Aprovada |
