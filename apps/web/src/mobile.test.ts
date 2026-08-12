@@ -27,6 +27,9 @@ describe('runtime Android', () => {
     mocked.platform = 'web';
     mocked.addListener.mockReset();
     mocked.exitApp.mockReset();
+    (
+      globalThis as typeof globalThis & { __plannerfinSuppressNextAndroidBack?: number }
+    ).__plannerfinSuppressNextAndroidBack = 0;
   });
 
   it('detecta Android nativo via API oficial do Capacitor', async () => {
@@ -98,6 +101,45 @@ describe('runtime Android', () => {
     expect(mocked.exitApp).not.toHaveBeenCalled();
     window.removeEventListener('plannerfin:android-back', listener);
     document.body.innerHTML = '';
+  });
+
+  it('nao navega se havia overlay mesmo quando nenhum listener fecha o dialogo', async () => {
+    mocked.native = true;
+    mocked.platform = 'android';
+    document.body.innerHTML = '<section role="dialog"></section>';
+    const router = {
+      currentRoute: { value: { path: '/transactions' } },
+      back: vi.fn(),
+    };
+    const { installAndroidBackHandler } = await import('./mobile');
+    installAndroidBackHandler(router as never);
+    const handler = mocked.addListener.mock.calls[0][1];
+
+    handler({ canGoBack: true });
+
+    expect(router.back).not.toHaveBeenCalled();
+    expect(mocked.exitApp).not.toHaveBeenCalled();
+    document.body.innerHTML = '';
+  });
+
+  it('nao navega quando popstate de modal acabou de consumir o Back Android', async () => {
+    mocked.native = true;
+    mocked.platform = 'android';
+    (
+      globalThis as typeof globalThis & { __plannerfinSuppressNextAndroidBack?: number }
+    ).__plannerfinSuppressNextAndroidBack = Date.now() + 1000;
+    const router = {
+      currentRoute: { value: { path: '/transactions' } },
+      back: vi.fn(),
+    };
+    const { installAndroidBackHandler } = await import('./mobile');
+    installAndroidBackHandler(router as never);
+    const handler = mocked.addListener.mock.calls[0][1];
+
+    handler({ canGoBack: true });
+
+    expect(router.back).not.toHaveBeenCalled();
+    expect(mocked.exitApp).not.toHaveBeenCalled();
   });
 
   it.each(['/', '/dashboard'])(

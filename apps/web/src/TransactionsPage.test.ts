@@ -278,6 +278,37 @@ describe('tela de lançamentos (API mockada)', () => {
     });
   });
 
+  it('mantem acoes acessiveis e bloqueia scroll de fundo nos modais', async () => {
+    mockPage({ data: [item], page: { limit: 20, nextCursor: null } });
+    document.body.style.overflow = '';
+    const wrapper = await mountPage();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Editar')!
+      .trigger('click');
+    expect(document.body.style.overflow).toBe('hidden');
+    expect(wrapper.find('.modal .modal-body').exists()).toBe(true);
+    expect(wrapper.find('.modal .actions').exists()).toBe(true);
+    const editBack = new Event('plannerfin:android-back', { cancelable: true });
+    window.dispatchEvent(editBack);
+    await flushPromises();
+    expect(editBack.defaultPrevented).toBe(true);
+    expect(document.body.style.overflow).toBe('');
+    expect(wrapper.find('.modal').exists()).toBe(false);
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Marcar como pago')!
+      .trigger('click');
+    expect(document.body.style.overflow).toBe('hidden');
+    const payBack = new Event('plannerfin:android-back', { cancelable: true });
+    window.dispatchEvent(payBack);
+    await flushPromises();
+    expect(payBack.defaultPrevented).toBe(true);
+    expect(document.body.style.overflow).toBe('');
+    expect(wrapper.find('.modal').exists()).toBe(false);
+  });
+
   it('limpa a query create apos salvar pelo fluxo global', async () => {
     mockPage();
     const { wrapper, router } = await mountPageWithRoute({ create: 'EXPENSE' });

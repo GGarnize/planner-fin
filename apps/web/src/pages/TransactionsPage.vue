@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, reactive, ref, watch } from 'vue';
+/* global Event, KeyboardEvent, window */
+import { computed, inject, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded } from 'vue-router';
 import type {
   FinancialTransactionStatus,
@@ -10,6 +11,7 @@ import type {
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 import { safeApiErrorMessage } from '../api-error';
+import { setModalScrollLock } from '../modal-scroll-lock';
 const route = inject(routeLocationKey, { query: {} } as RouteLocationNormalizedLoaded);
 const router = inject(routerKey, null);
 type Page = {
@@ -51,6 +53,11 @@ const form = reactive({
   paidAt: '',
 });
 const payForm = reactive({ actualAmount: '', paidAt: '' });
+let modalHistoryActive = false;
+let releasingModalHistory = false;
+const androidBackState = globalThis as typeof globalThis & {
+  __plannerfinSuppressNextAndroidBack?: number;
+};
 const compatibleCategories = computed(() =>
   categories.value.filter((c) => !c.archivedAt && c.type === form.type),
 );
@@ -230,6 +237,14 @@ watch(
       form.categoryId = '';
   },
 );
+watch(
+  () => showForm.value || !!paying.value,
+  (active) => {
+    setModalScrollLock('transactions', active);
+    if (active) ensureModalHistory();
+    else releaseModalHistory();
+  },
+);
 async function reopen(item: PublicFinancialTransaction) {
   try {
     await api(`/transactions/${item.id}/reopen`, {
@@ -251,13 +266,63 @@ function clearFilters() {
   applyFilters();
 }
 onMounted(() => {
+  window.addEventListener('keydown', onKeydown);
+  window.addEventListener('plannerfin:android-back', onAndroidBack, true);
+  window.addEventListener('popstate', onPopState);
   void Promise.all([load(), loadRelations()]);
   openCreateFromRoute();
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('plannerfin:android-back', onAndroidBack, true);
+  window.removeEventListener('popstate', onPopState);
+  modalHistoryActive = false;
+  setModalScrollLock('transactions', false);
 });
 watch(() => route.query.create, openCreateFromRoute);
 function closeCreate() {
   showForm.value = false;
   if (route.query.create) void router?.replace({ path: '/transactions' });
+}
+function closeTopDialog(releaseHistory = true) {
+  if (paying.value) {
+    paying.value = null;
+    if (releaseHistory) releaseModalHistory();
+    return true;
+  }
+  if (showForm.value) {
+    closeCreate();
+    if (releaseHistory) releaseModalHistory();
+    return true;
+  }
+  return false;
+}
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && closeTopDialog()) event.preventDefault();
+}
+function onAndroidBack(event: Event) {
+  if (!closeTopDialog()) return;
+  event.preventDefault();
+}
+function ensureModalHistory() {
+  if (modalHistoryActive) return;
+  modalHistoryActive = true;
+  globalThis.history.pushState({ plannerfinModal: 'transactions' }, '', globalThis.location.href);
+}
+function releaseModalHistory() {
+  if (!modalHistoryActive || releasingModalHistory) return;
+  modalHistoryActive = false;
+  releasingModalHistory = true;
+  globalThis.history.back();
+  globalThis.setTimeout(() => {
+    releasingModalHistory = false;
+  }, 0);
+}
+function onPopState() {
+  if (releasingModalHistory || !modalHistoryActive) return;
+  modalHistoryActive = false;
+  closeTopDialog(false);
+  androidBackState.__plannerfinSuppressNextAndroidBack = Date.now() + 1000;
 }
 </script>
 <template>
@@ -356,7 +421,8 @@ function closeCreate() {
     <div v-if="showForm" class="modal" role="dialog" aria-modal="true">
       <form novalidate @submit.prevent="save">
         <h2>{{ editing ? 'Editar lançamento' : 'Novo lançamento' }}</h2>
-        <p v-if="formError" role="alert">{{ formError }}</p>
+        <div class="modal-body">
+          <p v-if="formError" role="alert">{{ formError }}</p>
         <label
           >Natureza<select v-model="form.type" :disabled="editing?.status === 'PAID'">
             <option value="INCOME">Receita</option>
@@ -408,6 +474,7 @@ function closeCreate() {
         <p v-if="editing?.status === 'PAID'">
           Reabra primeiro para alterar conta, categoria, natureza, previsto ou vencimento.
         </p>
+        </div>
         <div class="actions">
           <button type="button" class="secondary" @click="closeCreate">Cancelar</button
           ><button :disabled="loading">Salvar</button>
@@ -417,13 +484,15 @@ function closeCreate() {
     <div v-if="paying" class="modal" role="dialog" aria-modal="true">
       <form novalidate @submit.prevent="pay">
         <h2>Marcar como pago</h2>
-        <p v-if="payFormError" role="alert">{{ payFormError }}</p>
+        <div class="modal-body">
+          <p v-if="payFormError" role="alert">{{ payFormError }}</p>
         <label
           >Valor realizado<input
             v-model="payForm.actualAmount"
             inputmode="decimal"
             required /></label
         ><label>Data do pagamento<input v-model="payForm.paidAt" type="date" required /></label>
+        </div>
         <div class="actions">
           <button type="button" class="secondary" @click="paying = null">Cancelar</button
           ><button>Confirmar pagamento</button>
@@ -498,13 +567,24 @@ form {
   background: #0f172a99;
   display: grid;
   place-items: center;
-  padding: 1rem;
-  z-index: 3;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+    calc(var(--shell-nav-height, 0px) + 1rem + env(safe-area-inset-bottom))
+    max(1rem, env(safe-area-inset-left));
+  z-index: 90;
+  overscroll-behavior: contain;
 }
 .modal form {
   width: min(100%, 34rem);
-  max-height: 95vh;
+  max-height: calc(100dvh - var(--shell-nav-height, 0px) - 2rem - env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+.modal-body {
+  min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.25rem;
 }
 select,
 textarea {

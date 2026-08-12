@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+/* global Event, KeyboardEvent, window */
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import type {
   FinancialTransferStatus,
   PublicFinancialAccount,
   PublicFinancialTransfer,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import { setModalScrollLock } from '../modal-scroll-lock';
 type Page = { data: PublicFinancialTransfer[]; page: { limit: number; nextCursor: string | null } };
 const items = ref<PublicFinancialTransfer[]>([]),
   accounts = ref<PublicFinancialAccount[]>([]);
@@ -37,6 +39,11 @@ const form = reactive({
   completedAt: '',
 });
 const completeForm = reactive({ actualAmount: '', completedAt: '' });
+let modalHistoryActive = false;
+let releasingModalHistory = false;
+const androidBackState = globalThis as typeof globalThis & {
+  __plannerfinSuppressNextAndroidBack?: number;
+};
 const activeAccounts = computed(() => accounts.value.filter((account) => !account.archivedAt));
 const destinations = computed(() =>
   activeAccounts.value.filter((account) => account.id !== form.sourceAccountId),
@@ -64,6 +71,26 @@ async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error?.message || 'Não foi possível concluir a operação.');
   return body as T;
+}
+function normalizeMoney(value: string): string | null {
+  const normalized = value.trim().replace(',', '.');
+  const match = /^(?:0|[1-9][0-9]{0,16})(?:\.([0-9]{1,2}))?$/.exec(normalized);
+  if (!match || /^0(?:\.0{1,2})?$/.test(normalized)) return null;
+  return `${normalized.split('.')[0]}.${(match[1] ?? '').padEnd(2, '0')}`;
+}
+function validateForm(): { plannedAmount: string; actualAmount: string | null } | string {
+  const plannedAmount = normalizeMoney(form.plannedAmount);
+  const actualAmount = form.status === 'COMPLETED' ? normalizeMoney(form.actualAmount) : null;
+  if (!form.sourceAccountId) return 'Selecione a conta de origem.';
+  if (!form.destinationAccountId) return 'Selecione a conta de destino.';
+  if (form.sourceAccountId === form.destinationAccountId) return 'Origem e destino devem ser diferentes.';
+  if (!form.description.trim()) return 'Informe a descricao.';
+  if (!plannedAmount) return 'Informe um valor previsto positivo com ate duas casas decimais.';
+  if (!form.dueDate) return 'Informe o vencimento.';
+  if (form.status === 'COMPLETED' && !actualAmount)
+    return 'Informe um valor realizado positivo com ate duas casas decimais.';
+  if (form.status === 'COMPLETED' && !form.completedAt) return 'Informe a data de conclusao.';
+  return { plannedAmount, actualAmount };
 }
 async function load(append = false) {
   loading.value = true;
@@ -109,16 +136,27 @@ function openEdit(item: PublicFinancialTransfer) {
   showForm.value = true;
 }
 async function save() {
-  loading.value = true;
   error.value = '';
+  const validation = validateForm();
+  if (typeof validation === 'string') {
+    error.value = validation;
+    return;
+  }
+  loading.value = true;
   const body: Record<string, unknown> = editing.value
     ? { description: form.description, notes: form.notes || null }
-    : { ...form, notes: form.notes || null };
+    : {
+        ...form,
+        description: form.description.trim(),
+        notes: form.notes || null,
+        plannedAmount: validation.plannedAmount,
+        ...(form.status === 'COMPLETED' ? { actualAmount: validation.actualAmount } : {}),
+      };
   if (editing.value?.status === 'PENDING')
     Object.assign(body, {
       sourceAccountId: form.sourceAccountId,
       destinationAccountId: form.destinationAccountId,
-      plannedAmount: form.plannedAmount,
+      plannedAmount: validation.plannedAmount,
       dueDate: form.dueDate,
     });
   if (!editing.value && form.status === 'PENDING') {
@@ -141,11 +179,21 @@ async function save() {
 }
 async function complete() {
   if (!completing.value) return;
+  error.value = '';
+  const actualAmount = normalizeMoney(completeForm.actualAmount);
+  if (!actualAmount) {
+    error.value = 'Informe um valor realizado positivo com ate duas casas decimais.';
+    return;
+  }
+  if (!completeForm.completedAt) {
+    error.value = 'Informe a data de conclusao.';
+    return;
+  }
   try {
     await api(`/transfers/${completing.value.id}/complete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(completeForm),
+      body: JSON.stringify({ actualAmount, completedAt: completeForm.completedAt }),
     });
     completing.value = null;
     await load();
@@ -171,13 +219,71 @@ function clearFilters() {
   });
   void load();
 }
+function closeTopDialog(releaseHistory = true) {
+  if (completing.value) {
+    completing.value = null;
+    if (releaseHistory) releaseModalHistory();
+    return true;
+  }
+  if (showForm.value) {
+    showForm.value = false;
+    if (releaseHistory) releaseModalHistory();
+    return true;
+  }
+  return false;
+}
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && closeTopDialog()) event.preventDefault();
+}
+function onAndroidBack(event: Event) {
+  if (!closeTopDialog()) return;
+  event.preventDefault();
+}
+function ensureModalHistory() {
+  if (modalHistoryActive) return;
+  modalHistoryActive = true;
+  globalThis.history.pushState({ plannerfinModal: 'transfers' }, '', globalThis.location.href);
+}
+function releaseModalHistory() {
+  if (!modalHistoryActive || releasingModalHistory) return;
+  modalHistoryActive = false;
+  releasingModalHistory = true;
+  globalThis.history.back();
+  globalThis.setTimeout(() => {
+    releasingModalHistory = false;
+  }, 0);
+}
+function onPopState() {
+  if (releasingModalHistory || !modalHistoryActive) return;
+  modalHistoryActive = false;
+  closeTopDialog(false);
+  androidBackState.__plannerfinSuppressNextAndroidBack = Date.now() + 1000;
+}
 onMounted(async () => {
+  window.addEventListener('keydown', onKeydown);
+  window.addEventListener('plannerfin:android-back', onAndroidBack, true);
+  window.addEventListener('popstate', onPopState);
   try {
     accounts.value = await api('/accounts');
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : 'API indisponível.';
   }
   await load();
+});
+watch(
+  () => showForm.value || !!completing.value,
+  (active) => {
+    setModalScrollLock('transfers', active);
+    if (active) ensureModalHistory();
+    else releaseModalHistory();
+  },
+);
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('plannerfin:android-back', onAndroidBack, true);
+  window.removeEventListener('popstate', onPopState);
+  modalHistoryActive = false;
+  setModalScrollLock('transfers', false);
 });
 </script>
 <template>
@@ -267,6 +373,7 @@ onMounted(async () => {
     <div v-if="showForm" class="modal" role="dialog" aria-modal="true">
       <form @submit.prevent="save">
         <h2>{{ editing ? 'Editar transferência' : 'Nova transferência' }}</h2>
+        <div class="modal-body">
         <label
           >Origem<select
             v-model="form.sourceAccountId"
@@ -320,6 +427,7 @@ onMounted(async () => {
         <p v-if="editing?.status === 'COMPLETED'">
           Reabra primeiro para alterar contas, valor previsto ou vencimento.
         </p>
+        </div>
         <div class="actions">
           <button type="button" class="secondary" @click="showForm = false">Cancelar</button
           ><button :disabled="loading">Salvar</button>
@@ -329,6 +437,7 @@ onMounted(async () => {
     <div v-if="completing" class="modal" role="dialog" aria-modal="true">
       <form @submit.prevent="complete">
         <h2>Concluir transferência</h2>
+        <div class="modal-body">
         <label
           >Valor realizado<input
             v-model="completeForm.actualAmount"
@@ -337,6 +446,7 @@ onMounted(async () => {
         ><label
           >Data de conclusão<input v-model="completeForm.completedAt" type="date" required
         /></label>
+        </div>
         <div class="actions">
           <button type="button" class="secondary" @click="completing = null">Cancelar</button
           ><button>Confirmar</button>
@@ -402,13 +512,24 @@ form {
   background: #0f172a99;
   display: grid;
   place-items: center;
-  padding: 1rem;
-  z-index: 3;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+    calc(var(--shell-nav-height, 0px) + 1rem + env(safe-area-inset-bottom))
+    max(1rem, env(safe-area-inset-left));
+  z-index: 90;
+  overscroll-behavior: contain;
 }
 .modal form {
   width: min(100%, 34rem);
-  max-height: 95vh;
+  max-height: calc(100dvh - var(--shell-nav-height, 0px) - 2rem - env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+.modal-body {
+  min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.25rem;
 }
 select,
 textarea {
