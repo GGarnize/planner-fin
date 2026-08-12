@@ -227,7 +227,12 @@ export class BudgetsService {
     const [transactions, installments, debt] = await Promise.all([
       tx.financialTransaction.groupBy({
         by: ['categoryId', 'status'],
-        where: { userId: budget.userId, type: 'EXPENSE', dueDate: { gte: from, lt: to } },
+        where: {
+          userId: budget.userId,
+          type: 'EXPENSE',
+          deletedAt: null,
+          dueDate: { gte: from, lt: to },
+        },
         _sum: { plannedAmount: true, actualAmount: true },
       }),
       tx.cardInstallment.findMany({

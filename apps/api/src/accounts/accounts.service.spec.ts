@@ -291,7 +291,7 @@ describe('saldo realizado com corte temporal', () => {
     };
     expect(financialTransaction.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ status: 'PAID', paidAt: window }),
+        where: expect.objectContaining({ status: 'PAID', deletedAt: null, paidAt: window }),
       }),
     );
     expect(financialTransfer.aggregate).toHaveBeenNthCalledWith(

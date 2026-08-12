@@ -33,6 +33,7 @@ const item = {
   dueDate: '2026-08-01',
   paidAt: null,
   isOverdue: true,
+  isRecurringOccurrence: false,
   createdAt: '2026-08-01T00:00:00Z',
   updatedAt: '2026-08-01T00:00:00Z',
 };
@@ -176,9 +177,9 @@ describe('tela de lançamentos (API mockada)', () => {
     });
     expect(wrapper.find('.modal').exists()).toBe(false);
     expect(
-      vi.mocked(authenticatedFetch).mock.calls.filter(([path]) =>
-        String(path).startsWith('/transactions?'),
-      ),
+      vi
+        .mocked(authenticatedFetch)
+        .mock.calls.filter(([path]) => String(path).startsWith('/transactions?')),
     ).toHaveLength(2);
   });
 
@@ -345,6 +346,97 @@ describe('tela de lançamentos (API mockada)', () => {
     });
   });
 
+  it('cancela exclusao sem chamar API', async () => {
+    mockPage({ data: [item], page: { limit: 20, nextCursor: null } });
+    const wrapper = await mountPage();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Excluir')!
+      .trigger('click');
+    expect(wrapper.get('.modal').text()).toContain('Excluir este lançamento?');
+    await wrapper
+      .findAll('.modal button')
+      .find((button) => button.text() === 'Cancelar')!
+      .trigger('click');
+    expect(wrapper.find('.modal').exists()).toBe(false);
+    expect(
+      vi.mocked(authenticatedFetch).mock.calls.some((call) => call[1]?.method === 'DELETE'),
+    ).toBe(false);
+  });
+
+  it('usa texto especifico para ocorrencia recorrente', async () => {
+    mockPage({
+      data: [{ ...item, isRecurringOccurrence: true }],
+      page: { limit: 20, nextCursor: null },
+    });
+    const wrapper = await mountPage();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Excluir')!
+      .trigger('click');
+    expect(wrapper.get('.modal').text()).toContain('Excluir somente este lançamento?');
+    expect(wrapper.get('.modal').text()).toContain('A recorrência continuará ativa');
+    await wrapper
+      .findAll('.modal button')
+      .find((button) => button.text() === 'Cancelar')!
+      .trigger('click');
+  });
+
+  it('remove card somente apos 204 e recarrega grupos', async () => {
+    let deleted = false;
+    vi.mocked(authenticatedFetch).mockImplementation((path, init) => {
+      if (init?.method === 'DELETE') {
+        deleted = true;
+        return Promise.resolve({ ok: true, status: 204 } as Response);
+      }
+      if (String(path).startsWith('/transactions?'))
+        return response({ data: deleted ? [] : [item], page: { limit: 20, nextCursor: null } });
+      if (path === '/accounts') return response([account]);
+      if (path === '/categories') return response([expenseCategory, incomeCategory]);
+      return response({});
+    });
+    const wrapper = await mountPage();
+    expect(wrapper.find('.transaction-card').exists()).toBe(true);
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Excluir')!
+      .trigger('click');
+    await wrapper.get('.modal form').trigger('submit');
+    await flushPromises();
+    expect(deleted).toBe(true);
+    expect(wrapper.find('.transaction-card').exists()).toBe(false);
+  });
+
+  it('falha de API mantem card e mostra erro seguro', async () => {
+    mockPage({ data: [item], page: { limit: 20, nextCursor: null } });
+    vi.mocked(authenticatedFetch).mockImplementation((path, init) => {
+      if (init?.method === 'DELETE')
+        return response(
+          { error: { code: 'INTERNAL_ERROR', message: 'Falha temporária.' } },
+          false,
+          500,
+        );
+      if (String(path).startsWith('/transactions?'))
+        return response({ data: [item], page: { limit: 20, nextCursor: null } });
+      if (path === '/accounts') return response([account]);
+      if (path === '/categories') return response([expenseCategory, incomeCategory]);
+      return response({});
+    });
+    const wrapper = await mountPage();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Excluir')!
+      .trigger('click');
+    await wrapper.get('.modal form').trigger('submit');
+    await flushPromises();
+    expect(wrapper.find('.transaction-card').exists()).toBe(true);
+    expect(wrapper.get('.modal [role=alert]').text()).toContain('Falha temporária.');
+    await wrapper
+      .findAll('.modal button')
+      .find((button) => button.text() === 'Cancelar')!
+      .trigger('click');
+  });
+
   it('mantem acoes acessiveis e bloqueia scroll de fundo nos modais', async () => {
     mockPage({ data: [item], page: { limit: 20, nextCursor: null } });
     document.body.style.overflow = '';
@@ -353,6 +445,7 @@ describe('tela de lançamentos (API mockada)', () => {
       .findAll('button')
       .find((button) => button.text() === 'Editar')!
       .trigger('click');
+    await flushPromises();
     expect(document.body.style.overflow).toBe('hidden');
     expect(wrapper.find('.modal .modal-body').exists()).toBe(true);
     expect(wrapper.find('.modal .actions').exists()).toBe(true);

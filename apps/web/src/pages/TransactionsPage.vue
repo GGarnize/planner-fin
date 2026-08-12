@@ -28,7 +28,10 @@ const loading = ref(false),
   nextCursor = ref<string | null>(null),
   showForm = ref(false),
   editing = ref<PublicFinancialTransaction | null>(null),
-  paying = ref<PublicFinancialTransaction | null>(null);
+  paying = ref<PublicFinancialTransaction | null>(null),
+  deleting = ref<PublicFinancialTransaction | null>(null),
+  deletingBusy = ref(false),
+  deleteError = ref('');
 const filtersOpen = ref(false);
 function pad(value: number) {
   return String(value).padStart(2, '0');
@@ -159,8 +162,7 @@ function openCreate(type: FinancialTransactionType = 'EXPENSE') {
     type,
     status: 'PENDING',
     accountId: activeAccounts.length === 1 ? activeAccounts[0]!.id : '',
-    categoryId:
-      activeCompatibleCategories.length === 1 ? activeCompatibleCategories[0]!.id : '',
+    categoryId: activeCompatibleCategories.length === 1 ? activeCompatibleCategories[0]!.id : '',
     description: '',
     notes: '',
     plannedAmount: '',
@@ -278,6 +280,25 @@ async function pay() {
     payFormError.value = e instanceof Error ? e.message : 'Falha ao pagar.';
   }
 }
+async function removeTransaction() {
+  if (!deleting.value || deletingBusy.value) return;
+  deleteError.value = '';
+  deletingBusy.value = true;
+  const id = deleting.value.id;
+  try {
+    const response = await authenticatedFetch(`/transactions/${id}`, { method: 'DELETE' });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(safeApiErrorMessage(body, 'Não foi possível excluir o lançamento.'));
+    }
+    deleting.value = null;
+    await load();
+  } catch (e) {
+    deleteError.value = e instanceof Error ? e.message : 'Não foi possível excluir o lançamento.';
+  } finally {
+    deletingBusy.value = false;
+  }
+}
 watch(
   () => form.type,
   () => {
@@ -288,7 +309,7 @@ watch(
   },
 );
 watch(
-  () => showForm.value || !!paying.value,
+  () => showForm.value || !!paying.value || !!deleting.value,
   (active) => {
     setModalScrollLock('transactions', active);
     if (active) ensureModalHistory();
@@ -337,6 +358,12 @@ function closeCreate() {
 function closeTopDialog(releaseHistory = true) {
   if (paying.value) {
     paying.value = null;
+    if (releaseHistory) releaseModalHistory();
+    return true;
+  }
+  if (deleting.value) {
+    deleting.value = null;
+    deleteError.value = '';
     if (releaseHistory) releaseModalHistory();
     return true;
   }
@@ -438,46 +465,53 @@ function onPopState() {
     <section v-else class="list" aria-label="Lançamentos filtrados">
       <section v-for="group in groupedItems" :key="group.key" class="date-group">
         <h2>{{ group.title }}</h2>
-      <article
-        v-for="item in group.items"
-        :key="item.id"
-        class="transaction-card"
-        :class="{
-          'transaction-card--paid': item.status === 'PAID',
-          'transaction-card--pending': item.status === 'PENDING',
-        }"
-      >
-        <header>
-          <h3>{{ item.description }}</h3>
-          <span class="status-badge">{{ item.status === 'PAID' ? 'Pago' : 'Pendente' }}</span
-          ><strong v-if="item.isOverdue">Vencido</strong>
-        </header>
-        <p>{{ item.type === 'INCOME' ? 'Receita' : 'Despesa' }} · vencimento {{ item.dueDate }}</p>
-        <div class="amounts">
-          <span class="amount-main"
-            >{{ item.status === 'PAID' ? 'Realizado' : 'Previsto' }}
-            <b>{{ money(item.status === 'PAID' ? item.actualAmount : item.plannedAmount) }}</b></span
-          ><span class="amount-secondary"
-            >{{ item.status === 'PAID' ? 'Previsto' : 'Realizado' }}
-            <b>{{ money(item.status === 'PAID' ? item.plannedAmount : item.actualAmount) }}</b></span
-          >
-        </div>
-        <p v-if="item.notes">{{ item.notes }}</p>
-        <div class="actions">
-          <button class="secondary" @click="openEdit(item)">Editar</button
-          ><button
-            v-if="item.status === 'PENDING'"
-            @click="
-              paying = item;
-              payFormError = '';
-              payForm.actualAmount = item.plannedAmount;
-              payForm.paidAt = item.dueDate;
-            "
-          >
-            Marcar como pago</button
-          ><button v-else @click="reopen(item)">Reabrir para pendente</button>
-        </div>
-      </article>
+        <article
+          v-for="item in group.items"
+          :key="item.id"
+          class="transaction-card"
+          :class="{
+            'transaction-card--paid': item.status === 'PAID',
+            'transaction-card--pending': item.status === 'PENDING',
+          }"
+        >
+          <header>
+            <h3>{{ item.description }}</h3>
+            <span class="status-badge">{{ item.status === 'PAID' ? 'Pago' : 'Pendente' }}</span
+            ><strong v-if="item.isOverdue">Vencido</strong>
+          </header>
+          <p>
+            {{ item.type === 'INCOME' ? 'Receita' : 'Despesa' }} · vencimento {{ item.dueDate }}
+          </p>
+          <div class="amounts">
+            <span class="amount-main"
+              >{{ item.status === 'PAID' ? 'Realizado' : 'Previsto' }}
+              <b>{{
+                money(item.status === 'PAID' ? item.actualAmount : item.plannedAmount)
+              }}</b></span
+            ><span class="amount-secondary"
+              >{{ item.status === 'PAID' ? 'Previsto' : 'Realizado' }}
+              <b>{{
+                money(item.status === 'PAID' ? item.plannedAmount : item.actualAmount)
+              }}</b></span
+            >
+          </div>
+          <p v-if="item.notes">{{ item.notes }}</p>
+          <div class="actions">
+            <button class="secondary" @click="openEdit(item)">Editar</button
+            ><button
+              v-if="item.status === 'PENDING'"
+              @click="
+                paying = item;
+                payFormError = '';
+                payForm.actualAmount = item.plannedAmount;
+                payForm.paidAt = item.dueDate;
+              "
+            >
+              Marcar como pago</button
+            ><button v-else @click="reopen(item)">Reabrir para pendente</button>
+            <button class="danger" @click="deleting = item">Excluir</button>
+          </div>
+        </article>
       </section>
     </section>
     <button v-if="nextCursor" :disabled="loading" @click="load(true)">Carregar mais</button>
@@ -486,57 +520,57 @@ function onPopState() {
         <h2>{{ editing ? 'Editar lançamento' : 'Novo lançamento' }}</h2>
         <div class="modal-body">
           <p v-if="formError" role="alert">{{ formError }}</p>
-        <label
-          >Natureza<select v-model="form.type" :disabled="editing?.status === 'PAID'">
-            <option value="INCOME">Receita</option>
-            <option value="EXPENSE">Despesa</option>
-          </select></label
-        ><label
-          >Conta<select v-model="form.accountId" :disabled="editing?.status === 'PAID'" required>
-            <option v-for="a in accounts.filter((a) => !a.archivedAt)" :key="a.id" :value="a.id">
-              {{ a.name }}
-            </option>
-          </select></label
-        ><label
-          >Categoria<select
-            v-model="form.categoryId"
-            :disabled="editing?.status === 'PAID'"
-            required
-          >
-            <option v-for="c in compatibleCategories" :key="c.id" :value="c.id">
-              {{ c.name }}
-            </option>
-          </select></label
-        ><label>Descrição<input v-model="form.description" maxlength="200" required /></label
-        ><label>Notas<textarea v-model="form.notes" maxlength="2000"></textarea></label
-        ><label
-          >Valor previsto<input
-            v-model="form.plannedAmount"
-            inputmode="decimal"
-            :disabled="editing?.status === 'PAID'"
-            required /></label
-        ><label
-          >Vencimento<input
-            v-model="form.dueDate"
-            type="date"
-            :disabled="editing?.status === 'PAID'"
-            required /></label
-        ><label v-if="!editing"
-          >Estado<select v-model="form.status">
-            <option value="PENDING">Pendente</option>
-            <option value="PAID">Pago</option>
-          </select></label
-        ><template v-if="!editing && form.status === 'PAID'"
+          <label
+            >Natureza<select v-model="form.type" :disabled="editing?.status === 'PAID'">
+              <option value="INCOME">Receita</option>
+              <option value="EXPENSE">Despesa</option>
+            </select></label
           ><label
-            >Valor realizado<input
-              v-model="form.actualAmount"
+            >Conta<select v-model="form.accountId" :disabled="editing?.status === 'PAID'" required>
+              <option v-for="a in accounts.filter((a) => !a.archivedAt)" :key="a.id" :value="a.id">
+                {{ a.name }}
+              </option>
+            </select></label
+          ><label
+            >Categoria<select
+              v-model="form.categoryId"
+              :disabled="editing?.status === 'PAID'"
+              required
+            >
+              <option v-for="c in compatibleCategories" :key="c.id" :value="c.id">
+                {{ c.name }}
+              </option>
+            </select></label
+          ><label>Descrição<input v-model="form.description" maxlength="200" required /></label
+          ><label>Notas<textarea v-model="form.notes" maxlength="2000"></textarea></label
+          ><label
+            >Valor previsto<input
+              v-model="form.plannedAmount"
               inputmode="decimal"
+              :disabled="editing?.status === 'PAID'"
               required /></label
-          ><label>Data do pagamento<input v-model="form.paidAt" type="date" required /></label
-        ></template>
-        <p v-if="editing?.status === 'PAID'">
-          Reabra primeiro para alterar conta, categoria, natureza, previsto ou vencimento.
-        </p>
+          ><label
+            >Vencimento<input
+              v-model="form.dueDate"
+              type="date"
+              :disabled="editing?.status === 'PAID'"
+              required /></label
+          ><label v-if="!editing"
+            >Estado<select v-model="form.status">
+              <option value="PENDING">Pendente</option>
+              <option value="PAID">Pago</option>
+            </select></label
+          ><template v-if="!editing && form.status === 'PAID'"
+            ><label
+              >Valor realizado<input
+                v-model="form.actualAmount"
+                inputmode="decimal"
+                required /></label
+            ><label>Data do pagamento<input v-model="form.paidAt" type="date" required /></label
+          ></template>
+          <p v-if="editing?.status === 'PAID'">
+            Reabra primeiro para alterar conta, categoria, natureza, previsto ou vencimento.
+          </p>
         </div>
         <div class="actions">
           <button type="button" class="secondary" @click="closeCreate">Cancelar</button
@@ -549,16 +583,50 @@ function onPopState() {
         <h2>Marcar como pago</h2>
         <div class="modal-body">
           <p v-if="payFormError" role="alert">{{ payFormError }}</p>
-        <label
-          >Valor realizado<input
-            v-model="payForm.actualAmount"
-            inputmode="decimal"
-            required /></label
-        ><label>Data do pagamento<input v-model="payForm.paidAt" type="date" required /></label>
+          <label
+            >Valor realizado<input
+              v-model="payForm.actualAmount"
+              inputmode="decimal"
+              required /></label
+          ><label>Data do pagamento<input v-model="payForm.paidAt" type="date" required /></label>
         </div>
         <div class="actions">
           <button type="button" class="secondary" @click="paying = null">Cancelar</button
           ><button>Confirmar pagamento</button>
+        </div>
+      </form>
+    </div>
+    <div
+      v-if="deleting"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-title"
+    >
+      <form class="confirm-delete" novalidate @submit.prevent="removeTransaction">
+        <h2 id="delete-title">
+          {{
+            deleting.isRecurringOccurrence
+              ? 'Excluir somente este lançamento?'
+              : 'Excluir este lançamento?'
+          }}
+        </h2>
+        <div class="modal-body">
+          <p v-if="deleteError" role="alert">{{ deleteError }}</p>
+          <p>
+            {{
+              deleting.isRecurringOccurrence
+                ? 'A recorrência continuará ativa e as próximas ocorrências serão mantidas.'
+                : 'Esta ação remove o lançamento dos seus cálculos e listas.'
+            }}
+          </p>
+        </div>
+        <div class="actions">
+          <button type="button" class="secondary" :disabled="deletingBusy" @click="deleting = null">
+            Cancelar</button
+          ><button class="danger" :disabled="deletingBusy">
+            {{ deletingBusy ? 'Excluindo...' : 'Excluir' }}
+          </button>
         </div>
       </form>
     </div>
@@ -636,10 +704,10 @@ form {
   font-weight: 700;
 }
 .transaction-card--paid .status-badge::before {
-  content: "✓ ";
+  content: '✓ ';
 }
 .transaction-card--pending .status-badge::before {
-  content: "• ";
+  content: '• ';
 }
 .amounts span {
   display: grid;
@@ -657,6 +725,14 @@ form {
 .secondary {
   background: #e2e8f0;
   color: #0f172a;
+}
+.danger {
+  background: #b42318;
+  color: #fff;
+}
+.transaction-card .actions button,
+.modal .actions button {
+  min-height: 44px;
 }
 .link {
   background: none;

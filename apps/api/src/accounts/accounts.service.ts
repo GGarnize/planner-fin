@@ -145,6 +145,7 @@ export class AccountsService {
             userId: account.userId,
             accountId: account.id,
             status: 'PAID',
+            deletedAt: null,
             paidAt: effectiveDate,
           },
           select: { type: true, actualAmount: true },

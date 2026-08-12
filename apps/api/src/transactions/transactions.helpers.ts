@@ -25,6 +25,7 @@ export function publicTransaction(
     dueDate: civilString(row.dueDate),
     paidAt: row.paidAt ? civilString(row.paidAt) : null,
     isOverdue: row.status === 'PENDING' && civilString(row.dueDate) < today,
+    isRecurringOccurrence: Boolean(row.recurrenceRuleId && row.occurrenceDate),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
