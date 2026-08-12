@@ -39,6 +39,7 @@ Disponibilizar um comando local, determinístico, idempotente e seguro para gara
 - Bancos aprovados: `planner_fin_local` e `planner_fin_test`.
 - A fixture deve gravar apenas `User`; não deve criar `Session`, token, cookie ou segredo.
 - O e-mail e a senha devem vir de `PLANNER_FIN_TEST_EMAIL` e `PLANNER_FIN_TEST_PASSWORD`, com defaults sintéticos somente para desenvolvimento local.
+- `PLANNER_FIN_TEST_EMAIL` deve usar domínio sintético `.test`, para evitar sobrescrever acidentalmente uma conta pessoal/local existente.
 
 ## Critérios de Aceite
 
@@ -54,6 +55,7 @@ Disponibilizar um comando local, determinístico, idempotente e seguro para gara
 - Recusa em `production`.
 - Recusa contra banco não local.
 - Recusa sem flag explícita.
+- Recusa e-mail fora de domínio sintético `.test`.
 - Primeira execução cria.
 - Segunda execução é idempotente.
 - Senha resultante funciona com o verificador Argon2 real.

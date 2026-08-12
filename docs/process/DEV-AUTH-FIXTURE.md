@@ -36,5 +36,6 @@ O comando aborta antes de escrever se:
 - `DATABASE_URL` não for PostgreSQL;
 - o host do banco não for `localhost`, `127.0.0.1`, `::1` ou `[::1]`;
 - o banco não for `planner_fin_local` ou `planner_fin_test`.
+- `PLANNER_FIN_TEST_EMAIL` não usar domínio sintético `.test`.
 
 O output nunca imprime hash de senha, token, cookie ou segredo.

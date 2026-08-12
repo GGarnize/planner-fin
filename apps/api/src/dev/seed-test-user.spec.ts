@@ -93,6 +93,15 @@ describe('fixture local de usuário sintético', () => {
     expect(config.databaseName).toBe('planner_fin_local');
   });
 
+  it('recusa e-mail de teste fora de domínio sintético .test', () => {
+    expect(() =>
+      loadLocalTestSeedConfig({
+        ...baseEnv,
+        PLANNER_FIN_TEST_EMAIL: 'pessoa@example.com',
+      }),
+    ).toThrow('domínio sintético .test');
+  });
+
   it('cria na primeira execução e atualiza sem duplicar na segunda', async () => {
     const store = makeStore();
     const config: LocalTestSeedConfig = {
