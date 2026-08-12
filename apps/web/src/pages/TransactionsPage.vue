@@ -299,6 +299,15 @@ async function removeTransaction() {
     deletingBusy.value = false;
   }
 }
+function openDelete(item: PublicFinancialTransaction) {
+  deleteError.value = '';
+  deletingBusy.value = false;
+  deleting.value = item;
+}
+function cancelDelete() {
+  deleteError.value = '';
+  deleting.value = null;
+}
 watch(
   () => form.type,
   () => {
@@ -509,7 +518,7 @@ function onPopState() {
             >
               Marcar como pago</button
             ><button v-else @click="reopen(item)">Reabrir para pendente</button>
-            <button class="danger" @click="deleting = item">Excluir</button>
+            <button class="danger" @click="openDelete(item)">Excluir</button>
           </div>
         </article>
       </section>
@@ -622,7 +631,7 @@ function onPopState() {
           </p>
         </div>
         <div class="actions">
-          <button type="button" class="secondary" :disabled="deletingBusy" @click="deleting = null">
+          <button type="button" class="secondary" :disabled="deletingBusy" @click="cancelDelete">
             Cancelar</button
           ><button class="danger" :disabled="deletingBusy">
             {{ deletingBusy ? 'Excluindo...' : 'Excluir' }}

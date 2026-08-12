@@ -436,6 +436,46 @@ describe('tela de lançamentos (API mockada)', () => {
       .find((button) => button.text() === 'Cancelar')!
       .trigger('click');
   });
+  it('limpa erro antigo ao abrir nova confirmação de exclusão', async () => {
+    const another = { ...item, id: '55555555-5555-4555-8555-555555555555', description: 'Luz' };
+    mockPage({ data: [item, another], page: { limit: 20, nextCursor: null } });
+    vi.mocked(authenticatedFetch).mockImplementation((path, init) => {
+      if (init?.method === 'DELETE')
+        return response(
+          { error: { code: 'INTERNAL_ERROR', message: 'Falha temporária.' } },
+          false,
+          500,
+        );
+      if (String(path).startsWith('/transactions?'))
+        return response({ data: [item, another], page: { limit: 20, nextCursor: null } });
+      if (path === '/accounts') return response([account]);
+      if (path === '/categories') return response([expenseCategory, incomeCategory]);
+      return response({});
+    });
+    const wrapper = await mountPage();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Excluir')!
+      .trigger('click');
+    await wrapper.get('.modal form').trigger('submit');
+    await flushPromises();
+    expect(wrapper.get('.modal [role=alert]').text()).toContain('Falha temporária.');
+    await wrapper
+      .findAll('.modal button')
+      .find((button) => button.text() === 'Cancelar')!
+      .trigger('click');
+
+    await wrapper
+      .findAll('button')
+      .filter((button) => button.text() === 'Excluir')[1]!
+      .trigger('click');
+    expect(wrapper.find('.modal [role=alert]').exists()).toBe(false);
+    expect(wrapper.get('.modal').text()).toContain('Excluir este lançamento?');
+    await wrapper
+      .findAll('.modal button')
+      .find((button) => button.text() === 'Cancelar')!
+      .trigger('click');
+  });
 
   it('mantem acoes acessiveis e bloqueia scroll de fundo nos modais', async () => {
     mockPage({ data: [item], page: { limit: 20, nextCursor: null } });

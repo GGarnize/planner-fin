@@ -165,11 +165,15 @@ onMounted(async () => {
 <template>
   <main class="budgets">
     <header><h1>Orçamento mensal</h1></header>
-    <nav aria-label="Navegação mensal">
-      <button type="button" @click="move(-1)">Mês anterior</button>
+    <nav class="month-nav" aria-label="Navegação mensal">
+      <button type="button" aria-label="Mês anterior" @click="move(-1)">
+        <span class="material-icons" aria-hidden="true">chevron_left</span>
+      </button>
       <strong>{{ month }}</strong>
-      <button type="button" @click="move(1)">Próximo mês</button>
-      <button type="button" @click="current">Mês atual</button>
+      <button type="button" aria-label="Próximo mês" @click="move(1)">
+        <span class="material-icons" aria-hidden="true">chevron_right</span>
+      </button>
+      <button type="button" class="current-month" @click="current">Mês atual</button>
     </nav>
     <p v-if="loading" role="status">Carregando…</p>
     <div v-if="error" role="alert">
@@ -216,7 +220,12 @@ onMounted(async () => {
       </div>
     </form>
     <section v-if="budget && !editing" class="panel">
-      <div class="actions"><button type="button" @click="startEdit">Editar</button></div>
+      <div class="actions">
+        <button type="button" class="edit-action" @click="startEdit">
+          <span class="material-icons" aria-hidden="true">edit</span>
+          Editar
+        </button>
+      </div>
       <h2>Totais</h2>
       <div
         class="totals"
@@ -292,6 +301,38 @@ nav,
   align-items: center;
   flex-wrap: wrap;
 }
+.month-nav {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem auto;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+.month-nav strong {
+  min-height: 2.75rem;
+  display: grid;
+  place-items: center;
+  padding: 0 0.75rem;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.65rem;
+}
+.month-nav button,
+.edit-action {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+.month-nav .material-icons,
+.edit-action .material-icons {
+  font-size: 1.25rem;
+}
+.current-month {
+  background: #e2e8f0;
+  color: #334155;
+}
 .panel {
   background: white;
   padding: 1.25rem;
@@ -329,8 +370,14 @@ select:focus-visible {
   outline-offset: 2px;
 }
 @media (max-width: 40rem) {
-  nav button {
-    flex: 1 1 40%;
+  .budgets {
+    padding: 0;
+  }
+  .month-nav {
+    grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
+  }
+  .month-nav .current-month {
+    grid-column: 1 / -1;
   }
   .category-edit {
     align-items: stretch;

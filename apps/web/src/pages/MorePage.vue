@@ -54,32 +54,47 @@ async function leave() {
   margin: 0 auto;
 }
 .more-page > h1 {
-  margin: 0.25rem 0 1rem;
+  margin: 0.25rem 0 0.75rem;
 }
 .more-page section {
-  margin-bottom: 1.25rem;
+  margin-bottom: 1rem;
 }
 .more-page h2 {
-  margin: 0.5rem 0;
+  margin: 0.4rem 0;
+  color: #475569;
+  font-size: 0.95rem;
 }
 .more-page a,
 .more-page button {
   width: 100%;
-  min-height: 3.25rem;
+  min-height: 2.75rem;
   display: grid;
-  grid-template-columns: 2rem 1fr auto;
+  grid-template-columns: 1.75rem 1fr 1.5rem;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem 0.7rem;
   color: #0f172a;
   text-align: left;
   text-decoration: none;
   background: #fff;
   border: 1px solid #dbe2ea;
-  border-radius: 0.65rem;
-  margin: 0.4rem 0;
+  border-radius: 0.5rem;
+  margin: 0.35rem 0;
 }
 .more-page button {
   color: #b42318;
+  background: #fff;
+}
+.more-page a:active,
+.more-page button:active {
+  background: #eaf1ff;
+}
+.more-page a:focus-visible,
+.more-page button:focus-visible {
+  outline: 3px solid #f59e0b;
+  outline-offset: 2px;
+}
+.material-icons {
+  font-size: 1.25rem;
 }
 </style>

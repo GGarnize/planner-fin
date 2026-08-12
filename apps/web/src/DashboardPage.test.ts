@@ -77,16 +77,37 @@ describe('DashboardPage', () => {
     const wrapper = mount(DashboardPage, { global: { stubs: ['RouterLink'] } });
     await flushPromises();
     expect(wrapper.text()).toContain('2026-12');
-    const buttons = wrapper.findAll('header button');
-    await buttons[2]!.trigger('click');
+    await wrapper.get('button[aria-label="Próximo mês"]').trigger('click');
     await flushPromises();
     expect(wrapper.text()).toContain('2027-01');
-    await buttons[0]!.trigger('click');
+    await wrapper.get('button[aria-label="Mês anterior"]').trigger('click');
     await flushPromises();
     expect(wrapper.text()).toContain('2026-12');
-    await buttons[1]!.trigger('click');
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Mês atual')!
+      .trigger('click');
     await flushPromises();
     expect(wrapper.text()).toContain('2026-12');
+  });
+  it('abre seletor compacto, aplica mês e fecha pelo Back Android', async () => {
+    vi.mocked(authenticatedFetch).mockReturnValue(response(data));
+    const wrapper = mount(DashboardPage, { global: { stubs: ['RouterLink'] } });
+    await flushPromises();
+    await wrapper.get('.period-label').trigger('click');
+    expect(wrapper.find('#dashboard-period-picker').exists()).toBe(true);
+    const back = new Event('plannerfin:android-back', { cancelable: true });
+    window.dispatchEvent(back);
+    await flushPromises();
+    expect(back.defaultPrevented).toBe(true);
+    expect(wrapper.find('#dashboard-period-picker').exists()).toBe(false);
+
+    await wrapper.get('.period-label').trigger('click');
+    await wrapper.get('input[type="month"]').setValue('2026-01');
+    await wrapper.get('#dashboard-period-picker').trigger('submit');
+    await flushPromises();
+    expect(vi.mocked(authenticatedFetch).mock.calls.at(-1)![0]).toBe('/dashboard?month=2026-01');
+    expect(wrapper.text()).toContain('Janeiro de 2026');
   });
   it('renderiza caixa, orçamento excedido, listas, categorias e terminologia financeira', async () => {
     const complete = {
@@ -182,11 +203,52 @@ describe('DashboardPage', () => {
     const wrapper = mount(DashboardPage, { global: { stubs: ['RouterLink'] } });
     await flushPromises();
     expect(wrapper.text()).toContain('Nenhuma conta ativa');
-    await wrapper.findAll('header button')[2]!.trigger('click');
+    await wrapper.get('button[aria-label="Próximo mês"]').trigger('click');
     expect(wrapper.text()).not.toContain('Nenhuma conta ativa');
     reject();
     await flushPromises();
     expect(wrapper.get('[role=alert]').text()).toContain('falha controlada');
     expect(wrapper.text()).not.toContain('R$ 0,00');
+  });
+  it('ignora resposta antiga quando uma carga de período mais recente termina antes', async () => {
+    let releaseOld!: () => void;
+    const oldResponse = new Promise<Response>((resolve) => {
+      releaseOld = () =>
+        resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              ...data,
+              cashPosition: {
+                totalRealizedBalance: '10.00',
+                availableAccountCount: 1,
+                unavailableAccountCount: 0,
+              },
+            }),
+        } as Response);
+    });
+    vi.mocked(authenticatedFetch)
+      .mockReturnValueOnce(response(data))
+      .mockReturnValueOnce(oldResponse)
+      .mockReturnValueOnce(
+        response({
+          ...data,
+          cashPosition: {
+            totalRealizedBalance: '20.00',
+            availableAccountCount: 1,
+            unavailableAccountCount: 0,
+          },
+        }),
+      );
+    const wrapper = mount(DashboardPage, { global: { stubs: ['RouterLink'] } });
+    await flushPromises();
+    await wrapper.get('button[aria-label="Próximo mês"]').trigger('click');
+    await wrapper.get('button[aria-label="Próximo mês"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('R$ 20,00');
+    releaseOld();
+    await flushPromises();
+    expect(wrapper.text()).toContain('R$ 20,00');
+    expect(wrapper.text()).not.toContain('R$ 10,00');
   });
 });
