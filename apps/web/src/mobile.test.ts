@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocked = vi.hoisted(() => ({
   native: false,
   platform: 'web',
+  flush: vi.fn(),
   addListener: vi.fn(),
   exitApp: vi.fn(),
 }));
@@ -12,6 +13,7 @@ vi.mock('@capacitor/core', () => ({
     isNativePlatform: () => mocked.native,
     getPlatform: () => mocked.platform,
   },
+  registerPlugin: () => ({ flush: mocked.flush }),
 }));
 
 vi.mock('@capacitor/app', () => ({
@@ -25,6 +27,7 @@ describe('runtime Android', () => {
   beforeEach(() => {
     mocked.native = false;
     mocked.platform = 'web';
+    mocked.flush.mockReset();
     mocked.addListener.mockReset();
     mocked.exitApp.mockReset();
     (
@@ -44,6 +47,20 @@ describe('runtime Android', () => {
     const { installAndroidBackHandler } = await import('./mobile');
     installAndroidBackHandler({} as never);
     expect(mocked.addListener).not.toHaveBeenCalled();
+  });
+
+  it('nao aciona plugin de cookies no browser', async () => {
+    const { flushAndroidCookies } = await import('./mobile');
+    await flushAndroidCookies();
+    expect(mocked.flush).not.toHaveBeenCalled();
+  });
+
+  it('aciona flush de cookies no Android nativo', async () => {
+    mocked.native = true;
+    mocked.platform = 'android';
+    const { flushAndroidCookies } = await import('./mobile');
+    await flushAndroidCookies();
+    expect(mocked.flush).toHaveBeenCalledTimes(1);
   });
 
   it('volta no histórico SPA quando há rota útil', async () => {

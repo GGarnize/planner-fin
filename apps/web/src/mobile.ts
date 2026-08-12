@@ -1,11 +1,20 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import type { Router } from 'vue-router';
 
 type BackState = typeof globalThis & { __plannerfinSuppressNextAndroidBack?: number };
+interface PlannerFinCookiesPlugin {
+  flush(): Promise<void>;
+}
+const plannerFinCookies = registerPlugin<PlannerFinCookiesPlugin>('PlannerFinCookies');
 
 export function isAndroidNative(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
+}
+
+export async function flushAndroidCookies(): Promise<void> {
+  if (!isAndroidNative()) return;
+  await plannerFinCookies.flush();
 }
 
 export function installAndroidBackHandler(router: Router): void {

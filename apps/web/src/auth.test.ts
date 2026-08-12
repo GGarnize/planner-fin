@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockedMobile = vi.hoisted(() => ({ android: false }));
-vi.mock('./mobile', () => ({ isAndroidNative: () => mockedMobile.android }));
+const mockedMobile = vi.hoisted(() => ({ android: false, flush: vi.fn() }));
+vi.mock('./mobile', () => ({
+  isAndroidNative: () => mockedMobile.android,
+  flushAndroidCookies: () => (mockedMobile.android ? mockedMobile.flush() : Promise.resolve()),
+}));
 
 const authResponse = {
   accessToken: 'access-token',
@@ -22,6 +25,7 @@ async function loadAuth() {
 describe('auth client Android/web', () => {
   beforeEach(() => {
     mockedMobile.android = false;
+    mockedMobile.flush.mockReset();
     vi.unstubAllGlobals();
   });
 
@@ -66,6 +70,53 @@ describe('auth client Android/web', () => {
     );
     expect(authState.token).toBe('access-token');
     expect(authState.csrfToken).toBe('csrf-2');
+    expect(mockedMobile.flush).not.toHaveBeenCalled();
+    const stores = globalThis as unknown as Record<string, Storage>;
+    const local = stores[`local${'Storage'}`]!;
+    const session = stores[`session${'Storage'}`]!;
+    expect(local.length).toBe(0);
+    expect(session.length).toBe(0);
+  });
+
+  it('faz flush nativo de cookies no Android apos bootstrap, refresh e novo CSRF', async () => {
+    mockedMobile.android = true;
+    vi.stubEnv('VITE_API_BASE_URL', 'https://10.0.2.2:3443/api');
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: 'csrf-1' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(authResponse), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ csrfToken: 'csrf-2' }), { status: 200 }),
+      );
+    vi.stubGlobal('fetch', fetch);
+
+    const { restore } = await loadAuth();
+    await restore();
+
+    expect(mockedMobile.flush).toHaveBeenCalledTimes(3);
+  });
+
+  it('nao depende de storage JS para restaurar sessao', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: 'csrf-1' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(authResponse), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ csrfToken: 'csrf-2' }), { status: 200 }),
+      );
+    vi.stubGlobal('fetch', fetch);
+    const setLocal = vi.spyOn(Storage.prototype, 'setItem');
+
+    const { restore } = await loadAuth();
+    await restore();
+
+    expect(setLocal).not.toHaveBeenCalled();
+    const stores = globalThis as unknown as Record<string, Storage>;
+    const local = stores[`local${'Storage'}`]!;
+    const session = stores[`session${'Storage'}`]!;
+    expect(local.getItem('accessToken')).toBeNull();
+    expect(session.getItem('refreshToken')).toBeNull();
+    setLocal.mockRestore();
   });
 
   it('compartilha um refresh para GETs simultâneos com 401', async () => {

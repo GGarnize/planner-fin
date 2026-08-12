@@ -1,6 +1,6 @@
 import { reactive } from 'vue';
 import type { AuthResponse, LoginRequest, PublicUser, RegisterRequest } from '@planner-fin/shared';
-import { isAndroidNative } from './mobile';
+import { flushAndroidCookies, isAndroidNative } from './mobile';
 
 export function resolveApiBaseUrl(raw = import.meta.env.VITE_API_BASE_URL): string {
   const value = raw?.trim() || 'http://localhost:3000/api';
@@ -36,6 +36,7 @@ async function bootstrapCsrf(): Promise<string> {
   const data = (await response.json().catch(() => ({}))) as { csrfToken?: string };
   if (!response.ok || !data.csrfToken) throw new Error('Não foi possível iniciar a sessão segura.');
   authState.csrfToken = data.csrfToken;
+  await flushAndroidCookies();
   return data.csrfToken;
 }
 
@@ -65,6 +66,7 @@ async function requestAuth(path: string, body?: object): Promise<AuthResponse> {
     );
   authState.token = (data as AuthResponse).accessToken;
   authState.user = (data as AuthResponse).user;
+  await flushAndroidCookies();
   if (path === 'refresh') await bootstrapCsrf();
   return data as AuthResponse;
 }
@@ -94,6 +96,7 @@ export async function logout(): Promise<void> {
         'Content-Type': 'application/json',
       },
     });
+    await flushAndroidCookies();
   } catch {
     authState.error = 'A revogação da sessão não pôde ser confirmada.';
   } finally {
