@@ -30,11 +30,12 @@ describe('MorePage', () => {
       '/categories',
       '/transfers',
       '/transaction-templates',
+      '/imports',
       '/recurrences',
       '/cards',
       '/debts',
       '/conta',
     ]);
-    expect(wrapper.findAll('a,button')).toHaveLength(9);
+    expect(wrapper.findAll('a,button')).toHaveLength(10);
   });
 });

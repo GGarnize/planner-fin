@@ -16,6 +16,7 @@ import MorePage from './pages/MorePage.vue';
 import TransactionFormPage from './pages/TransactionFormPage.vue';
 import TransactionTemplatesPage from './pages/TransactionTemplatesPage.vue';
 import InitialSetupPage from './pages/InitialSetupPage.vue';
+import ImportPage from './pages/ImportPage.vue';
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -37,6 +38,8 @@ export const router = createRouter({
     { path: '/budgets', component: BudgetsPage },
     { path: '/dashboard', component: DashboardPage },
     { path: '/mais', component: MorePage },
+    { path: '/imports', component: ImportPage },
+    { path: '/imports/:id', component: ImportPage },
     { path: '/setup', component: InitialSetupPage },
   ],
 });
