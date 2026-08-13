@@ -1,5 +1,6 @@
 export interface ApiConfig {
   port: number;
+  host?: string;
   databaseUrl: string;
   corsOrigins: string[];
   jwtSecret: string;
@@ -34,6 +35,8 @@ export function loadApiConfig(): ApiConfig {
   const port = Number(process.env.API_PORT ?? '3000');
   if (!Number.isInteger(port) || port <= 0 || port > 65535)
     throw new Error('Configuração inválida: API_PORT deve ser uma porta TCP válida.');
+  const host = process.env.API_HOST?.trim();
+  if (host === '') throw new Error('Configuração inválida: API_HOST não pode ser vazio.');
   const databaseUrl = required('DATABASE_URL');
   if (!/^postgres(ql)?:\/\//.test(databaseUrl))
     throw new Error('Configuração inválida: DATABASE_URL deve usar PostgreSQL.');
@@ -71,6 +74,7 @@ export function loadApiConfig(): ApiConfig {
     throw new Error('Configuração inválida: os segredos JWT e HMAC devem ser independentes.');
   return {
     port,
+    host,
     databaseUrl,
     corsOrigins,
     jwtSecret,

@@ -1,0 +1,214 @@
+# SPEC de funcionalidade - `SPEC-020 - DX comandos Android local`
+
+## 1. Identificacao
+
+| Campo | Valor |
+|---|---|
+| ID | `SPEC-020` |
+| Titulo | `DX comandos Android local` |
+| Responsavel | `Codex` |
+| Data de criacao | `2026-08-13` |
+| Ultima atualizacao | `2026-08-13` |
+| Tarefa relacionada | Prompt `DX: comandos simples para ambiente Android/telefone` |
+| Documentos relacionados | [SPEC-012](SPEC-012-ANDROID-INTERNO-CAPACITOR.md), [GIT-WORKFLOW](../process/GIT-WORKFLOW.md), [Definition of Done](../quality/DEFINITION-OF-DONE.md) |
+
+## 2. Status
+
+`Aprovada`
+
+**Aprovada por:** prompt da tarefa em `2026-08-13`.
+
+## 3. Contexto
+
+O projeto ja possui Capacitor Android, Docker Compose para PostgreSQL, API NestJS em `/api`, build debug Android e certificados locais ignorados em `.tools/certs`. O uso local em emulador e celular ainda depende de comandos manuais e de proxy HTTPS ad-hoc em `.tools`.
+
+## 4. Problema
+
+Pessoas desenvolvedoras precisam iniciar API, banco, proxy HTTPS, emulador e builds APK com comandos previsiveis, sem expor portas sensiveis nem versionar segredos.
+
+## 5. Objetivo
+
+Adicionar tooling local versionado para `pnpm dev:android`, `pnpm dev:android:services`, `pnpm dev:phone`, builds APK emulator/LAN/remote, servidor local de APK e stop seguro por PID.
+
+## 6. Fora do escopo
+
+- Alterar dominio financeiro, autenticacao funcional, autorizacao, migrations ou regras de negocio.
+- Expor automaticamente ambiente pela internet, abrir firewall/roteador ou criar servico pago.
+- Versionar certificados privados, `.env`, keystore, APK ou logs.
+
+## 7. Termos
+
+| Termo | Definicao |
+|---|---|
+| Proxy HTTPS | Servidor local em `3443` que encaminha para API HTTP em `127.0.0.1:3000`. |
+| LAN | Rede privada local do Windows para uso por celular fisico. |
+| Runtime local | Estado gerado em `.tools/runtime`, ignorado pelo Git. |
+
+## 8. Comportamento atual
+
+Scripts raiz cobrem `dev`, `db:up`, `db:migrate`, `android:build:debug` e `android:build:internal`. O proxy HTTPS existe apenas como arquivo local ignorado em `.tools/https-proxy.mjs`.
+
+## 9. Comportamento desejado
+
+Os aliases raiz devem orquestrar dependencias locais, banco, migrations, API, proxy HTTPS, health checks, ambiente Android, emulador, builds APK e servidor Python conforme o prompt aprovado. A API deve poder ser iniciada pelos scripts em `127.0.0.1:3000`; o proxy HTTPS escuta `0.0.0.0:3443`. Builds LAN bloqueiam quando o certificado nao cobre o IP. Modo remoto exige URL HTTPS explicita e segura.
+
+## 10. Personas ou atores
+
+| Ator | Necessidade | Acoes autorizadas |
+|---|---|---|
+| Pessoa desenvolvedora | Rodar PlannerFin local/Android. | Executar comandos `pnpm` documentados. |
+| Celular fisico | Consumir API via HTTPS LAN. | Acessar somente proxy `3443`. |
+
+## 11. Fluxos
+
+### 11.1 Fluxo principal
+
+1. Pessoa executa `pnpm dev:android` ou variante.
+2. Script valida Node e Docker, sobe PostgreSQL, aplica migrations e inicia API/proxy.
+3. Health checks confirmam `3000` e `3443`.
+4. Quando aplicavel, AVD `Pixel_7_Pro` e iniciado e aguardado.
+5. Resumo final mostra URLs e PIDs.
+
+### 11.2 Fluxos alternativos e excecoes
+
+- Porta ocupada por processo desconhecido falha com mensagem clara.
+- Docker Desktop fechado e executavel encontrado e iniciado; sem executavel, falha.
+- Certificado sem IP LAN bloqueia build LAN.
+- Modo remoto sem HTTPS ou com credenciais bloqueia build.
+
+## 12. Regras de negocio
+
+Nao aplicavel: nao ha regra financeira nova.
+
+## 13. Modelo de dados
+
+Nao aplicavel: nenhuma entidade ou migration.
+
+## 14. Contratos de API
+
+Nao aplicavel: contratos HTTP existentes permanecem inalterados.
+
+## 15. Interface
+
+Nao aplicavel: sem mudanca de UI do produto.
+
+## 16. Validacoes
+
+| Acao | Validacao | Resultado esperado |
+|---|---|---|
+| Startup | Node >=22 e Docker engine disponivel. | Continua ou falha claramente. |
+| LAN | IPv4 privado nao virtual. | URL `https://<LAN_IP>:3443/api`. |
+| Remoto | HTTPS absoluto sem credenciais. | Build permitido somente se valido. |
+| PIDs | Processo registrado e vivo. | Reutiliza ou para somente o registrado. |
+
+## 17. Permissoes
+
+Nao aplicavel: scripts locais nao alteram autorizacao do produto.
+
+## 18. Seguranca e privacidade
+
+API `3000` nao deve ser aberta publicamente pelos scripts. PostgreSQL `5432` nao deve ser exposto remotamente pelos scripts. Certificados privados, `.env`, keystores, APKs e logs permanecem fora do Git. Modo remoto nao ativa DEV-AUTH, nao aceita HTTP e nao desativa TLS.
+
+## 19. Erros e estados vazios
+
+Erros operacionais devem apontar a dependencia ausente ou porta/processo conflitante sem imprimir segredos.
+
+## 20. Observabilidade
+
+Logs locais ficam em `.tools/runtime/logs`, ignorados pelo Git e sem segredos intencionais.
+
+## 21. Migracao e compatibilidade
+
+Sem migracao. Scripts existentes continuam disponiveis.
+
+## 22. Criterios de aceite
+
+### `CA-01 - Startup Android`
+
+**Dado** ambiente Windows com Node, Docker e Android SDK
+**Quando** `pnpm dev:android` for executado
+**Entao** banco, migrations, API, proxy e AVD devem iniciar e exibir resumo.
+
+### `CA-02 - Services sem emulador`
+
+**Dado** ambiente local
+**Quando** `pnpm dev:android:services` ou `pnpm dev:phone` for executado
+**Entao** nenhum AVD deve ser iniciado.
+
+### `CA-03 - Builds APK`
+
+**Dado** projeto Android configurado
+**Quando** builds emulator, LAN ou remoto forem executados
+**Entao** `VITE_API_BASE_URL` deve ser composta corretamente e o caminho do APK impresso.
+
+### `CA-04 - Stop seguro`
+
+**Dado** processos iniciados pelos scripts
+**Quando** `pnpm dev:android:stop` for executado
+**Entao** somente processos registrados devem ser parados.
+
+## 23. Testes obrigatorios
+
+| Nivel | Cenarios minimos | Criterios relacionados | Evidencia esperada |
+|---|---|---|---|
+| Unitario | LAN, URL, remoto invalido, env temporaria. | CA-02, CA-03 | `pnpm test:dx`. |
+| Integracao | Startup/stop local quando ambiente permitir. | CA-01, CA-04 | Resultado manual. |
+| E2E | Nao aplicavel; sem UI de produto. | Nao aplicavel | Justificativa no PR. |
+| Aceitacao manual | Comandos solicitados no prompt. | CA-01 a CA-04 | Registro de execucao ou limitacao ambiental. |
+
+## 24. Arquivos permitidos
+
+- `package.json`
+- `scripts/android/**`
+- `docs/runbooks/LOCAL-ANDROID-DEVELOPMENT.md`
+- `docs/specs/SPEC-020-DX-COMANDOS-ANDROID-LOCAL.md`
+- `docs/specs/README.md`
+- `apps/api/src/config/env.ts`
+- `apps/api/src/config/env.spec.ts`
+- `apps/api/src/main.ts`
+
+## 25. Arquivos proibidos
+
+- `apps/api/prisma/**`
+- Dominio financeiro em `apps/api/src/**` fora de config/bootstrap.
+- UI do produto em `apps/web/src/**`.
+- Certificados, `.env`, keystores, APKs e logs.
+
+## 26. Dependencias
+
+Nenhuma dependencia npm nova. Usa ferramentas locais ja esperadas: PowerShell, Node, pnpm, Docker, Android SDK/JDK e Python.
+
+## 27. Riscos
+
+| Risco | Probabilidade | Impacto | Mitigacao |
+|---|---|---|---|
+| Certificado local desatualizado. | Media | APK LAN sem conectividade. | Bloquear build LAN sem SAN correto. |
+| Porta ocupada. | Media | Startup inconsistente. | Falhar se processo desconhecido ocupar porta. |
+| Ambiente Android ausente. | Media | `dev:android` ou build falha. | Mensagem clara e docs. |
+
+## 28. Rollback
+
+Reverter o commit remove scripts, aliases e documentacao. Sem migration ou transformacao de dados.
+
+## 29. Duvidas
+
+Nao ha duvidas abertas.
+
+## 30. Decisoes aprovadas
+
+| Data | Decisao | Responsavel pela aprovacao | Consequencia |
+|---|---|---|---|
+| 2026-08-13 | Implementar tooling local sem novas dependencias e sem exposicao publica automatica. | Prompt da tarefa | Scripts PowerShell e Node versionados. |
+
+## 31. Definition of Done especifica
+
+- [ ] Aliases solicitados existem na raiz.
+- [ ] Proxy HTTPS versionado sem certificar/chaves privadas.
+- [ ] Testes unitarios dos helpers passam.
+- [ ] Checks obrigatorios foram executados ou limitacao ambiental foi registrada.
+
+## 32. Historico de alteracoes da SPEC
+
+| Data | Alteracao | Motivo | Autor | Aprovador, quando aplicavel |
+|---|---|---|---|---|
+| 2026-08-13 | Criacao aprovada da SPEC-020. | Registrar a unidade DX Android local. | Codex | Prompt da tarefa |
