@@ -33,6 +33,9 @@ model User {
   preferences           UserPreferences?
   initialSetup          UserInitialSetup?
   setupConfirmations    SetupConfirmation[]
+  importSessions        ImportSession[]
+  importRows            ImportRow[]
+  importConfirmations   ImportConfirmation[]
 }
 
 enum UserAppearance {
@@ -64,19 +67,19 @@ enum InitialSetupStatus {
 }
 
 model UserInitialSetup {
-  userId            String             @id @db.Uuid
-  status            InitialSetupStatus @default(NOT_STARTED)
-  draft             Json?
-  draftVersion      Int                @default(0)
-  suggestionVersion Int                @default(1)
-  previewTokenHash  String?            @db.VarChar(64)
-  previewPayloadHash String?           @db.VarChar(64)
-  previewExpiresAt  DateTime?          @db.Timestamptz(3)
-  completedAt       DateTime?          @db.Timestamptz(3)
-  skippedAt         DateTime?          @db.Timestamptz(3)
-  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
-  updatedAt         DateTime           @updatedAt @db.Timestamptz(3)
-  user              User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  userId             String             @id @db.Uuid
+  status             InitialSetupStatus @default(NOT_STARTED)
+  draft              Json?
+  draftVersion       Int                @default(0)
+  suggestionVersion  Int                @default(1)
+  previewTokenHash   String?            @db.VarChar(64)
+  previewPayloadHash String?            @db.VarChar(64)
+  previewExpiresAt   DateTime?          @db.Timestamptz(3)
+  completedAt        DateTime?          @db.Timestamptz(3)
+  skippedAt          DateTime?          @db.Timestamptz(3)
+  createdAt          DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime           @updatedAt @db.Timestamptz(3)
+  user               User               @relation(fields: [userId], references: [id], onDelete: Restrict)
 }
 
 model SetupConfirmation {
@@ -109,22 +112,23 @@ enum FinancialCategoryIcon {
 }
 
 model FinancialCategory {
-  id                    String                 @id @default(uuid()) @db.Uuid
-  userId                String                 @db.Uuid
-  name                  String                 @db.VarChar(80)
-  normalizedName        String                 @db.VarChar(80)
-  type                  FinancialCategoryType
-  color                 String?                @db.VarChar(7)
-  icon                  FinancialCategoryIcon?
-  archivedAt            DateTime?              @db.Timestamptz(3)
-  createdAt             DateTime               @default(now()) @db.Timestamptz(3)
-  updatedAt             DateTime               @updatedAt @db.Timestamptz(3)
-  user                  User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
-  financialTransactions FinancialTransaction[]
-  recurrenceRules       RecurrenceRule[]
-  cardPurchases         CardPurchase[]
+  id                      String                  @id @default(uuid()) @db.Uuid
+  userId                  String                  @db.Uuid
+  name                    String                  @db.VarChar(80)
+  normalizedName          String                  @db.VarChar(80)
+  type                    FinancialCategoryType
+  color                   String?                 @db.VarChar(7)
+  icon                    FinancialCategoryIcon?
+  archivedAt              DateTime?               @db.Timestamptz(3)
+  createdAt               DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                @updatedAt @db.Timestamptz(3)
+  user                    User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  financialTransactions   FinancialTransaction[]
+  recurrenceRules         RecurrenceRule[]
+  cardPurchases           CardPurchase[]
   monthlyBudgetCategories MonthlyBudgetCategory[]
   transactionTemplates    TransactionTemplate[]
+  importRows              ImportRow[]
 
   @@unique([userId, type, normalizedName])
   @@index([userId])
@@ -188,8 +192,9 @@ model FinancialAccount {
   incomingTransfers          FinancialTransfer[]    @relation("TransferDestinationAccount")
   cardInvoicePayments        CardInvoicePayment[]
   debtFundings               DebtFunding[]
+  importSessions             ImportSession[]
   debtPayments               DebtPayment[]
-  transactionTemplates       TransactionTemplate[] @relation("TemplateDefaultAccount")
+  transactionTemplates       TransactionTemplate[]  @relation("TemplateDefaultAccount")
 
   @@index([userId])
 }
@@ -245,7 +250,7 @@ model FinancialDebt {
   notes             String?           @db.VarChar(2000)
   originalPrincipal Decimal           @db.Decimal(19, 2)
   startDate         DateTime          @db.Date
-  installmentCount Int
+  installmentCount  Int
   status            DebtStatus        @default(ACTIVE)
   archivedAt        DateTime?         @db.Timestamptz(3)
   createdAt         DateTime          @default(now()) @db.Timestamptz(3)
@@ -293,20 +298,20 @@ model DebtInstallment {
 }
 
 model DebtPayment {
-  id                String           @id @default(uuid()) @db.Uuid
-  userId            String           @db.Uuid
-  debtId            String           @db.Uuid
-  installmentId     String           @unique @db.Uuid
-  accountId         String           @db.Uuid
-  paymentDate       DateTime         @db.Date
-  principalAmount   Decimal          @db.Decimal(19, 2)
-  interestAmount    Decimal          @db.Decimal(19, 2)
-  feeAmount         Decimal          @db.Decimal(19, 2)
-  createdAt         DateTime         @default(now()) @db.Timestamptz(3)
-  user              User             @relation(fields: [userId], references: [id], onDelete: Restrict)
-  debt              FinancialDebt    @relation(fields: [debtId], references: [id], onDelete: Restrict)
-  installment       DebtInstallment  @relation(fields: [installmentId], references: [id], onDelete: Restrict)
-  account           FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  id              String           @id @default(uuid()) @db.Uuid
+  userId          String           @db.Uuid
+  debtId          String           @db.Uuid
+  installmentId   String           @unique @db.Uuid
+  accountId       String           @db.Uuid
+  paymentDate     DateTime         @db.Date
+  principalAmount Decimal          @db.Decimal(19, 2)
+  interestAmount  Decimal          @db.Decimal(19, 2)
+  feeAmount       Decimal          @db.Decimal(19, 2)
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  debt            FinancialDebt    @relation(fields: [debtId], references: [id], onDelete: Restrict)
+  installment     DebtInstallment  @relation(fields: [installmentId], references: [id], onDelete: Restrict)
+  account         FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
 
   @@index([userId, paymentDate(sort: Desc), id(sort: Desc)])
   @@index([userId, accountId, paymentDate])
@@ -447,6 +452,7 @@ model FinancialTransaction {
   account          FinancialAccount           @relation(fields: [accountId], references: [id], onDelete: Restrict)
   category         FinancialCategory          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   recurrenceRule   RecurrenceRule?            @relation(fields: [recurrenceRuleId], references: [id], onDelete: Restrict)
+  importRow        ImportRow?
 
   @@unique([recurrenceRuleId, occurrenceDate])
   @@index([userId, deletedAt, dueDate(sort: Desc), createdAt(sort: Desc), id])
@@ -457,6 +463,117 @@ model FinancialTransaction {
   @@index([userId, categoryId, dueDate])
   @@index([userId, status, dueDate])
   @@index([userId, paidAt])
+}
+
+enum ImportFormat {
+  OFX
+  CSV
+}
+
+enum ImportStatus {
+  UPLOADED
+  MAPPING_REQUIRED
+  READY_FOR_REVIEW
+  CONFIRMING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+  FAILED
+}
+
+enum ImportRowValidationStatus {
+  VALID
+  BLOCKED
+}
+
+enum ImportDuplicateClassification {
+  NONE
+  STRONG
+  PROBABLE
+  POSSIBLE
+}
+
+model ImportSession {
+  id                 String              @id @default(uuid()) @db.Uuid
+  userId             String              @db.Uuid
+  accountId          String              @db.Uuid
+  format             ImportFormat
+  status             ImportStatus
+  fileHash           String              @db.Char(64)
+  parserVersion      String              @db.VarChar(32)
+  displayFileName    String?             @db.VarChar(120)
+  mapping            Json?
+  sourceData         Json?
+  draftVersion       Int                 @default(1)
+  rowCount           Int                 @default(0)
+  previewTokenHash   String?             @db.Char(64)
+  previewPayloadHash String?             @db.Char(64)
+  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
+  expiresAt          DateTime            @db.Timestamptz(3)
+  confirmedAt        DateTime?           @db.Timestamptz(3)
+  cancelledAt        DateTime?           @db.Timestamptz(3)
+  user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  account            FinancialAccount    @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  rows               ImportRow[]
+  confirmation       ImportConfirmation?
+
+  @@index([userId, status, updatedAt(sort: Desc)])
+  @@index([userId, fileHash])
+  @@index([status, expiresAt])
+}
+
+model ImportRow {
+  id                      String                        @id @default(uuid()) @db.Uuid
+  sessionId               String                        @db.Uuid
+  userId                  String                        @db.Uuid
+  rowNumber               Int
+  date                    DateTime?                     @db.Date
+  description             String?                       @db.VarChar(200)
+  type                    FinancialTransactionType?
+  amount                  Decimal?                      @db.Decimal(19, 2)
+  externalId              String?                       @db.VarChar(255)
+  categoryId              String?                       @db.Uuid
+  selected                Boolean                       @default(false)
+  validationStatus        ImportRowValidationStatus
+  warningCodes            Json
+  editedFields            Json
+  probableOverride        Boolean                       @default(false)
+  possibleAccepted        Boolean                       @default(false)
+  strongKeyHash           String?                       @db.Char(64)
+  exactFingerprint        String?                       @db.Char(64)
+  windowFingerprint       String?                       @db.Char(64)
+  fingerprintVersion      Int                           @default(1)
+  duplicateClassification ImportDuplicateClassification @default(NONE)
+  transactionId           String?                       @unique @db.Uuid
+  createdAt               DateTime                      @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                      @updatedAt @db.Timestamptz(3)
+  confirmedAt             DateTime?                     @db.Timestamptz(3)
+  session                 ImportSession                 @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  user                    User                          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  category                FinancialCategory?            @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  transaction             FinancialTransaction?         @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+
+  @@unique([sessionId, rowNumber])
+  @@index([userId, sessionId, rowNumber])
+  @@index([userId, strongKeyHash])
+  @@index([userId, exactFingerprint])
+  @@index([userId, windowFingerprint, date])
+}
+
+model ImportConfirmation {
+  id             String        @id @default(uuid()) @db.Uuid
+  sessionId      String        @unique @db.Uuid
+  userId         String        @db.Uuid
+  idempotencyKey String        @db.Uuid
+  payloadHash    String        @db.Char(64)
+  result         Json
+  createdAt      DateTime      @default(now()) @db.Timestamptz(3)
+  session        ImportSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  user           User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 enum FinancialTransferStatus {

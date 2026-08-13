@@ -46,6 +46,70 @@ export interface ApiErrorResponse {
   error: { code: string; message: string; details?: Array<{ field: string; message: string }> };
 }
 
+export type ImportFormat = 'OFX' | 'CSV';
+export type ImportStatus =
+  | 'UPLOADED'
+  | 'MAPPING_REQUIRED'
+  | 'READY_FOR_REVIEW'
+  | 'CONFIRMING'
+  | 'CONFIRMED'
+  | 'CANCELLED'
+  | 'EXPIRED'
+  | 'FAILED';
+export type ImportDuplicateClassification = 'NONE' | 'STRONG' | 'PROBABLE' | 'POSSIBLE';
+export interface ImportRowResponse {
+  id: string;
+  rowNumber: number;
+  date: string | null;
+  description: string | null;
+  type: FinancialTransactionType | null;
+  amount: string | null;
+  categoryId: string | null;
+  selected: boolean;
+  validationStatus: 'VALID' | 'BLOCKED';
+  warnings: string[];
+  duplicateClassification: ImportDuplicateClassification;
+  probableOverride: boolean;
+  possibleAccepted: boolean;
+}
+export interface ImportPreviewResponse {
+  previewToken: string;
+  previewHash: string;
+  draftVersion: number;
+  counts: {
+    total: number;
+    selected: number;
+    blocked: number;
+    strong: number;
+    probable: number;
+    possible: number;
+  };
+  totals: { income: string; expense: string };
+}
+export interface ImportConfirmResponse {
+  status: 'CONFIRMED';
+  sessionId: string;
+  transactionIds: string[];
+  createdCount: number;
+}
+export type ImportErrorCode =
+  | 'INVALID_IMPORT_FILE'
+  | 'IMPORT_FILE_TOO_LARGE'
+  | 'UNSUPPORTED_IMPORT_FORMAT'
+  | 'IMPORT_PARSE_ERROR'
+  | 'IMPORT_NOT_FOUND'
+  | 'INVALID_CSV_MAPPING'
+  | 'INVALID_IMPORT_ROW'
+  | 'IMPORT_VERSION_CONFLICT'
+  | 'IMPORT_DRAFT_STALE'
+  | 'IMPORT_NOT_READY'
+  | 'IMPORT_NOT_CONFIRMABLE'
+  | 'IMPORT_ACCOUNT_UNAVAILABLE'
+  | 'IMPORT_CATEGORY_UNAVAILABLE'
+  | 'IDEMPOTENCY_KEY_REUSED'
+  | 'IMPORT_ALREADY_CONFIRMED'
+  | 'IMPORT_READ_ONLY';
+
 export type FinancialAccountType = 'CHECKING' | 'SAVINGS' | 'CASH' | 'PAYMENT' | 'OTHER';
 export interface PublicFinancialAccount {
   id: string;
@@ -106,10 +170,7 @@ export type ListFinancialCategoriesResponse = PublicFinancialCategory[];
 
 export type InitialSetupStatus = 'NOT_STARTED' | 'SKIPPED' | 'COMPLETED';
 export type InitialSetupIneligibleReason =
-  | 'NOT_IN_ROLLOUT'
-  | 'HAS_FINANCIAL_DATA'
-  | 'SETUP_SKIPPED'
-  | 'SETUP_COMPLETED';
+  'NOT_IN_ROLLOUT' | 'HAS_FINANCIAL_DATA' | 'SETUP_SKIPPED' | 'SETUP_COMPLETED';
 export interface InitialSetupCategoryDraft {
   key: string;
   name: string;
