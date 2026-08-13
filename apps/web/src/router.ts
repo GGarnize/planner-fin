@@ -15,6 +15,7 @@ import DashboardPage from './pages/DashboardPage.vue';
 import MorePage from './pages/MorePage.vue';
 import TransactionFormPage from './pages/TransactionFormPage.vue';
 import TransactionTemplatesPage from './pages/TransactionTemplatesPage.vue';
+import InitialSetupPage from './pages/InitialSetupPage.vue';
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -36,6 +37,7 @@ export const router = createRouter({
     { path: '/budgets', component: BudgetsPage },
     { path: '/dashboard', component: DashboardPage },
     { path: '/mais', component: MorePage },
+    { path: '/setup', component: InitialSetupPage },
   ],
 });
 let restored = false;

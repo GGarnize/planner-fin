@@ -38,6 +38,7 @@ export interface LoginRequest {
 }
 export interface AuthResponse {
   accessToken: string;
+  csrfToken: string;
   expiresIn: 900;
   user: PublicUser;
 }
@@ -102,6 +103,78 @@ export interface UpdateFinancialCategoryRequest {
   icon?: FinancialCategoryIcon | null;
 }
 export type ListFinancialCategoriesResponse = PublicFinancialCategory[];
+
+export type InitialSetupStatus = 'NOT_STARTED' | 'SKIPPED' | 'COMPLETED';
+export type InitialSetupIneligibleReason =
+  | 'NOT_IN_ROLLOUT'
+  | 'HAS_FINANCIAL_DATA'
+  | 'SETUP_SKIPPED'
+  | 'SETUP_COMPLETED';
+export interface InitialSetupCategoryDraft {
+  key: string;
+  name: string;
+  type: FinancialCategoryType;
+  icon: FinancialCategoryIcon;
+  selected: boolean;
+}
+export interface InitialSetupDraft {
+  step: 'INTRO' | 'ACCOUNT' | 'CATEGORIES' | 'REVIEW';
+  account: {
+    name: string;
+    type: FinancialAccountType;
+    openingBalance?: string | null;
+    openingBalanceDate: string;
+  };
+  categories: InitialSetupCategoryDraft[];
+}
+export type InitialSetupSuggestion = InitialSetupCategoryDraft;
+export interface InitialSetupStateResponse {
+  participating: boolean;
+  eligible: boolean;
+  status: InitialSetupStatus | null;
+  ineligibleReason: InitialSetupIneligibleReason | null;
+  draft: InitialSetupDraft | null;
+  draftVersion: number | null;
+  suggestionVersion: number;
+  suggestions: InitialSetupSuggestion[];
+  lastValidStep: InitialSetupDraft['step'];
+}
+export interface SaveInitialSetupDraftRequest {
+  expectedDraftVersion: number | null;
+  draft: InitialSetupDraft;
+}
+export interface InitialSetupPreviewRequest {
+  draftVersion: number;
+}
+export interface InitialSetupPreviewResponse {
+  previewToken: string;
+  draftVersion: number;
+  summary: {
+    account: {
+      name: string;
+      type: FinancialAccountType;
+      currency: 'BRL';
+      institution: null;
+      openingBalance: string;
+      openingBalanceDate: string;
+    };
+    categories: Array<{
+      name: string;
+      type: FinancialCategoryType;
+      icon: FinancialCategoryIcon;
+      color: null;
+    }>;
+    counts: { accounts: 1; categories: number; transactions: 0; recurrences: 0; total: number };
+  };
+}
+export interface InitialSetupConfirmResponse {
+  status: 'COMPLETED';
+  created: { accountId: string; categoryIds: string[] };
+  counts: { accounts: 1; categories: number; transactions: 0; recurrences: 0; total: number };
+}
+export interface InitialSetupSkipResponse {
+  status: 'SKIPPED';
+}
 
 export type FinancialTransactionType = 'INCOME' | 'EXPENSE';
 export type TransactionTemplateType = FinancialTransactionType;

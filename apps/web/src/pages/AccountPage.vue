@@ -8,6 +8,7 @@ import {
   saveVisualPreferences,
 } from '../appearance';
 import { authState, authenticatedFetch, logout } from '../auth';
+import { loadInitialSetup, setupState } from '../initial-setup';
 
 const router = useRouter();
 const selectedAppearance = computed(() => appearanceState.current.appearance);
@@ -24,6 +25,7 @@ async function chooseAppearance(value: (typeof APPEARANCES)[number]['value']) {
 async function chooseAccent(value: (typeof ACCENTS)[number]['value']) {
   await saveVisualPreferences({ accent: value }, authenticatedFetch);
 }
+void loadInitialSetup();
 </script>
 
 <template>
@@ -53,6 +55,17 @@ async function chooseAccent(value: (typeof ACCENTS)[number]['value']) {
       >
       <router-link class="nav-link" to="/categories"
         ><span>Minhas categorias</span
+        ><span class="material-icons" aria-hidden="true">chevron_right</span></router-link
+      >
+      <router-link
+        v-if="
+          setupState.data &&
+          setupState.data.status !== 'COMPLETED' &&
+          setupState.data.ineligibleReason !== 'HAS_FINANCIAL_DATA'
+        "
+        class="nav-link"
+        to="/setup"
+        ><span>Setup inicial</span
         ><span class="material-icons" aria-hidden="true">chevron_right</span></router-link
       >
     </section>

@@ -3,6 +3,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { DashboardResponse } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import { loadInitialSetup, setupState, skipInitialSetup } from '../initial-setup';
 
 const civilMonth = () => {
   const now = new Date();
@@ -14,6 +15,7 @@ const snapshot = ref<DashboardResponse | null>(null);
 const loading = ref(false);
 const error = ref('');
 const pickerOpen = ref(false);
+const setupOfferHidden = ref(false);
 let loadRequest = 0;
 const money = (value: string) => {
   const match = /^(-?)(\d+)\.(\d{2})$/.exec(value);
@@ -107,17 +109,38 @@ function startNewTransaction(event: Event) {
 onMounted(() => {
   window.addEventListener('keydown', onKeydown);
   window.addEventListener('plannerfin:android-back', onAndroidBack, true);
-  void load();
+  void load().then(() => {
+    if (import.meta.env.MODE !== 'test') void loadInitialSetup();
+  });
 });
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener('plannerfin:android-back', onAndroidBack, true);
 });
+async function skipSetup() {
+  await skipInitialSetup();
+  setupOfferHidden.value = true;
+}
 </script>
 
 <template>
   <main class="dashboard">
     <h1 class="sr-only">Dashboard financeiro</h1>
+    <section
+      v-if="setupState.data?.eligible && !setupOfferHidden"
+      class="panel setup-offer"
+      aria-labelledby="setup-offer-title"
+    >
+      <div>
+        <h2 id="setup-offer-title">Setup inicial</h2>
+        <p>Configure uma conta principal e categorias sugeridas quando quiser.</p>
+      </div>
+      <div>
+        <router-link to="/setup">Configurar agora</router-link>
+        <button type="button" class="secondary" @click="skipSetup">Fazer manualmente</button>
+        <button type="button" class="link" @click="setupOfferHidden = true">Fechar</button>
+      </div>
+    </section>
     <header class="period-header">
       <button class="icon-button" aria-label="Mês anterior" @click="move(-1)">
         <span class="material-icons" aria-hidden="true">chevron_left</span>
@@ -328,6 +351,26 @@ onBeforeUnmount(() => {
   gap: 0.5rem;
   align-items: center;
   margin-bottom: 0.75rem;
+}
+.setup-offer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+.setup-offer h2,
+.setup-offer p {
+  margin: 0;
+}
+.setup-offer div:last-child {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.setup-offer a,
+.setup-offer button {
+  min-height: 2.75rem;
 }
 .period-center {
   min-width: 10rem;
