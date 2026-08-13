@@ -5,6 +5,7 @@ import android.os.Bundle;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Log;
+import android.content.pm.ApplicationInfo;
 
 public class PlannerFinNotificationListenerService extends NotificationListenerService {
     private static final String TAG = "PlannerFinNotif";
@@ -43,20 +44,27 @@ public class PlannerFinNotificationListenerService extends NotificationListenerS
         }
 
         if (PlannerFinNotificationSecretFilter.isProbableSecret(title, text, subText, bigText)) {
-            PlannerFinNotificationBuffer.incrementSecretDropped();
+            PlannerFinNotificationPreferences.incrementSecretDropped(this);
+            if (isDebuggableBuild()) PlannerFinNotificationBuffer.incrementSecretDropped();
             Log.i(TAG, "Conteudo sensivel descartado pelo listener.");
             return;
         }
 
-        PlannerFinNotificationBuffer.add(new PlannerFinNotificationEvent(
+        PlannerFinNotificationEvent event = new PlannerFinNotificationEvent(
                 packageName,
                 sbn.getKey(),
                 sbn.getPostTime(),
                 title,
                 text,
                 subText,
-                bigText));
-        Log.i(TAG, "Notificacao capturada no buffer efemero.");
+                bigText);
+        try {
+            new PlannerFinNotificationQueue(this).enqueue(event);
+            if (isDebuggableBuild()) PlannerFinNotificationBuffer.add(event);
+            Log.i(TAG, "Notificacao enfileirada para sync autenticado.");
+        } catch (Exception error) {
+            Log.e(TAG, "Falha tecnica ao enfileirar notificacao.");
+        }
     }
 
     private static String readText(Bundle extras, String key) {
@@ -71,5 +79,9 @@ public class PlannerFinNotificationListenerService extends NotificationListenerS
             }
         }
         return false;
+    }
+
+    private boolean isDebuggableBuild() {
+        return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 }

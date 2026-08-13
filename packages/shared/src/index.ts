@@ -138,6 +138,53 @@ export type ImportErrorCode =
   | 'IMPORT_ALREADY_CONFIRMED'
   | 'IMPORT_READ_ONLY';
 
+export interface NotificationDeviceResponse {
+  id: string;
+  deviceId: string;
+  ownerBindingId: string;
+  name: string | null;
+  status: 'ACTIVE' | 'REVOKED';
+  captureEnabled: boolean;
+  monitoredPackages: string[];
+  lastSeenAt: string;
+  revokedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface BindNotificationDeviceRequest {
+  deviceId: string;
+  name?: string | null;
+  captureEnabled?: boolean;
+  monitoredPackages?: string[];
+}
+export interface UpdateNotificationDevicePreferencesRequest {
+  captureEnabled?: boolean;
+  monitoredPackages?: string[];
+}
+export interface CapturedNotificationIngestItem {
+  localId: string;
+  packageName: string;
+  notificationKeyHash: string;
+  postedAt: string;
+  capturedAt: string;
+  title?: string | null;
+  text?: string | null;
+  subText?: string | null;
+  bigText?: string | null;
+  fingerprintVersion: 1;
+}
+export interface IngestCapturedNotificationsRequest {
+  deviceId: string;
+  ownerBindingId: string;
+  items: CapturedNotificationIngestItem[];
+}
+export interface IngestCapturedNotificationsResponse {
+  acceptedLocalIds: string[];
+  duplicateLocalIds: string[];
+  createdCount: number;
+  duplicateCount: number;
+}
+
 export type FinancialAccountType = 'CHECKING' | 'SAVINGS' | 'CASH' | 'PAYMENT' | 'OTHER';
 export interface PublicFinancialAccount {
   id: string;
