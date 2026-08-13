@@ -92,6 +92,19 @@ export interface ImportConfirmResponse {
   transactionIds: string[];
   createdCount: number;
 }
+export interface ImportSessionResponse {
+  id: string;
+  accountId: string;
+  format: ImportFormat;
+  status: ImportStatus;
+  draftVersion: number;
+  displayFileName: string | null;
+  rowCount: number;
+  expiresAt: string;
+  mapping: Record<string, unknown> | null;
+  rows: ImportRowResponse[];
+  page: { limit: number; offset: number; filteredCount: number };
+}
 export type ImportErrorCode =
   | 'INVALID_IMPORT_FILE'
   | 'IMPORT_FILE_TOO_LARGE'

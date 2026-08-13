@@ -10,6 +10,7 @@ const groups = [
       ['Categorias', '/categories', 'category'],
       ['Transferências', '/transfers', 'swap_horiz'],
       ['Modelos de lançamento', '/transaction-templates', 'content_copy'],
+      ['Importar extrato', '/imports', 'upload_file'],
     ],
   },
   { title: 'Planejamento', items: [['Recorrências', '/recurrences', 'event_repeat']] },

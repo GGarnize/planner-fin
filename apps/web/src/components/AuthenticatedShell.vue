@@ -26,6 +26,7 @@ const primary = [
       '/debts',
       '/conta',
       '/transaction-templates',
+      '/imports',
     ],
   },
 ];
