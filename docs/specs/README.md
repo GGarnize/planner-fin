@@ -81,3 +81,4 @@ Se uma seção do template não se aplicar, escreva **“Não aplicável”** e 
 | [SPEC-016](SPEC-016-UX-LANCAMENTOS-FASE-B.md) | UX de Lançamentos Fase B | Aprovada |
 | [SPEC-017](SPEC-017-EXCLUSAO-INDIVIDUAL-LANCAMENTO.md) | Exclusão individual de lançamento | Aprovada |
 | [SPEC-018](SPEC-018-PERSONALIZACAO-VISUAL-USUARIO.md) | Personalização visual por usuário | Aprovada |
+| [SPEC-019](SPEC-019-SETUP-INICIAL-OPCIONAL.md) | Setup inicial opcional | Aprovada |
