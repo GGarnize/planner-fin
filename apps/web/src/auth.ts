@@ -1,5 +1,10 @@
 import { reactive } from 'vue';
 import type { AuthResponse, LoginRequest, PublicUser, RegisterRequest } from '@planner-fin/shared';
+import {
+  applyCachedVisualPreferences,
+  loadCanonicalPreferences,
+  resetPublicVisualPreferences,
+} from './appearance';
 import { flushAndroidCookies, isAndroidNative } from './mobile';
 
 export function resolveApiBaseUrl(raw = import.meta.env.VITE_API_BASE_URL): string {
@@ -67,19 +72,38 @@ async function requestAuth(path: string, body?: object): Promise<AuthResponse> {
   authState.token = (data as AuthResponse).accessToken;
   authState.user = (data as AuthResponse).user;
   await flushAndroidCookies();
+  try {
+    await loadCanonicalPreferences((preferencesPath, init) =>
+      fetch(`${api}${preferencesPath}`, {
+        ...init,
+        credentials: 'include',
+        headers: { ...init?.headers, Authorization: `Bearer ${authState.token ?? ''}` },
+      }),
+    );
+  } catch {
+    // A tela autenticada pode abrir com cache/default e mensagem de recuperacao em Minha Conta.
+  }
   if (path === 'refresh') await bootstrapCsrf();
   return data as AuthResponse;
 }
-export const register = (data: RegisterRequest) => requestAuth('register', data);
-export const login = (data: LoginRequest) => requestAuth('login', data);
+export const register = (data: RegisterRequest) => {
+  resetPublicVisualPreferences();
+  return requestAuth('register', data);
+};
+export const login = (data: LoginRequest) => {
+  resetPublicVisualPreferences();
+  return requestAuth('login', data);
+};
 export async function restore(): Promise<void> {
   authState.restoring = true;
+  applyCachedVisualPreferences();
   try {
     await bootstrapCsrf();
     await requestAuth('refresh');
   } catch {
     authState.token = null;
     authState.user = null;
+    resetPublicVisualPreferences();
   } finally {
     authState.restoring = false;
   }
@@ -103,6 +127,7 @@ export async function logout(): Promise<void> {
     authState.token = null;
     authState.csrfToken = '';
     authState.user = null;
+    resetPublicVisualPreferences();
   }
 }
 async function refreshOnce(): Promise<void> {

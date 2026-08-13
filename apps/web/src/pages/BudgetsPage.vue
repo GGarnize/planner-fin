@@ -313,8 +313,8 @@ nav,
   display: grid;
   place-items: center;
   padding: 0 0.75rem;
-  background: #fff;
-  border: 1px solid #cbd5e1;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 0.65rem;
 }
 .month-nav button,
@@ -330,11 +330,11 @@ nav,
   font-size: 1.25rem;
 }
 .current-month {
-  background: #e2e8f0;
-  color: #334155;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
 }
 .panel {
-  background: white;
+  background: var(--color-surface);
   padding: 1.25rem;
   border-radius: 0.75rem;
   margin-top: 1rem;
@@ -348,25 +348,25 @@ nav,
   display: grid;
 }
 article {
-  border-top: 1px solid #cbd5e1;
+  border-top: 1px solid var(--color-border);
   padding: 0.75rem 0;
 }
 .exceeded {
-  border-left: 0.35rem solid #b42318;
+  border-left: 0.35rem solid var(--color-error);
   padding-left: 0.75rem;
 }
 textarea,
 select {
   font: inherit;
   padding: 0.75rem;
-  border: 1px solid #94a3b8;
+  border: 1px solid var(--color-border);
   border-radius: 0.5rem;
 }
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 3px solid #f59e0b;
+  outline: 3px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 @media (max-width: 40rem) {

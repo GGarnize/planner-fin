@@ -677,25 +677,25 @@ function onPopState() {
 .date-group > h2 {
   margin: 0;
   font-size: 1rem;
-  color: #334155;
+  color: var(--color-text);
 }
 .list article,
 .empty,
 form {
-  background: #fff;
+  background: var(--color-surface);
   padding: 1.25rem;
   border-radius: 1rem;
-  box-shadow: 0 0.5rem 2rem #0f172a18;
+  box-shadow: var(--shadow-surface);
 }
 .transaction-card {
-  border-left: 0.35rem solid #64748b;
+  border-left: 0.35rem solid var(--color-border);
 }
 .transaction-card--paid {
-  border-left-color: #15803d;
-  background: linear-gradient(90deg, #f0fdf4 0, #fff 34%);
+  border-left-color: var(--color-success);
+  background: linear-gradient(90deg, var(--color-success-container) 0, var(--color-surface) 34%);
 }
 .transaction-card--pending {
-  border-left-color: #b45309;
+  border-left-color: var(--color-warning);
 }
 .list article > header {
   display: flex;
@@ -707,7 +707,7 @@ form {
 }
 .status-badge {
   padding: 0.2rem 0.55rem;
-  border: 1px solid #94a3b8;
+  border: 1px solid var(--color-border);
   border-radius: 999px;
   font-size: 0.85rem;
   font-weight: 700;
@@ -725,19 +725,19 @@ form {
   font-size: 1.2rem;
 }
 .amount-secondary {
-  color: #475569;
+  color: var(--color-text-muted);
 }
 .amount-secondary b {
   font-size: 0.95rem;
   font-weight: 600;
 }
 .secondary {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
 }
 .danger {
-  background: #b42318;
-  color: #fff;
+  background: var(--color-error);
+  color: var(--color-on-accent);
 }
 .transaction-card .actions button,
 .modal .actions button {
@@ -745,13 +745,13 @@ form {
 }
 .link {
   background: none;
-  color: #b42318;
+  color: var(--color-error);
   text-decoration: underline;
 }
 .modal {
   position: fixed;
   inset: 0;
-  background: #0f172a99;
+  background: var(--color-overlay);
   display: grid;
   place-items: center;
   padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
@@ -777,7 +777,7 @@ select,
 textarea {
   font: inherit;
   padding: 0.75rem;
-  border: 1px solid #94a3b8;
+  border: 1px solid var(--color-border);
   border-radius: 0.5rem;
 }
 @media (max-width: 600px) {
