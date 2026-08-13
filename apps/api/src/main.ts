@@ -42,8 +42,11 @@ async function bootstrap(): Promise<void> {
     }),
   );
   app.enableShutdownHooks();
-  await app.listen(config.port);
-  logger.log(`API PlannerFin iniciada na porta ${config.port}.`);
+  if (config.host) await app.listen(config.port, config.host);
+  else await app.listen(config.port);
+  logger.log(
+    `API PlannerFin iniciada em ${config.host ? `${config.host}:` : 'porta '}${config.port}.`,
+  );
 }
 
 void bootstrap().catch((error: unknown) => {

@@ -16,6 +16,7 @@ describe('loadApiConfig', () => {
     process.env.COOKIE_SECURE = 'false';
     expect(loadApiConfig()).toMatchObject({
       port: 3000,
+      host: undefined,
       databaseUrl: process.env.DATABASE_URL,
       corsOrigins: ['http://localhost:9000'],
       accessTokenSeconds: 900,
@@ -33,6 +34,15 @@ describe('loadApiConfig', () => {
     process.env.JWT_SECRET = 'jwt-local-sintetico-ABCDEF-1234567890-xyz';
     process.env.REFRESH_HMAC_SECRET = 'hmac-local-sintetico-9876543210-ZYX-fed';
     expect(() => loadApiConfig()).toThrow('API_PORT');
+  });
+  it('aceita host explicito para tooling local', () => {
+    process.env.API_PORT = '3000';
+    process.env.API_HOST = '127.0.0.1';
+    process.env.DATABASE_URL = 'postgresql://local:local@localhost:5432/local';
+    process.env.API_CORS_ORIGIN = 'https://localhost';
+    process.env.JWT_SECRET = 'jwt-local-sintetico-ABCDEF-1234567890-xyz';
+    process.env.REFRESH_HMAC_SECRET = 'hmac-local-sintetico-9876543210-ZYX-fed';
+    expect(loadApiConfig().host).toBe('127.0.0.1');
   });
   it('rejeita segredos ausentes, fracos e placeholders sem expô-los', () => {
     process.env.DATABASE_URL = 'postgresql://local:local@localhost:5432/local';
