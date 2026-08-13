@@ -340,9 +340,9 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   padding: 0.25rem 0.5rem;
-  color: #0f172a;
-  background: #fff;
-  border: 1px solid #cbd5e1;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 0.75rem;
 }
 .period-label strong,
@@ -353,7 +353,7 @@ onBeforeUnmount(() => {
   font-size: 1.25rem;
 }
 .period-label small {
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 .period-picker {
   position: absolute;
@@ -364,10 +364,10 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 0.75rem;
   padding: 0.75rem;
-  background: #fff;
-  border: 1px solid #cbd5e1;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 0.75rem;
-  box-shadow: 0 0.6rem 1.8rem #0f172a26;
+  box-shadow: var(--shadow-surface);
   transform: translateX(-50%);
 }
 .period-picker label {
@@ -380,7 +380,7 @@ onBeforeUnmount(() => {
   min-height: 2.75rem;
   font: inherit;
   padding: 0.5rem;
-  border: 1px solid #94a3b8;
+  border: 1px solid var(--color-border);
   border-radius: 0.5rem;
 }
 .period-picker div {
@@ -396,8 +396,8 @@ onBeforeUnmount(() => {
 }
 .current-button {
   min-height: 2.75rem;
-  background: #e2e8f0;
-  color: #334155;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
 }
 .current-button:disabled {
   opacity: 0.55;
@@ -443,9 +443,9 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   padding: 0.5rem;
-  color: #155eef;
-  background: #fff;
-  border: 1px solid #155eef;
+  color: var(--color-accent);
+  background: var(--color-surface);
+  border: 1px solid var(--color-accent);
   border-radius: 0.6rem;
   text-decoration: none;
   font-weight: 700;
@@ -458,9 +458,9 @@ onBeforeUnmount(() => {
   gap: 0.5rem;
   margin-top: 0.75rem;
   padding: 0.55rem 0.7rem;
-  color: #155eef;
-  background: #eef4ff;
-  border: 1px solid #b7cdfc;
+  color: var(--color-on-accent-container);
+  background: var(--color-accent-container);
+  border: 1px solid var(--color-accent);
   border-radius: 0.65rem;
   text-decoration: none;
   font-weight: 700;
@@ -469,8 +469,8 @@ onBeforeUnmount(() => {
   font-size: 1.25rem;
 }
 .quick-actions .primary-action {
-  color: #fff;
-  background: #155eef;
+  color: var(--color-on-accent);
+  background: var(--color-accent);
 }
 .actions {
   display: flex;
@@ -483,10 +483,10 @@ onBeforeUnmount(() => {
   gap: 1rem;
 }
 .panel {
-  background: #fff;
+  background: var(--color-surface);
   border-radius: 1rem;
   padding: 1rem;
-  box-shadow: 0 0.3rem 1.4rem #0f172a18;
+  box-shadow: var(--shadow-surface);
 }
 .panel strong {
   display: block;
@@ -515,7 +515,7 @@ onBeforeUnmount(() => {
 }
 .panel em,
 .exceeded {
-  color: #b42318;
+  color: var(--color-error);
 }
 @media (max-width: 700px) {
   .dashboard {
@@ -550,7 +550,7 @@ onBeforeUnmount(() => {
   }
   .position-panel h2 {
     font-size: 0.9rem;
-    color: #475569;
+    color: var(--color-text-muted);
   }
   .position-panel strong {
     font-size: 1.35rem;
@@ -566,7 +566,7 @@ onBeforeUnmount(() => {
     font-size: 0.875rem;
   }
   .summary-panel dl div:nth-child(even) {
-    color: #475569;
+    color: var(--color-text-muted);
   }
   .secondary-grid {
     margin-top: 0.75rem;

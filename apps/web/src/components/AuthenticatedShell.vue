@@ -141,7 +141,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .authenticated-shell {
   min-height: 100dvh;
-  background: #f5f7fb;
+  color: var(--color-text);
+  background: var(--color-background);
 }
 .shell-content {
   width: 100%;
@@ -154,8 +155,8 @@ onBeforeUnmount(() => {
   gap: 2rem;
   padding: 0.6rem max(1.5rem, env(safe-area-inset-right)) 0.6rem
     max(1.5rem, env(safe-area-inset-left));
-  background: #fff;
-  border-bottom: 1px solid #dbe2ea;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
 }
 .desktop-header nav {
   display: flex;
@@ -168,18 +169,18 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   padding: 0 0.8rem;
-  color: #334155;
+  color: var(--color-text-muted);
   text-decoration: none;
   border-radius: 0.6rem;
 }
 .desktop-header a[aria-current='page'] {
-  color: #155eef;
-  background: #eaf1ff;
+  color: var(--color-on-accent-container);
+  background: var(--color-accent-container);
   font-weight: 700;
 }
 .brand {
   font-weight: 800;
-  color: #0f172a !important;
+  color: var(--color-text) !important;
 }
 .bottom-nav,
 .global-fab {
@@ -192,14 +193,14 @@ onBeforeUnmount(() => {
   display: grid;
   place-items: center;
   padding: 1rem;
-  background: #0f172a80;
+  background: var(--color-overlay);
 }
 .choice-dialog {
   width: min(100%, 24rem);
   padding: 1rem;
   border-radius: 1rem;
-  background: #fff;
-  box-shadow: 0 1rem 3rem #0f172a40;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-overlay);
 }
 .choice-dialog h2 {
   margin-top: 0;
@@ -212,8 +213,8 @@ onBeforeUnmount(() => {
 .choice-dialog .cancel {
   width: 100%;
   margin-top: 0.75rem;
-  color: #334155;
-  background: #e2e8f0;
+  color: var(--color-text);
+  background: var(--color-surface-muted);
 }
 @media (max-width: 767px) {
   .desktop-header {
@@ -237,8 +238,8 @@ onBeforeUnmount(() => {
     min-height: calc(var(--shell-nav-height) + env(safe-area-inset-bottom));
     padding: 0.25rem max(0px, env(safe-area-inset-right)) env(safe-area-inset-bottom)
       max(0px, env(safe-area-inset-left));
-    background: #fff;
-    border-top: 1px solid #cbd5e1;
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
   }
   .bottom-nav a {
     min-width: 0;
@@ -248,14 +249,14 @@ onBeforeUnmount(() => {
     align-items: center;
     justify-content: center;
     gap: 0.1rem;
-    color: #475569;
+    color: var(--color-text-muted);
     text-decoration: none;
     font-size: 0.75rem;
     border-radius: 0.75rem;
   }
   .bottom-nav a.active {
-    color: #155eef;
-    background: #eaf1ff;
+    color: var(--color-on-accent-container);
+    background: var(--color-accent-container);
     font-weight: 700;
   }
   .bottom-nav .material-icons {
@@ -272,7 +273,7 @@ onBeforeUnmount(() => {
     height: 3.5rem;
     padding: 0;
     border-radius: 50%;
-    box-shadow: 0 0.4rem 1rem #0f172a40;
+    box-shadow: var(--shadow-overlay);
     font-size: 2rem;
   }
   .global-fab.disabled {

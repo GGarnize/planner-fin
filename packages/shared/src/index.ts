@@ -15,6 +15,18 @@ export interface PublicUser {
   createdAt: string;
 }
 
+export type UserAppearance = 'SYSTEM' | 'LIGHT' | 'DARK';
+export type UserAccent = 'BLUE' | 'TEAL' | 'PURPLE' | 'ORANGE';
+export interface UserPreferencesResponse {
+  appearance: UserAppearance;
+  accent: UserAccent;
+  updatedAt: string;
+}
+export interface UpdateUserPreferencesRequest {
+  appearance?: UserAppearance;
+  accent?: UserAccent;
+}
+
 export interface RegisterRequest {
   name: string;
   email: string;

@@ -61,7 +61,7 @@ async function leave() {
 }
 .more-page h2 {
   margin: 0.4rem 0;
-  color: #475569;
+  color: var(--color-text-muted);
   font-size: 0.95rem;
 }
 .more-page a,
@@ -73,25 +73,25 @@ async function leave() {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.7rem;
-  color: #0f172a;
+  color: var(--color-text);
   text-align: left;
   text-decoration: none;
-  background: #fff;
-  border: 1px solid #dbe2ea;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 0.5rem;
   margin: 0.35rem 0;
 }
 .more-page button {
-  color: #b42318;
-  background: #fff;
+  color: var(--color-error);
+  background: var(--color-surface);
 }
 .more-page a:active,
 .more-page button:active {
-  background: #eaf1ff;
+  background: var(--color-accent-container);
 }
 .more-page a:focus-visible,
 .more-page button:focus-visible {
-  outline: 3px solid #f59e0b;
+  outline: 3px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 .material-icons {

@@ -1,2 +1,31 @@
 <div id="app"></div>
+<script>
+  (() => {
+    const allowedAppearance = new Set(['SYSTEM', 'LIGHT', 'DARK']);
+    const allowedAccent = new Set(['BLUE', 'TEAL', 'PURPLE', 'ORANGE']);
+    const defaults = { appearance: 'SYSTEM', accent: 'BLUE' };
+    let visual = defaults;
+    try {
+      const parsed = JSON.parse(localStorage.getItem('plannerfin.visual.v1') || 'null');
+      if (
+        parsed &&
+        allowedAppearance.has(parsed.appearance) &&
+        allowedAccent.has(parsed.accent) &&
+        Object.keys(parsed).every((key) => key === 'appearance' || key === 'accent')
+      )
+        visual = parsed;
+    } catch {
+      localStorage.removeItem('plannerfin.visual.v1');
+    }
+    const dark =
+      visual.appearance === 'DARK' ||
+      (visual.appearance === 'SYSTEM' &&
+        matchMedia &&
+        matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.dataset.appearance = visual.appearance;
+    document.documentElement.dataset.accent = visual.accent;
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  })();
+</script>
 <script type="module" src="/src/main.ts"></script>

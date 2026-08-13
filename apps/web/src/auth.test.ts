@@ -16,6 +16,11 @@ const authResponse = {
     createdAt: '2026-08-10T00:00:00.000Z',
   },
 };
+const preferencesResponse = {
+  appearance: 'DARK',
+  accent: 'TEAL',
+  updatedAt: '2026-08-12T10:00:00.000Z',
+};
 
 async function loadAuth() {
   vi.resetModules();
@@ -48,6 +53,7 @@ describe('auth client Android/web', () => {
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: 'csrf-1' }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(authResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(preferencesResponse), { status: 200 }))
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ csrfToken: 'csrf-2' }), { status: 200 }),
       );
@@ -70,11 +76,24 @@ describe('auth client Android/web', () => {
     );
     expect(authState.token).toBe('access-token');
     expect(authState.csrfToken).toBe('csrf-2');
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      'http://localhost:3000/api/users/me/preferences',
+      expect.objectContaining({
+        credentials: 'include',
+        headers: expect.objectContaining({ Authorization: 'Bearer access-token' }),
+      }),
+    );
     expect(mockedMobile.flush).not.toHaveBeenCalled();
     const stores = globalThis as unknown as Record<string, Storage>;
     const local = stores[`local${'Storage'}`]!;
     const session = stores[`session${'Storage'}`]!;
-    expect(local.length).toBe(0);
+    expect(local.length).toBe(1);
+    expect(JSON.parse(local.getItem('plannerfin.visual.v1')!)).toEqual({
+      appearance: 'DARK',
+      accent: 'TEAL',
+    });
+    expect(local.getItem('accessToken')).toBeNull();
     expect(session.length).toBe(0);
   });
 
@@ -85,6 +104,7 @@ describe('auth client Android/web', () => {
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: 'csrf-1' }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(authResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(preferencesResponse), { status: 200 }))
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ csrfToken: 'csrf-2' }), { status: 200 }),
       );
@@ -101,6 +121,7 @@ describe('auth client Android/web', () => {
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ csrfToken: 'csrf-1' }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(authResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(preferencesResponse), { status: 200 }))
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ csrfToken: 'csrf-2' }), { status: 200 }),
       );
@@ -110,7 +131,10 @@ describe('auth client Android/web', () => {
     const { restore } = await loadAuth();
     await restore();
 
-    expect(setLocal).not.toHaveBeenCalled();
+    expect(setLocal).toHaveBeenCalledWith(
+      'plannerfin.visual.v1',
+      JSON.stringify({ appearance: 'DARK', accent: 'TEAL' }),
+    );
     const stores = globalThis as unknown as Record<string, Storage>;
     const local = stores[`local${'Storage'}`]!;
     const session = stores[`session${'Storage'}`]!;

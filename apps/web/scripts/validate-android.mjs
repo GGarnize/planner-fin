@@ -76,8 +76,16 @@ function scan(dir, pattern, matches = []) {
   }
   return matches;
 }
-const storageMatches = scan('src', /localStorage|sessionStorage|indexedDB/);
-if (storageMatches.length) fail(`storage JS proibido encontrado em ${storageMatches.join(', ')}.`);
+const forbiddenStorageMatches = scan('src', /sessionStorage|indexedDB/);
+if (forbiddenStorageMatches.length)
+  fail(`storage JS proibido encontrado em ${forbiddenStorageMatches.join(', ')}.`);
+
+const visualCacheAllowlist = new Set(['src/appearance.ts', 'src/appearance.test.ts']);
+const localStorageMatches = scan('src', /localStorage/).filter(
+  (path) => !visualCacheAllowlist.has(path.replaceAll('\\', '/')),
+);
+if (localStorageMatches.length)
+  fail(`localStorage fora do cache visual aprovado: ${localStorageMatches.join(', ')}.`);
 
 const networkSecurityMatches = scan('android/app/src', /certificates\s+src="user"/);
 const nonDebugTrustMatches = networkSecurityMatches.filter(

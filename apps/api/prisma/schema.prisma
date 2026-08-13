@@ -30,6 +30,29 @@ model User {
   debtPayments          DebtPayment[]
   monthlyBudgets        MonthlyBudget[]
   transactionTemplates  TransactionTemplate[]
+  preferences           UserPreferences?
+}
+
+enum UserAppearance {
+  SYSTEM
+  LIGHT
+  DARK
+}
+
+enum UserAccent {
+  BLUE
+  TEAL
+  PURPLE
+  ORANGE
+}
+
+model UserPreferences {
+  userId     String         @id @db.Uuid
+  appearance UserAppearance @default(SYSTEM)
+  accent     UserAccent     @default(BLUE)
+  createdAt  DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime       @updatedAt @db.Timestamptz(3)
+  user       User           @relation(fields: [userId], references: [id], onDelete: Restrict)
 }
 
 enum FinancialCategoryType {

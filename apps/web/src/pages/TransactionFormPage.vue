@@ -439,11 +439,11 @@ watch(showDiscardConfirm, async (visible) => {
   padding: 0;
   font-size: 2rem;
   background: transparent;
-  color: #0f172a;
+  color: var(--color-text);
 }
 .form-page form {
   padding: 1.25rem;
-  background: #fff;
+  background: var(--color-surface);
   border-radius: 1rem;
 }
 .template-action,
@@ -456,19 +456,19 @@ watch(showDiscardConfirm, async (visible) => {
 }
 .secondary,
 .details {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
 }
 .link {
   min-height: 44px;
   background: transparent;
-  color: #155eef;
+  color: var(--color-accent);
   text-decoration: underline;
 }
 .warning {
   padding: 0.75rem;
-  background: #fff4e5;
-  color: #854d0e;
+  background: var(--color-warning-container);
+  color: var(--color-warning);
 }
 .template-tabs {
   display: grid;
@@ -477,19 +477,19 @@ watch(showDiscardConfirm, async (visible) => {
   margin-bottom: 0.75rem;
 }
 .template-tabs button {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
 }
 .template-tabs button.selected {
-  background: #155eef;
-  color: #fff;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 .save {
   position: sticky;
   bottom: 0;
   padding-top: 0.75rem;
   padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
-  background: #fff;
+  background: var(--color-surface);
 }
 .save button {
   flex: 1;
@@ -500,13 +500,13 @@ watch(showDiscardConfirm, async (visible) => {
   inset: 0;
   display: grid;
   place-items: center;
-  background: #0f172a88;
+  background: var(--color-overlay);
   padding: 1rem;
 }
 .sheet,
 .confirm {
   width: min(100%, 30rem);
-  background: #fff;
+  background: var(--color-surface);
   padding: 1rem;
   border-radius: 1rem;
 }
