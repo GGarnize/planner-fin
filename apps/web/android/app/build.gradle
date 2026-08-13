@@ -50,7 +50,14 @@ android {
 }
 
 gradle.taskGraph.whenReady { graph ->
-    if (graph.allTasks.any { it.name.toLowerCase().contains("internal") } && !hasInternalSigning) {
+    def internalSigningTask = graph.allTasks.any {
+        def taskName = it.name.toLowerCase()
+        taskName == "assembleinternal" ||
+                taskName == "bundleinternal" ||
+                taskName == "packageinternal" ||
+                taskName == "signinternalbundle"
+    }
+    if (internalSigningTask && !hasInternalSigning) {
         throw new GradleException("Assinatura internal indisponível: configure PLANNER_FIN_KEYSTORE_FILE, PLANNER_FIN_KEYSTORE_PASSWORD, PLANNER_FIN_KEY_ALIAS e PLANNER_FIN_KEY_PASSWORD.")
     }
 }
