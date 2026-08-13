@@ -15,6 +15,9 @@ apps/web/android/**/build/
 apps/web/android/.gradle/
 apps/web/android/*.jks
 apps/web/android/*.keystore
+tools/android/**/build/
+tools/android/**/.gradle/
+tools/android/**/local.properties
 *.apk
 *.aab
 

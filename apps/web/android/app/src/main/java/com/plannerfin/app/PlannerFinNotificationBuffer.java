@@ -3,6 +3,10 @@ package com.plannerfin.app;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -42,6 +46,23 @@ final class PlannerFinNotificationBuffer {
         List<PlannerFinNotificationEvent> snapshot = new ArrayList<>(EVENTS);
         for (PlannerFinNotificationEvent event : snapshot) {
             JSObject item = new JSObject();
+            item.put("packageName", event.packageName);
+            item.put("key", event.key);
+            item.put("postTime", event.postTime);
+            item.put("title", event.title);
+            item.put("text", event.text);
+            item.put("subText", event.subText);
+            item.put("bigText", event.bigText);
+            items.put(item);
+        }
+        return items;
+    }
+
+    static synchronized JSONArray toJsonArrayForDebug() throws JSONException {
+        JSONArray items = new JSONArray();
+        List<PlannerFinNotificationEvent> snapshot = new ArrayList<>(EVENTS);
+        for (PlannerFinNotificationEvent event : snapshot) {
+            JSONObject item = new JSONObject();
             item.put("packageName", event.packageName);
             item.put("key", event.key);
             item.put("postTime", event.postTime);

@@ -1,0 +1,29 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.plannerfin.notificationemitter'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 24
+        targetSdk 36
+        versionCode 1
+        versionName '0.1.0'
+    }
+
+    flavorDimensions 'emitter'
+    productFlavors {
+        notificationTest {
+            dimension 'emitter'
+            applicationId 'com.plannerfin.notificationtest'
+            resValue 'string', 'app_name', 'PlannerFin Notification Test'
+        }
+        notificationOther {
+            dimension 'emitter'
+            applicationId 'com.plannerfin.notificationother'
+            resValue 'string', 'app_name', 'PlannerFin Notification Other'
+        }
+    }
+}

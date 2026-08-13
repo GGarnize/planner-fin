@@ -38,6 +38,10 @@ public class PlannerFinNotificationListenerService extends NotificationListenerS
         String subText = readText(extras, Notification.EXTRA_SUB_TEXT);
         String bigText = readText(extras, Notification.EXTRA_BIG_TEXT);
 
+        if (!hasReadableContent(title, text, subText, bigText)) {
+            return;
+        }
+
         if (PlannerFinNotificationSecretFilter.isProbableSecret(title, text, subText, bigText)) {
             PlannerFinNotificationBuffer.incrementSecretDropped();
             Log.i(TAG, "Conteudo sensivel descartado pelo listener.");
@@ -58,5 +62,14 @@ public class PlannerFinNotificationListenerService extends NotificationListenerS
     private static String readText(Bundle extras, String key) {
         CharSequence value = extras.getCharSequence(key);
         return value == null ? "" : value.toString();
+    }
+
+    static boolean hasReadableContent(String... parts) {
+        for (String part : parts) {
+            if (part != null && !part.isBlank()) {
+                return true;
+            }
+        }
+        return false;
     }
 }
