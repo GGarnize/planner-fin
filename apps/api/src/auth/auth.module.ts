@@ -11,6 +11,6 @@ import { TokenService } from './token.service';
   imports: [PrismaModule, JwtModule.register({})],
   controllers: [AuthController],
   providers: [AuthService, TokenService, AuthGuard, CsrfGuard, RateLimitService],
-  exports: [AuthGuard, TokenService],
+  exports: [AuthGuard, CsrfGuard, RateLimitService, TokenService],
 })
 export class AuthModule {}
