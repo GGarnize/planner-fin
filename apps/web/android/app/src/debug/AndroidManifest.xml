@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:networkSecurityConfig="@xml/network_security_config" />
+    <application android:networkSecurityConfig="@xml/network_security_config">
+        <receiver
+            android:name=".PlannerFinNotificationDebugReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.plannerfin.app.notification.DEBUG" />
+            </intent-filter>
+        </receiver>
+    </application>
 </manifest>
