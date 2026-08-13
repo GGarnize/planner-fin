@@ -11,7 +11,13 @@ const draft = {
     openingBalanceDate: '2026-08-13',
   },
   categories: [
-    { key: 'income', name: 'Renda', type: 'INCOME' as const, icon: 'WORK' as const, selected: true },
+    {
+      key: 'income',
+      name: 'Renda',
+      type: 'INCOME' as const,
+      icon: 'WORK' as const,
+      selected: true,
+    },
     {
       key: 'food',
       name: 'Alimentacao',
@@ -32,6 +38,7 @@ function prisma() {
   };
   type FakeClient = {
     $transaction: (fn: (tx: FakeClient) => unknown) => Promise<unknown>;
+    $queryRaw: () => Promise<unknown[]>;
     userInitialSetup: {
       findUnique: () => Promise<Record<string, unknown> | null>;
       create: ({ data }: { data: Record<string, unknown> }) => Promise<Record<string, unknown>>;
@@ -65,6 +72,7 @@ function prisma() {
 
   const client: FakeClient = {
     $transaction: async (fn: (tx: typeof client) => unknown) => fn(client),
+    $queryRaw: async () => [],
     userInitialSetup: {
       findUnique: async () => state.setup,
       create: async ({ data }: { data: Record<string, unknown> }) =>
@@ -90,13 +98,23 @@ function prisma() {
         };
         return state.setup;
       },
-      upsert: async ({ create, update }: { create: Record<string, unknown>; update: Record<string, unknown> }) => {
+      upsert: async ({
+        create,
+        update,
+      }: {
+        create: Record<string, unknown>;
+        update: Record<string, unknown>;
+      }) => {
         if (!state.setup) return client.userInitialSetup.create({ data: create });
         return client.userInitialSetup.update({ data: update });
       },
     },
     setupConfirmation: {
-      findUnique: async ({ where }: { where: { userId_idempotencyKey: { idempotencyKey: string } } }) =>
+      findUnique: async ({
+        where,
+      }: {
+        where: { userId_idempotencyKey: { idempotencyKey: string } };
+      }) =>
         state.confirmations.find(
           (item) => item.idempotencyKey === where.userId_idempotencyKey.idempotencyKey,
         ) ?? null,
@@ -174,6 +192,24 @@ describe('InitialSetupService', () => {
     expect(retry.statusCode).toBe(200);
     expect(state.accounts).toHaveLength(1);
     expect(state.categories).toHaveLength(1);
+  });
+
+  it('recusa mesma chave idempotente com payload diferente', async () => {
+    const { client } = prisma();
+    const service = new InitialSetupService(client as never);
+    await service.saveDraft(userId, null, draft);
+    const preview = await service.preview(userId, 1);
+    await service.confirm(userId, preview.previewToken, '33333333-3333-4333-8333-333333333339');
+
+    await expect(
+      service.confirm(
+        userId,
+        '44444444-4444-4444-8444-444444444449',
+        '33333333-3333-4333-8333-333333333339',
+      ),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'IDEMPOTENCY_KEY_REUSED' }),
+    });
   });
 
   it('skip cria zero entidade financeira', async () => {

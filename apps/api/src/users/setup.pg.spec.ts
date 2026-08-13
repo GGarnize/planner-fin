@@ -13,6 +13,7 @@ const userB = '22222222-2222-4222-8222-222222222229';
 const createdAt = new Date('2026-08-13T10:00:00.000Z');
 const keyA = '33333333-3333-4333-8333-333333333339';
 const keyB = '44444444-4444-4444-8444-444444444449';
+const keyC = '55555555-5555-4555-8555-555555555559';
 
 const draft: InitialSetupDraft = {
   step: 'REVIEW',
@@ -52,6 +53,10 @@ async function assertSafeDatabase(prisma: PrismaClient) {
 
 function service(prisma: PrismaClient) {
   return new InitialSetupService(prisma as unknown as PrismaService);
+}
+
+function errorCode(error: unknown) {
+  return (error as { response?: { code?: string } }).response?.code;
 }
 
 async function seed(prisma: PrismaClient) {
@@ -137,13 +142,83 @@ describePg('setup inicial opcional com PostgreSQL real', () => {
     const first = await setup.confirm(userA, preview.previewToken, keyA);
     const retry = await setup.confirm(userA, preview.previewToken, keyA);
 
-    expect(first).toMatchObject({ statusCode: 201, status: 'COMPLETED', created: { accounts: 1 } });
-    expect(retry).toMatchObject({ statusCode: 200, status: 'COMPLETED', created: { accounts: 1 } });
+    expect(first).toMatchObject({ statusCode: 201, body: { status: 'COMPLETED' } });
+    expect(retry).toMatchObject({ statusCode: 200, body: first.body });
     expect(await prisma.financialAccount.count({ where: { userId: userA } })).toBe(1);
     expect(await prisma.financialCategory.count({ where: { userId: userA } })).toBe(2);
+    expect(await prisma.setupConfirmation.count({ where: { userId: userA } })).toBe(1);
     expect(await prisma.financialAccount.count({ where: { userId: userB } })).toBe(0);
     expect(await setup.get(userA)).toMatchObject({ status: 'COMPLETED', eligible: false });
     expect(await setup.get(userB)).toMatchObject({ status: 'NOT_STARTED', eligible: true });
+  });
+
+  it('duas confirmacoes concorrentes com mesma chave retornam resultado canonico sem duplicar', async () => {
+    const setup = service(prisma);
+    await setup.saveDraft(userA, 0, draft);
+    const preview = await setup.preview(userA, 1);
+
+    const results = await Promise.allSettled([
+      setup.confirm(userA, preview.previewToken, keyA),
+      setup.confirm(userA, preview.previewToken, keyA),
+    ]);
+    const rejected = results.filter((result) => result.status === 'rejected');
+    const fulfilled = results.filter(
+      (
+        result,
+      ): result is PromiseFulfilledResult<Awaited<ReturnType<InitialSetupService['confirm']>>> =>
+        result.status === 'fulfilled',
+    );
+
+    expect(rejected.map((result) => errorCode(result.reason))).toEqual([]);
+    expect(fulfilled).toHaveLength(2);
+    expect(fulfilled.map((result) => result.value.statusCode).sort()).toEqual([200, 201]);
+    expect(fulfilled[0]!.value.body).toEqual(fulfilled[1]!.value.body);
+    expect(await prisma.financialAccount.count({ where: { userId: userA } })).toBe(1);
+    expect(await prisma.financialCategory.count({ where: { userId: userA } })).toBe(
+      draft.categories.filter((category) => category.selected).length,
+    );
+    expect(await prisma.setupConfirmation.count({ where: { userId: userA } })).toBe(1);
+    expect(await prisma.userInitialSetup.findUnique({ where: { userId: userA } })).toMatchObject({
+      status: 'COMPLETED',
+    });
+  });
+
+  it('mesma chave com preview diferente retorna IDEMPOTENCY_KEY_REUSED', async () => {
+    const setup = service(prisma);
+    await setup.saveDraft(userA, 0, draft);
+    const preview = await setup.preview(userA, 1);
+    await setup.confirm(userA, preview.previewToken, keyA);
+
+    await expect(
+      setup.confirm(userA, '66666666-6666-4666-8666-666666666669', keyA),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'IDEMPOTENCY_KEY_REUSED' }),
+    });
+    expect(await prisma.financialAccount.count({ where: { userId: userA } })).toBe(1);
+    expect(await prisma.financialCategory.count({ where: { userId: userA } })).toBe(2);
+    expect(await prisma.setupConfirmation.count({ where: { userId: userA } })).toBe(1);
+  });
+
+  it('chaves diferentes concorrentes nao duplicam dados confirmados', async () => {
+    const setup = service(prisma);
+    await setup.saveDraft(userA, 0, draft);
+    const preview = await setup.preview(userA, 1);
+
+    const results = await Promise.allSettled([
+      setup.confirm(userA, preview.previewToken, keyB),
+      setup.confirm(userA, preview.previewToken, keyC),
+    ]);
+    const rejectedCodes = results
+      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      .map((result) => errorCode(result.reason));
+    const fulfilled = results.filter((result) => result.status === 'fulfilled');
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejectedCodes).toEqual(['SETUP_ALREADY_COMPLETED']);
+    expect(rejectedCodes).not.toContain('SETUP_DATA_CONFLICT');
+    expect(await prisma.financialAccount.count({ where: { userId: userA } })).toBe(1);
+    expect(await prisma.financialCategory.count({ where: { userId: userA } })).toBe(2);
+    expect(await prisma.setupConfirmation.count({ where: { userId: userA } })).toBe(1);
   });
 
   it('rollback em conflito externo nao cria categoria nem marca completed', async () => {

@@ -20,8 +20,7 @@ import { assertCivilDate } from './setup.dto';
 
 const SUGGESTION_VERSION = 1;
 const PREVIEW_TTL_MS = 15 * 60 * 1000;
-const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const SETUP_SUGGESTIONS: InitialSetupCategoryDraft[] = [
   { key: 'income', name: 'Renda', type: 'INCOME', icon: 'WORK', selected: true },
@@ -66,6 +65,11 @@ const dataConflict = () =>
   new ConflictException({
     code: 'SETUP_DATA_CONFLICT',
     message: 'Dados financeiros foram alterados. Continue manualmente ou recarregue o setup.',
+  });
+const idempotencyKeyReused = () =>
+  new ConflictException({
+    code: 'IDEMPOTENCY_KEY_REUSED',
+    message: 'A chave idempotente ja foi usada com outro payload.',
   });
 
 function stable(value: unknown): string {
@@ -197,118 +201,138 @@ export class InitialSetupService {
   ): Promise<{ statusCode: 200 | 201; body: InitialSetupConfirmResponse }> {
     if (!UUID.test(idempotencyKey)) throw validation('Idempotency-Key', 'Informe uma chave UUID.');
     const tokenHash = sha(previewToken);
+    const requestHash = sha({ previewTokenHash: tokenHash });
+
+    const existing = await this.readConfirmedResult(userId, idempotencyKey, requestHash);
+    if (existing) return existing;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const body = await this.prisma.$transaction(
+          async (tx) => {
+            await tx.$queryRaw`
+              select "userId"
+              from "UserInitialSetup"
+              where "userId" = ${userId}::uuid
+              for update
+            `;
+            const setup = await tx.userInitialSetup.findUnique({ where: { userId } });
+            if (!setup) throw ineligible();
+            if (setup.status === 'COMPLETED')
+              throw new ConflictException({
+                code: 'SETUP_ALREADY_COMPLETED',
+                message: 'Setup inicial ja foi concluido.',
+              });
+            if (
+              setup.status !== 'NOT_STARTED' ||
+              !setup.draft ||
+              setup.previewTokenHash !== tokenHash ||
+              !setup.previewExpiresAt ||
+              setup.previewExpiresAt <= new Date()
+            )
+              throw new NotFoundException({
+                code: 'SETUP_PREVIEW_NOT_FOUND',
+                message: 'Preview expirado ou invalido.',
+              });
+            await this.ensureEligible(userId, tx);
+            const draft = this.canonicalDraft(setup.draft as unknown as InitialSetupDraft);
+            const summary = this.summary(draft);
+            const payloadHash = sha({ userId, draftVersion: setup.draftVersion, summary });
+            if (payloadHash !== setup.previewPayloadHash)
+              throw new ConflictException({
+                code: 'SETUP_PREVIEW_STALE',
+                message: 'Gere um novo preview antes de confirmar.',
+              });
+
+            const account = await tx.financialAccount.create({
+              data: {
+                userId,
+                name: summary.account.name,
+                type: summary.account.type,
+                institution: null,
+                currency: 'BRL',
+                openingBalance: new Prisma.Decimal(summary.account.openingBalance),
+                openingBalanceDate: date(summary.account.openingBalanceDate),
+              },
+            });
+            const categoryRows =
+              summary.categories.length === 0
+                ? []
+                : await Promise.all(
+                    summary.categories.map((category) =>
+                      tx.financialCategory.create({
+                        data: {
+                          userId,
+                          name: category.name,
+                          normalizedName: normalizeCategoryName(category.name),
+                          type: category.type,
+                          color: null,
+                          icon: category.icon,
+                        },
+                      }),
+                    ),
+                  );
+            const result: InitialSetupConfirmResponse = {
+              status: 'COMPLETED',
+              created: { accountId: account.id, categoryIds: categoryRows.map((row) => row.id) },
+              counts: summary.counts,
+            };
+            await tx.setupConfirmation.create({
+              data: {
+                userId,
+                idempotencyKey,
+                payloadHash: requestHash,
+                result: result as unknown as Prisma.InputJsonValue,
+              },
+            });
+            await tx.userInitialSetup.update({
+              where: { userId },
+              data: {
+                status: 'COMPLETED',
+                completedAt: new Date(),
+                draft: Prisma.JsonNull,
+                previewTokenHash: null,
+                previewPayloadHash: null,
+                previewExpiresAt: null,
+              },
+            });
+            return result;
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        );
+        return { statusCode: 201, body };
+      } catch (error) {
+        const resolved = await this.readConfirmedResult(userId, idempotencyKey, requestHash);
+        if (resolved) return resolved;
+        if (this.isSerializationConflict(error) && attempt < 2) continue;
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')
+          throw dataConflict();
+        throw error;
+      }
+    }
+    throw dataConflict();
+  }
+
+  private async readConfirmedResult(userId: string, idempotencyKey: string, payloadHash: string) {
     const existing = await this.prisma.setupConfirmation.findUnique({
       where: { userId_idempotencyKey: { userId, idempotencyKey } },
     });
-    const requestHash = sha({ previewTokenHash: tokenHash });
-    if (existing) {
-      if (existing.payloadHash !== requestHash)
-        throw new ConflictException({
-          code: 'IDEMPOTENCY_KEY_REUSED',
-          message: 'A chave idempotente ja foi usada com outro payload.',
-        });
-      return { statusCode: 200, body: existing.result as unknown as InitialSetupConfirmResponse };
-    }
-
-    try {
-      const body = await this.prisma.$transaction(
-        async (tx) => {
-          const setup = await tx.userInitialSetup.findUnique({ where: { userId } });
-          if (!setup) throw ineligible();
-          if (setup.status === 'COMPLETED')
-            throw new ConflictException({
-              code: 'SETUP_ALREADY_COMPLETED',
-              message: 'Setup inicial ja foi concluido.',
-            });
-          if (
-            setup.status !== 'NOT_STARTED' ||
-            !setup.draft ||
-            setup.previewTokenHash !== tokenHash ||
-            !setup.previewExpiresAt ||
-            setup.previewExpiresAt <= new Date()
-          )
-            throw new NotFoundException({
-              code: 'SETUP_PREVIEW_NOT_FOUND',
-              message: 'Preview expirado ou invalido.',
-            });
-          await this.ensureEligible(userId, tx);
-          const draft = this.canonicalDraft(setup.draft as unknown as InitialSetupDraft);
-          const summary = this.summary(draft);
-          const payloadHash = sha({ userId, draftVersion: setup.draftVersion, summary });
-          if (payloadHash !== setup.previewPayloadHash)
-            throw new ConflictException({
-              code: 'SETUP_PREVIEW_STALE',
-              message: 'Gere um novo preview antes de confirmar.',
-            });
-
-          const account = await tx.financialAccount.create({
-            data: {
-              userId,
-              name: summary.account.name,
-              type: summary.account.type,
-              institution: null,
-              currency: 'BRL',
-              openingBalance: new Prisma.Decimal(summary.account.openingBalance),
-              openingBalanceDate: date(summary.account.openingBalanceDate),
-            },
-          });
-          const categoryRows =
-            summary.categories.length === 0
-              ? []
-              : await Promise.all(
-                  summary.categories.map((category) =>
-                    tx.financialCategory.create({
-                      data: {
-                        userId,
-                        name: category.name,
-                        normalizedName: normalizeCategoryName(category.name),
-                        type: category.type,
-                        color: null,
-                        icon: category.icon,
-                      },
-                    }),
-                  ),
-                );
-          const result: InitialSetupConfirmResponse = {
-            status: 'COMPLETED',
-            created: { accountId: account.id, categoryIds: categoryRows.map((row) => row.id) },
-            counts: summary.counts,
-          };
-          await tx.setupConfirmation.create({
-            data: {
-              userId,
-              idempotencyKey,
-              payloadHash: requestHash,
-              result: result as unknown as Prisma.InputJsonValue,
-            },
-          });
-          await tx.userInitialSetup.update({
-            where: { userId },
-            data: {
-              status: 'COMPLETED',
-              completedAt: new Date(),
-              draft: Prisma.JsonNull,
-              previewTokenHash: null,
-              previewPayloadHash: null,
-              previewExpiresAt: null,
-            },
-          });
-          return result;
-        },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-      );
-      return { statusCode: 201, body };
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')
-        throw dataConflict();
-      throw error;
-    }
+    if (!existing) return null;
+    if (existing.payloadHash !== payloadHash) throw idempotencyKeyReused();
+    return {
+      statusCode: 200 as const,
+      body: existing.result as unknown as InitialSetupConfirmResponse,
+    };
   }
 
-  private state(
-    setup: UserInitialSetup | null,
-    hasData: boolean,
-  ): InitialSetupStateResponse {
+  private isSerializationConflict(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === 'P2034' || error.meta?.code === '40001')
+    );
+  }
+
+  private state(setup: UserInitialSetup | null, hasData: boolean): InitialSetupStateResponse {
     const status = setup?.status ?? null;
     const eligible = Boolean(setup && status === 'NOT_STARTED' && !hasData);
     const reason = !setup
@@ -331,7 +355,9 @@ export class InitialSetupService {
       draftVersion: setup?.draftVersion ?? null,
       suggestionVersion: SUGGESTION_VERSION,
       suggestions: SETUP_SUGGESTIONS,
-      lastValidStep: setup?.draft ? this.canonicalDraft(setup.draft as unknown as InitialSetupDraft).step : 'INTRO',
+      lastValidStep: setup?.draft
+        ? this.canonicalDraft(setup.draft as unknown as InitialSetupDraft).step
+        : 'INTRO',
     };
   }
 
@@ -375,7 +401,11 @@ export class InitialSetupService {
     const seen = new Set<string>();
     for (const category of categories.filter((item) => item.selected)) {
       const key = `${category.type}:${normalizeCategoryName(category.name)}`;
-      if (seen.has(key)) throw validation('categories', 'Categorias selecionadas nao podem repetir nome e natureza.');
+      if (seen.has(key))
+        throw validation(
+          'categories',
+          'Categorias selecionadas nao podem repetir nome e natureza.',
+        );
       seen.add(key);
     }
     return {

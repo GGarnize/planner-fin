@@ -14,6 +14,13 @@ export const setupState = reactive<{
   preview: InitialSetupPreviewResponse | null;
 }>({ data: null, loading: false, saving: false, error: '', preview: null });
 
+let confirmIdempotencyKey = '';
+let setupOwnerId: string | null = null;
+
+function clearConfirmAttempt(): void {
+  confirmIdempotencyKey = '';
+}
+
 function csrf(init: RequestInit = {}): RequestInit {
   return {
     ...init,
@@ -37,6 +44,8 @@ export function resetInitialSetupMemory(): void {
   setupState.data = null;
   setupState.error = '';
   setupState.preview = null;
+  setupOwnerId = null;
+  clearConfirmAttempt();
 }
 
 window.addEventListener('plannerfin:auth-cleared', resetInitialSetupMemory);
@@ -49,6 +58,10 @@ export async function loadInitialSetup(): Promise<InitialSetupStateResponse | nu
       await authenticatedFetch('/users/me/setup'),
       'Nao foi possivel carregar o setup inicial.',
     );
+    if (setupOwnerId !== authState.user?.id) {
+      setupOwnerId = authState.user?.id ?? null;
+      clearConfirmAttempt();
+    }
     setupState.data = data;
     return data;
   } catch (error) {
@@ -64,6 +77,7 @@ export async function saveInitialSetupDraft(draft: InitialSetupDraft) {
   setupState.saving = true;
   setupState.error = '';
   setupState.preview = null;
+  clearConfirmAttempt();
   try {
     setupState.data = await parse<InitialSetupStateResponse>(
       await authenticatedFetch(
@@ -91,8 +105,12 @@ export async function saveInitialSetupDraft(draft: InitialSetupDraft) {
 export async function skipInitialSetup(): Promise<void> {
   setupState.saving = true;
   setupState.error = '';
+  clearConfirmAttempt();
   try {
-    await parse(await authenticatedFetch('/users/me/setup/skip', csrf({ method: 'POST' })), 'Falha ao pular setup.');
+    await parse(
+      await authenticatedFetch('/users/me/setup/skip', csrf({ method: 'POST' })),
+      'Falha ao pular setup.',
+    );
     await loadInitialSetup();
   } finally {
     setupState.saving = false;
@@ -104,6 +122,7 @@ export async function previewInitialSetup(): Promise<InitialSetupPreviewResponse
     throw new Error('Salve o draft antes da revisao.');
   setupState.saving = true;
   setupState.error = '';
+  clearConfirmAttempt();
   try {
     setupState.preview = await parse<InitialSetupPreviewResponse>(
       await authenticatedFetch(
@@ -115,6 +134,7 @@ export async function previewInitialSetup(): Promise<InitialSetupPreviewResponse
       ),
       'Nao foi possivel gerar o preview.',
     );
+    confirmIdempotencyKey = crypto.randomUUID();
     return setupState.preview;
   } catch (error) {
     setupState.error = error instanceof Error ? error.message : 'Nao foi possivel gerar o preview.';
@@ -126,6 +146,7 @@ export async function previewInitialSetup(): Promise<InitialSetupPreviewResponse
 
 export async function confirmInitialSetup(): Promise<void> {
   if (!setupState.preview) throw new Error('Gere o preview antes de confirmar.');
+  if (!confirmIdempotencyKey) confirmIdempotencyKey = crypto.randomUUID();
   setupState.saving = true;
   setupState.error = '';
   try {
@@ -134,12 +155,13 @@ export async function confirmInitialSetup(): Promise<void> {
         '/users/me/setup/confirm',
         csrf({
           method: 'POST',
-          headers: { 'Idempotency-Key': crypto.randomUUID() },
+          headers: { 'Idempotency-Key': confirmIdempotencyKey },
           body: JSON.stringify({ previewToken: setupState.preview.previewToken }),
         }),
       ),
       'Nao foi possivel confirmar o setup.',
     );
+    clearConfirmAttempt();
     await loadInitialSetup();
   } catch (error) {
     setupState.error =
