@@ -28,6 +28,7 @@ import {
   ConfirmImportDto,
   CreateImportDto,
   ImportListQueryDto,
+  OpenImportsQueryDto,
   MappingDto,
   PatchImportRowDto,
   VersionDto,
@@ -57,6 +58,12 @@ export class ImportsController {
   ) {
     this.rate.check(`import-upload:${auth.userId}:${req.ip}`, 5, 15 * 60_000);
     return this.imports.create(auth.userId, dto, file);
+  }
+
+  @Get()
+  @Header('Cache-Control', 'no-store')
+  listOpen(@CurrentAuth() auth: AuthenticatedContext, @Query() query: OpenImportsQueryDto) {
+    return this.imports.listOpen(auth.userId, query.status);
   }
 
   @Get(':id')

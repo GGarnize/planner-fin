@@ -28,6 +28,8 @@ import {
 } from './imports.helpers';
 
 const editable: ImportStatus[] = ['UPLOADED', 'MAPPING_REQUIRED', 'READY_FOR_REVIEW'];
+const SAMPLE_LIMIT = 5;
+const SAMPLE_CELL_LIMIT = 80;
 const expiresAt = () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 const isSerializableConflict = (error: unknown) =>
   (error as { code?: string }).code === 'P2034' ||
@@ -116,6 +118,29 @@ export class ImportsService {
 
   get(userId: string, id: string, limit: number, offset: number, filter: string) {
     return this.getWith(this.prisma, userId, id, limit, offset, filter);
+  }
+
+  async listOpen(userId: string, status: 'open') {
+    if (status !== 'open') return [];
+    const sessions = await this.prisma.importSession.findMany({
+      where: { userId, status: { in: editable }, expiresAt: { gt: new Date() } },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      select: {
+        id: true,
+        format: true,
+        status: true,
+        accountId: true,
+        displayFileName: true,
+        draftVersion: true,
+        updatedAt: true,
+        expiresAt: true,
+      },
+    });
+    return sessions.map((session) => ({
+      ...session,
+      updatedAt: session.updatedAt.toISOString(),
+      expiresAt: session.expiresAt.toISOString(),
+    }));
   }
 
   async mapping(userId: string, id: string, draftVersion: number, input: unknown) {
@@ -648,6 +673,11 @@ export class ImportsService {
       rowCount: session.rowCount,
       expiresAt: session.expiresAt.toISOString(),
       mapping: session.mapping,
+      ...(session.format === 'CSV' &&
+      editable.includes(session.status) &&
+      Array.isArray(session.sourceData)
+        ? { csvSample: this.csvSample(session.sourceData as string[][]) }
+        : {}),
       rows: rows.map((r) => ({
         id: r.id,
         rowNumber: r.rowNumber,
@@ -667,10 +697,43 @@ export class ImportsService {
     };
   }
 
+  private csvSample(source: string[][]) {
+    const width = source.reduce((maximum, row) => Math.max(maximum, row.length), 0);
+    return {
+      columns: Array.from({ length: width }, (_, index) => ({
+        index,
+        header: this.sanitizeSampleCell(source[0]?.[index] ?? ''),
+        samples: source
+          .slice(1)
+          .map((row) => this.sanitizeSampleCell(row[index] ?? ''))
+          .filter(Boolean)
+          .slice(0, SAMPLE_LIMIT),
+      })),
+      rowCount: Math.max(0, source.length - 1),
+    };
+  }
+
+  private sanitizeSampleCell(value: string) {
+    const plain = value
+      .normalize('NFKC')
+      .split('')
+      .map((character) => {
+        const code = character.charCodeAt(0);
+        return code <= 31 || (code >= 127 && code <= 159) ? ' ' : character;
+      })
+      .join('')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const inert = /^[=+\-@]/.test(plain) ? `’${plain}` : plain;
+    return inert.slice(0, SAMPLE_CELL_LIMIT);
+  }
+
   private async owned(tx: Prisma.TransactionClient | PrismaService, userId: string, id: string) {
     if (!/^[0-9a-f-]{36}$/i.test(id)) throw notFound();
     const session = await tx.importSession.findFirst({ where: { id, userId } });
-    if (!session) throw notFound();
+    if (!session || (editable.includes(session.status) && session.expiresAt <= new Date()))
+      throw notFound();
     return session;
   }
   private assertEditable(status: ImportStatus) {

@@ -102,8 +102,23 @@ export interface ImportSessionResponse {
   rowCount: number;
   expiresAt: string;
   mapping: Record<string, unknown> | null;
+  csvSample?: CsvSample;
   rows: ImportRowResponse[];
   page: { limit: number; offset: number; filteredCount: number };
+}
+export interface CsvSample {
+  columns: Array<{ index: number; header: string; samples: string[] }>;
+  rowCount: number;
+}
+export interface OpenImportSessionResponse {
+  id: string;
+  format: ImportFormat;
+  status: 'UPLOADED' | 'MAPPING_REQUIRED' | 'READY_FOR_REVIEW';
+  accountId: string;
+  displayFileName: string | null;
+  draftVersion: number;
+  updatedAt: string;
+  expiresAt: string;
 }
 export type ImportErrorCode =
   | 'INVALID_IMPORT_FILE'

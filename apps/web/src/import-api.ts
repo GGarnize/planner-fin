@@ -2,6 +2,7 @@ import type {
   ImportConfirmResponse,
   ImportPreviewResponse,
   ImportSessionResponse,
+  OpenImportSessionResponse,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from './auth';
 
@@ -11,10 +12,12 @@ const messages: Record<string, string> = {
   INVALID_IMPORT_FILE: 'Escolha um arquivo OFX ou CSV válido.',
   IMPORT_FILE_TOO_LARGE: 'O arquivo excede o limite de 10 MiB.',
   UNSUPPORTED_IMPORT_FORMAT: 'Use somente arquivos OFX ou CSV.',
-  IMPORT_PARSE_ERROR: 'Não foi possível interpretar o arquivo. Confira o formato e a codificação UTF-8.',
+  IMPORT_PARSE_ERROR:
+    'Não foi possível interpretar o arquivo. Confira o formato e a codificação UTF-8.',
   INVALID_CSV_MAPPING: 'Revise o mapeamento das colunas do CSV.',
   INVALID_IMPORT_ROW: 'Revise os campos obrigatórios desta linha.',
-  IMPORT_VERSION_CONFLICT: 'Esta importação foi alterada em outra tela. Recarregamos a versão atual.',
+  IMPORT_VERSION_CONFLICT:
+    'Esta importação foi alterada em outra tela. Recarregamos a versão atual.',
   IMPORT_DRAFT_STALE: 'A revisão mudou. Gere um novo resumo antes de confirmar.',
   IMPORT_ACCOUNT_UNAVAILABLE: 'A conta foi arquivada ou não está mais disponível.',
   IMPORT_CATEGORY_UNAVAILABLE: 'A categoria foi arquivada ou não é compatível.',
@@ -26,7 +29,11 @@ const messages: Record<string, string> = {
 };
 
 export class ImportApiError extends Error {
-  constructor(public code: string, message: string, public status: number) {
+  constructor(
+    public code: string,
+    message: string,
+    public status: number,
+  ) {
     super(messages[code] ?? message ?? 'Não foi possível concluir a operação.');
   }
 }
@@ -56,6 +63,9 @@ const json = (method: string, body: object): RequestInit => ({
 });
 
 export const importApi = {
+  listOpen() {
+    return request<OpenImportSessionResponse[]>('/imports?status=open');
+  },
   upload(file: File, accountId: string, format: 'OFX' | 'CSV', delimiter = ',') {
     const form = new FormData();
     form.set('file', file);
@@ -65,10 +75,15 @@ export const importApi = {
     return request<ImportSessionResponse>('/imports', { method: 'POST', body: form });
   },
   get(id: string, filter: ImportFilter, offset = 0) {
-    return request<ImportSessionResponse>(`/imports/${id}?limit=100&offset=${offset}&filter=${filter}`);
+    return request<ImportSessionResponse>(
+      `/imports/${id}?limit=100&offset=${offset}&filter=${filter}`,
+    );
   },
   mapping(id: string, draftVersion: number, mapping: object) {
-    return request<ImportSessionResponse>(`/imports/${id}/mapping`, json('PUT', { draftVersion, mapping }));
+    return request<ImportSessionResponse>(
+      `/imports/${id}/mapping`,
+      json('PUT', { draftVersion, mapping }),
+    );
   },
   patchRow(id: string, rowId: string, body: object) {
     return request<ImportSessionResponse>(`/imports/${id}/rows/${rowId}`, json('PATCH', body));
