@@ -47,10 +47,16 @@ if (!gradle.includes('versionName plannerFinVersionName')) {
 
 const manifest = read('android/app/src/main/AndroidManifest.xml');
 if (!manifest.includes('android.permission.INTERNET')) fail('Manifest deve conter INTERNET.');
+if (!manifest.includes('android.permission.BIND_NOTIFICATION_LISTENER_SERVICE')) {
+  fail('Manifest deve conter BIND_NOTIFICATION_LISTENER_SERVICE para a spike SPEC-022.');
+}
 if (!manifest.includes('android:allowBackup="false"'))
   fail('Backup Android deve estar desabilitado.');
-if (/CAMERA|RECORD_AUDIO|LOCATION|CONTACTS|STORAGE|POST_NOTIFICATIONS/.test(manifest)) {
+if (/CAMERA|RECORD_AUDIO|LOCATION|CONTACTS|STORAGE|POST_NOTIFICATIONS|QUERY_ALL_PACKAGES/.test(manifest)) {
   fail('Manifest contém permissão sensível não aprovada.');
+}
+if (/<queries\b/.test(manifest)) {
+  fail('Manifest não pode declarar queries amplas nesta spike.');
 }
 if (/usesCleartextTraffic\s*=\s*"true"/.test(manifest)) {
   fail('cleartext global em main/release é proibido.');

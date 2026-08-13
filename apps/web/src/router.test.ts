@@ -20,4 +20,12 @@ describe('redirecionamentos de autenticação', () => {
     await router.push('/debts');
     expect(router.currentRoute.value.fullPath).toBe('/debts');
   });
+
+  it('mantem rota diagnostica protegida por auth', async () => {
+    mocked.authState.token = null;
+    await router.push('/dev/notification-listener');
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/login?redirect=/dev/notification-listener',
+    );
+  });
 });

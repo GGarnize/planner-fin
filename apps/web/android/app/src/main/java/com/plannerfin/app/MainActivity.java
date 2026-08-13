@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(PlannerFinCookiesPlugin.class);
+        registerPlugin(PlannerFinNotificationListenerPlugin.class);
         super.onCreate(savedInstanceState);
         configureCookies();
     }
