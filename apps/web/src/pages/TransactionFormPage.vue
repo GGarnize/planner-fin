@@ -105,7 +105,7 @@ function apply(template: PublicTransactionTemplate) {
   closeTemplates();
 }
 function choose(template: PublicTransactionTemplate) {
-  if (dirty.value || selectedTemplate.value) {
+  if (dirty.value) {
     pendingTemplate.value = template;
     showConfirm.value = true;
     return;

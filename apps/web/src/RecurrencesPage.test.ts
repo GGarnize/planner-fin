@@ -127,6 +127,34 @@ describe('RecurrencesPage', () => {
     expect((selects[4]!.element as HTMLSelectElement).value).toBe('');
   });
 
+  it('troca o modelo diretamente quando não houve edição manual', async () => {
+    const wrapper = await mounted(2);
+    await wrapper.findAll('.template-option')[0]!.trigger('click');
+    await wrapper.get('.template-action > button').trigger('click');
+    await wrapper.findAll('.template-option')[1]!.trigger('click');
+    expect(wrapper.find('.confirm').exists()).toBe(false);
+    expect(wrapper.get('.template-action').text()).toContain('Modelo: Modelo 1');
+    expect((wrapper.get('input[maxlength="200"]').element as HTMLInputElement).value).toBe(
+      'Descrição sintética 1',
+    );
+  });
+
+  it('confirma a troca após edição manual, preservando no cancelamento e aplicando ao confirmar', async () => {
+    const wrapper = await mounted(2);
+    await wrapper.findAll('.template-option')[0]!.trigger('click');
+    const description = wrapper.get('input[maxlength="200"]');
+    await description.setValue('Descrição manual');
+    await wrapper.get('.template-action > button').trigger('click');
+    await wrapper.findAll('.template-option')[1]!.trigger('click');
+    expect(wrapper.find('.confirm').exists()).toBe(true);
+    await wrapper.get('.confirm .secondary').trigger('click');
+    expect((description.element as HTMLInputElement).value).toBe('Descrição manual');
+    await wrapper.findAll('.template-option')[1]!.trigger('click');
+    await wrapper.get('.confirm button:last-child').trigger('click');
+    expect((description.element as HTMLInputElement).value).toBe('Descrição sintética 1');
+    expect(wrapper.get('.template-action').text()).toContain('Modelo: Modelo 1');
+  });
+
   it('limpa categoria incompatível e salva valor canônico sem vínculo com o modelo', async () => {
     const wrapper = await mounted();
     await wrapper.get('.template-option').trigger('click');
