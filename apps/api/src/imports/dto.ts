@@ -43,6 +43,10 @@ export class ImportListQueryDto {
   @IsOptional() @IsIn(['all', 'valid', 'warning', 'duplicate', 'selected']) filter = 'all';
 }
 
+export class OpenImportsQueryDto {
+  @IsIn(['open']) status!: 'open';
+}
+
 export class ConfirmImportDto extends VersionDto {
   @IsString() previewToken!: string;
 }

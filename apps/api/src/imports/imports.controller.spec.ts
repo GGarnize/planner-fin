@@ -1,5 +1,10 @@
 import 'reflect-metadata';
-import { BadRequestException, ConflictException, INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  INestApplication,
+  ValidationPipe,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
@@ -47,6 +52,7 @@ describe('contrato HTTP de /api/imports', () => {
     service = {
       create: vi.fn().mockResolvedValue(okSession({ status: 'MAPPING_REQUIRED' })),
       get: vi.fn().mockResolvedValue(okSession()),
+      listOpen: vi.fn().mockResolvedValue([]),
       mapping: vi.fn().mockResolvedValue(okSession()),
       patchRow: vi.fn().mockResolvedValue(okSession()),
       preview: vi.fn().mockResolvedValue({
@@ -86,7 +92,11 @@ describe('contrato HTTP de /api/imports', () => {
     })
       .overrideGuard(AuthGuard)
       .useValue({
-        canActivate: (context: { switchToHttp: () => { getRequest: () => { headers: Record<string, string>; auth?: object } } }) => {
+        canActivate: (context: {
+          switchToHttp: () => {
+            getRequest: () => { headers: Record<string, string>; auth?: object };
+          };
+        }) => {
           const req = context.switchToHttp().getRequest();
           if (req.headers.authorization !== 'Bearer access') return false;
           req.auth = { userId, sessionId: 'sessao' };
@@ -149,6 +159,9 @@ describe('contrato HTTP de /api/imports', () => {
   });
 
   it('aplica Cache-Control no-store em leitura e mutacao', async () => {
+    await auth(request(app.getHttpServer()).get('/api/imports?status=open'))
+      .expect('Cache-Control', 'no-store')
+      .expect(200);
     await auth(request(app.getHttpServer()).get(`/api/imports/${sessionId}`))
       .expect('Cache-Control', 'no-store')
       .expect(200);
