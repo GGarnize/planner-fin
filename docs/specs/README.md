@@ -84,3 +84,4 @@ Se uma seção do template não se aplicar, escreva **“Não aplicável”** e 
 | [SPEC-019](SPEC-019-SETUP-INICIAL-OPCIONAL.md) | Setup inicial opcional | Aprovada |
 | [SPEC-020](SPEC-020-DX-COMANDOS-ANDROID-LOCAL.md) | DX comandos Android local | Aprovada |
 | [SPEC-021](SPEC-021-IMPORTACAO-OFX-CSV.md) | Importação financeira OFX/CSV com revisão humana | Aprovada |
+| [SPEC-022](SPEC-022-CAPTURA-NOTIFICACOES-ANDROID.md) | Captura assistida de movimentações por notificações Android | Aprovada |
