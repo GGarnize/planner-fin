@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { Worker } from 'node:worker_threads';
 import { Prisma } from '@prisma/client';
 import { parse as parseCsv } from 'csv-parse/sync';
 import { parseStrict as parseOfxLibrary } from 'ofx-js';
@@ -6,6 +7,7 @@ import { parseStrict as parseOfxLibrary } from 'ofx-js';
 export const IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 export const IMPORT_MAX_ROWS = 10_000;
 export const IMPORT_PARSER_VERSION = 'spec021-v1';
+export const IMPORT_OFX_PARSE_TIMEOUT_MS = 30_000;
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const MONEY = /^(0|[1-9]\d{0,16})\.\d{2}$/;
 
@@ -18,6 +20,15 @@ export type NormalizedImportRow = {
   externalId: string | null;
   warnings: string[];
   blocked: boolean;
+};
+
+export type ImportUploadFile = {
+  fieldname?: string;
+  originalname: string;
+  encoding?: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
 };
 
 export type CsvMapping = {
@@ -165,6 +176,159 @@ export function parseOfx(buffer: Buffer): NormalizedImportRow[] {
       blocked: !date || !label || !magnitude || conflict,
     };
   });
+}
+
+const ofxWorkerSource = `
+const { parentPort, workerData } = require('node:worker_threads');
+const { parseStrict } = require('ofx-js');
+
+const IMPORT_MAX_ROWS = ${IMPORT_MAX_ROWS};
+const DATE = /^(\\d{4})-(\\d{2})-(\\d{2})$/;
+const MONEY = /^(0|[1-9]\\d{0,16})\\.\\d{2}$/;
+
+function canonicalMoney(value) {
+  if (!MONEY.test(value)) return null;
+  const [whole, cents] = value.split('.');
+  if (whole.length > 17) return null;
+  if (whole === '0' && cents === '00') return null;
+  return whole + '.' + cents;
+}
+
+function civilDate(value) {
+  const match = DATE.exec(value);
+  if (!match) return null;
+  const date = new Date(value + 'T00:00:00.000Z');
+  return date.toISOString().slice(0, 10) === value ? value : null;
+}
+
+function normalizeDescription(value) {
+  return value
+    .normalize('NFKC')
+    .replace(/[\\s\\S]/g, (character) => {
+      const code = character.codePointAt(0) || 0;
+      return code < 32 || code === 127 || character === '<' || character === '>' ? ' ' : character;
+    })
+    .replace(/[\\s\\p{Pd}_|]+/gu, ' ')
+    .trim()
+    .toLocaleLowerCase('und');
+}
+
+function description(name, memo) {
+  const parts = [name, memo].filter((value) => typeof value === 'string' && value.trim() !== '');
+  const normalized = normalizeDescription(parts.join(' - '));
+  return normalized ? Array.from(normalized).slice(0, 200).join('') : null;
+}
+
+function findTransactions(value, found) {
+  if (!value || typeof value !== 'object') return;
+  for (const [key, child] of Object.entries(value)) {
+    if (key.toUpperCase() === 'STMTTRN') {
+      for (const row of Array.isArray(child) ? child : [child])
+        if (row && typeof row === 'object') found.push(row);
+    } else if (Array.isArray(child)) child.forEach((item) => findTransactions(item, found));
+    else findTransactions(child, found);
+  }
+}
+
+function decodeUtf8(buffer) {
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  if (text.includes('\\u0000')) throw new Error('INVALID_ENCODING');
+  return text;
+}
+
+function parse(buffer) {
+  const text = decodeUtf8(buffer);
+  if (/<!DOCTYPE|<!ENTITY|<\\?xml-stylesheet|<xi:include/i.test(text)) throw new Error('UNSAFE_OFX');
+  const nesting = [...text.matchAll(/<([A-Z][A-Z0-9.]*)\\b[^>]*>/gi)].length;
+  if (nesting > 200000) throw new Error('OFX_COMPLEXITY_LIMIT');
+  const parsed = parseStrict(text);
+  const transactions = [];
+  findTransactions(parsed, transactions);
+  if (!transactions.length || transactions.length > IMPORT_MAX_ROWS) throw new Error('ROW_LIMIT');
+  return transactions.map((row, index) => {
+    const rawAmount = String(row.TRNAMT || '');
+    const negative = rawAmount.startsWith('-');
+    const magnitude = canonicalMoney(rawAmount.replace(/^[+-]/, ''));
+    const rawDate = String(row.DTPOSTED || '').slice(0, 8);
+    const date = /^\\d{8}$/.test(rawDate)
+      ? civilDate(rawDate.slice(0, 4) + '-' + rawDate.slice(4, 6) + '-' + rawDate.slice(6, 8))
+      : null;
+    const type = magnitude ? (negative ? 'EXPENSE' : 'INCOME') : null;
+    const label = description(row.NAME, row.MEMO);
+    const trnType = typeof row.TRNTYPE === 'string' ? row.TRNTYPE.toUpperCase() : null;
+    const conflict =
+      !!trnType &&
+      ((trnType === 'CREDIT' && type === 'EXPENSE') || (trnType === 'DEBIT' && type === 'INCOME'));
+    const warnings = conflict ? ['OFX_TYPE_SIGN_CONFLICT'] : [];
+    return {
+      rowNumber: index + 1,
+      date,
+      description: label,
+      type,
+      amount: magnitude,
+      externalId: typeof row.FITID === 'string' ? row.FITID.trim().slice(0, 255) || null : null,
+      warnings,
+      blocked: !date || !label || !magnitude || conflict,
+    };
+  });
+}
+
+try {
+  parentPort.postMessage({ ok: true, rows: parse(Buffer.from(workerData.bytes)) });
+} catch (error) {
+  parentPort.postMessage({ ok: false, message: error instanceof Error ? error.message : 'OFX_PARSE_ERROR' });
+}
+`;
+
+export async function parseOfxIsolated(
+  buffer: Buffer,
+  options: { timeoutMs?: number; workerSource?: string } = {},
+): Promise<NormalizedImportRow[]> {
+  const timeoutMs = options.timeoutMs ?? IMPORT_OFX_PARSE_TIMEOUT_MS;
+  const worker = new Worker(options.workerSource ?? ofxWorkerSource, {
+    eval: true,
+    workerData: { bytes: buffer },
+    resourceLimits: {
+      maxOldGenerationSizeMb: 128,
+      maxYoungGenerationSizeMb: 16,
+      stackSizeMb: 4,
+    },
+  });
+
+  let settled = false;
+  let timer: NodeJS.Timeout;
+  try {
+    return await new Promise<NormalizedImportRow[]>((resolve, reject) => {
+      timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        void worker.terminate();
+        reject(new Error('PARSE_TIMEOUT'));
+      }, timeoutMs);
+      worker.once('message', (message: { ok: boolean; rows?: NormalizedImportRow[]; message?: string }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (message.ok && message.rows) resolve(message.rows);
+        else reject(new Error(message.message ?? 'OFX_PARSE_ERROR'));
+      });
+      worker.once('error', (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      });
+      worker.once('exit', (code) => {
+        if (settled || code === 0) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error(`OFX_WORKER_EXIT_${code}`));
+      });
+    });
+  } finally {
+    clearTimeout(timer!);
+    if (!settled) await worker.terminate();
+  }
 }
 
 export function parseCsvCells(buffer: Buffer, delimiter: CsvMapping['delimiter']): string[][] {

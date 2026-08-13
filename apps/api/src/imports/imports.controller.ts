@@ -6,6 +6,7 @@ import {
   Header,
   Headers,
   HttpCode,
+  Inject,
   Param,
   Patch,
   Post,
@@ -31,25 +32,27 @@ import {
   PatchImportRowDto,
   VersionDto,
 } from './dto';
-import { IMPORT_MAX_BYTES } from './imports.helpers';
+import { type ImportUploadFile, IMPORT_MAX_BYTES } from './imports.helpers';
 import { ImportsService } from './imports.service';
 
 @Controller('imports')
 @UseGuards(AuthGuard)
-@Header('Cache-Control', 'no-store')
 export class ImportsController {
   constructor(
+    @Inject(ImportsService)
     private readonly imports: ImportsService,
+    @Inject(RateLimitService)
     private readonly rate: RateLimitService,
   ) {}
 
   @Post()
+  @Header('Cache-Control', 'no-store')
   @UseGuards(CsrfGuard)
   @UseInterceptors(FileInterceptor('file', { limits: { files: 1, fileSize: IMPORT_MAX_BYTES } }))
   create(
     @CurrentAuth() auth: AuthenticatedContext,
     @Body() dto: CreateImportDto,
-    @UploadedFile() file: Express.Multer.File | undefined,
+    @UploadedFile() file: ImportUploadFile | undefined,
     @Req() req: Request,
   ) {
     this.rate.check(`import-upload:${auth.userId}:${req.ip}`, 5, 15 * 60_000);
@@ -57,6 +60,7 @@ export class ImportsController {
   }
 
   @Get(':id')
+  @Header('Cache-Control', 'no-store')
   get(
     @CurrentAuth() auth: AuthenticatedContext,
     @Param('id') id: string,
@@ -66,6 +70,7 @@ export class ImportsController {
   }
 
   @Put(':id/mapping')
+  @Header('Cache-Control', 'no-store')
   @UseGuards(CsrfGuard)
   mapping(
     @CurrentAuth() auth: AuthenticatedContext,
@@ -76,6 +81,7 @@ export class ImportsController {
   }
 
   @Patch(':id/rows/:rowId')
+  @Header('Cache-Control', 'no-store')
   @UseGuards(CsrfGuard)
   patch(
     @CurrentAuth() auth: AuthenticatedContext,
@@ -87,6 +93,7 @@ export class ImportsController {
   }
 
   @Post(':id/preview')
+  @Header('Cache-Control', 'no-store')
   @UseGuards(CsrfGuard)
   preview(
     @CurrentAuth() auth: AuthenticatedContext,
@@ -98,6 +105,7 @@ export class ImportsController {
   }
 
   @Post(':id/confirm')
+  @Header('Cache-Control', 'no-store')
   @UseGuards(CsrfGuard)
   confirm(
     @CurrentAuth() auth: AuthenticatedContext,
@@ -110,6 +118,7 @@ export class ImportsController {
   }
 
   @Delete(':id')
+  @Header('Cache-Control', 'no-store')
   @UseGuards(CsrfGuard)
   @HttpCode(204)
   async cancel(

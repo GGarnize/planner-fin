@@ -14,12 +14,14 @@ import {
   civilDate,
   type CsvMapping,
   fingerprints,
+  type ImportUploadFile,
   IMPORT_MAX_BYTES,
   IMPORT_PARSER_VERSION,
   mapCsv,
   normalizeDescription,
   parseCsvCells,
   parseOfx,
+  parseOfxIsolated,
   sanitizeFilename,
   sha256,
   validateMapping,
@@ -27,6 +29,9 @@ import {
 
 const editable: ImportStatus[] = ['UPLOADED', 'MAPPING_REQUIRED', 'READY_FOR_REVIEW'];
 const expiresAt = () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+const isSerializableConflict = (error: unknown) =>
+  (error as { code?: string }).code === 'P2034' ||
+  (error instanceof Error && /write conflict|transaction.*closed|serializ/i.test(error.message));
 const notFound = () =>
   new NotFoundException({ code: 'IMPORT_NOT_FOUND', message: 'Importação não encontrada.' });
 
@@ -34,7 +39,7 @@ const notFound = () =>
 export class ImportsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(userId: string, dto: CreateImportDto, file?: Express.Multer.File) {
+  async create(userId: string, dto: CreateImportDto, file?: ImportUploadFile) {
     if (!file?.buffer?.length)
       throw new BadRequestException({
         code: 'INVALID_IMPORT_FILE',
@@ -59,8 +64,7 @@ export class ImportsService {
     const started = Date.now();
     try {
       if (dto.format === 'OFX') {
-        const rows = parseOfx(file.buffer);
-        if (Date.now() - started > 30_000) throw new Error('PARSE_TIMEOUT');
+        const rows = await parseOfxIsolated(file.buffer);
         return await this.prisma.$transaction(async (tx) => {
           const session = await tx.importSession.create({
             data: {
@@ -313,8 +317,10 @@ export class ImportsService {
     const payloadHash = sha256(
       JSON.stringify({ id, version: dto.draftVersion, token: sha256(dto.previewToken) }),
     );
-    return this.prisma.$transaction(
-      async (tx) => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => {
         await tx.$queryRaw`SELECT id FROM "ImportSession" WHERE id = ${id}::uuid FOR UPDATE`;
         const previous = await tx.importConfirmation.findUnique({
           where: { userId_idempotencyKey: { userId, idempotencyKey: key } },
@@ -414,9 +420,18 @@ export class ImportsService {
           },
         });
         return { created: true, ...result };
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        );
+      } catch (error) {
+        if (attempt < 2 && isSerializableConflict(error)) continue;
+        throw error;
+      }
+    }
+    throw new ConflictException({
+      code: 'IMPORT_CONFIRMATION_CONFLICT',
+      message: 'A confirmacao nao pode ser serializada.',
+    });
   }
 
   async cancel(userId: string, id: string, draftVersion: number) {

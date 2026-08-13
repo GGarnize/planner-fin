@@ -7,6 +7,7 @@ import {
   normalizeDescription,
   parseCsvCells,
   parseOfx,
+  parseOfxIsolated,
   sanitizeFilename,
 } from './imports.helpers';
 
@@ -42,6 +43,14 @@ describe('normalização segura de importações', () => {
     expect(first.strongKeyHash).toBe(moved.strongKeyHash);
     expect(first.exactFingerprint).not.toBe(moved.exactFingerprint);
     expect(first.windowFingerprint).toBe(moved.windowFingerprint);
+  });
+  it('encerra worker OFX travado com timeout real configuravel', async () => {
+    await expect(
+      parseOfxIsolated(Buffer.from('OFXHEADER:100\n<OFX></OFX>'), {
+        timeoutMs: 50,
+        workerSource: 'while (true) {}',
+      }),
+    ).rejects.toThrow('PARSE_TIMEOUT');
   });
 });
 
@@ -95,6 +104,7 @@ describe('parsers aprovados pela SPEC-021', () => {
       '<!DOCTYPE OFX SYSTEM "file:///etc/passwd"><OFX/>',
       '<!ENTITY x SYSTEM "http://example.test/x"><OFX/>',
       '<OFX><xi:include href="file:///x"/></OFX>',
+      '<?xml-stylesheet href="file:///x"?><OFX/>',
     ])
       expect(() => parseOfx(Buffer.from(unsafe))).toThrow('UNSAFE_OFX');
   });
