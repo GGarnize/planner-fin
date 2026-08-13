@@ -10,5 +10,5 @@ foreach ($entry in @(Get-ManagedProcesses)) {
   Write-Host "Parando $($entry.name) PID $processId..."
   Stop-RegisteredProcessTree -ProcessId $processId
 }
-Save-ManagedProcesses $remaining
+Save-ManagedProcesses -Processes $remaining
 Write-Host 'Processos PlannerFin registrados foram parados. Docker Desktop e PostgreSQL nao foram derrubados.'

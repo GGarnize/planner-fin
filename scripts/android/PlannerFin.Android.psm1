@@ -82,7 +82,11 @@ function Get-ManagedProcesses {
 function Save-ManagedProcesses {
   param([array] $Processes)
   Initialize-PlannerFinRuntime
-  $Processes | ConvertTo-Json -Depth 5 | Set-Content -Path $script:PidFile
+  if (@($Processes).Count -eq 0) {
+    '[]' | Set-Content -Path $script:PidFile
+    return
+  }
+  @($Processes) | ConvertTo-Json -Depth 5 | Set-Content -Path $script:PidFile
 }
 
 function Test-ProcessAlive {
