@@ -8,6 +8,7 @@ import type { Request, Response } from 'express';
 const issued: IssuedAuth = {
   response: {
     accessToken: 'access',
+    csrfToken: 'csrf',
     expiresIn: 900,
     user: {
       id: 'u',

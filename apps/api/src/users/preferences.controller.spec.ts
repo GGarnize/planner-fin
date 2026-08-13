@@ -17,7 +17,8 @@ describe('UsersController preferences', () => {
         updatedAt: '2026-08-12T10:01:00.000Z',
       }),
     };
-    const controller = new UsersController(users as never, preferences as never);
+    const setup = {};
+    const controller = new UsersController(users as never, preferences as never, setup as never);
     const response = { setHeader: vi.fn() } as unknown as Response;
 
     await controller.preferencesMe({ userId: 'user-1', sessionId: 's' }, response);

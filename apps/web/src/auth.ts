@@ -70,6 +70,7 @@ async function requestAuth(path: string, body?: object): Promise<AuthResponse> {
         : 'Não foi possível continuar.',
     );
   authState.token = (data as AuthResponse).accessToken;
+  authState.csrfToken = (data as AuthResponse).csrfToken;
   authState.user = (data as AuthResponse).user;
   await flushAndroidCookies();
   try {
@@ -83,7 +84,6 @@ async function requestAuth(path: string, body?: object): Promise<AuthResponse> {
   } catch {
     // A tela autenticada pode abrir com cache/default e mensagem de recuperacao em Minha Conta.
   }
-  if (path === 'refresh') await bootstrapCsrf();
   return data as AuthResponse;
 }
 export const register = (data: RegisterRequest) => {
@@ -128,6 +128,7 @@ export async function logout(): Promise<void> {
     authState.csrfToken = '';
     authState.user = null;
     resetPublicVisualPreferences();
+    window.dispatchEvent(new Event('plannerfin:auth-cleared'));
   }
 }
 async function refreshOnce(): Promise<void> {

@@ -9,7 +9,7 @@ import {
   ValidateIf,
 } from 'class-validator';
 
-const TYPES = ['CHECKING', 'SAVINGS', 'CASH', 'PAYMENT', 'OTHER'] as const;
+export const TYPES = ['CHECKING', 'SAVINGS', 'CASH', 'PAYMENT', 'OTHER'] as const;
 const MONEY = /^-?(0|[1-9][0-9]{0,16})(\.[0-9]{1,2})?$/;
 const DATE = /^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/;
 const trim = ({ value }: { value: unknown }): unknown =>

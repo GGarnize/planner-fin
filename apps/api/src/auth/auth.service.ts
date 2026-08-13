@@ -37,14 +37,16 @@ export class AuthService {
     sessionId: string,
     refreshToken: string,
   ): Promise<IssuedAuth> {
+    const csrfToken = randomToken();
     return {
       response: {
         accessToken: await this.tokens.issue({ userId: user.id, sessionId }),
+        csrfToken,
         expiresIn: 900,
         user: toPublicUser(user),
       },
       refreshToken,
-      csrfToken: randomToken(),
+      csrfToken,
     };
   }
   async register(dto: RegisterDto): Promise<IssuedAuth> {
@@ -65,6 +67,7 @@ export class AuthService {
             expiresAt: new Date(Date.now() + this.config.refreshTokenSeconds * 1000),
           },
         });
+        await tx.userInitialSetup.create({ data: { userId: created.id } });
         return created;
       });
       return this.response(user, sessionId, refreshToken);

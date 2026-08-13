@@ -8,6 +8,7 @@ vi.mock('./mobile', () => ({
 
 const authResponse = {
   accessToken: 'access-token',
+  csrfToken: 'csrf-2',
   expiresIn: 900,
   user: {
     id: 'user-id',
@@ -113,7 +114,7 @@ describe('auth client Android/web', () => {
     const { restore } = await loadAuth();
     await restore();
 
-    expect(mockedMobile.flush).toHaveBeenCalledTimes(3);
+    expect(mockedMobile.flush).toHaveBeenCalledTimes(2);
   });
 
   it('nao depende de storage JS para restaurar sessao', async () => {

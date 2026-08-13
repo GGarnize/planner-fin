@@ -31,6 +31,8 @@ model User {
   monthlyBudgets        MonthlyBudget[]
   transactionTemplates  TransactionTemplate[]
   preferences           UserPreferences?
+  initialSetup          UserInitialSetup?
+  setupConfirmations    SetupConfirmation[]
 }
 
 enum UserAppearance {
@@ -53,6 +55,41 @@ model UserPreferences {
   createdAt  DateTime       @default(now()) @db.Timestamptz(3)
   updatedAt  DateTime       @updatedAt @db.Timestamptz(3)
   user       User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+}
+
+enum InitialSetupStatus {
+  NOT_STARTED
+  SKIPPED
+  COMPLETED
+}
+
+model UserInitialSetup {
+  userId            String             @id @db.Uuid
+  status            InitialSetupStatus @default(NOT_STARTED)
+  draft             Json?
+  draftVersion      Int                @default(0)
+  suggestionVersion Int                @default(1)
+  previewTokenHash  String?            @db.VarChar(64)
+  previewPayloadHash String?           @db.VarChar(64)
+  previewExpiresAt  DateTime?          @db.Timestamptz(3)
+  completedAt       DateTime?          @db.Timestamptz(3)
+  skippedAt         DateTime?          @db.Timestamptz(3)
+  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @db.Timestamptz(3)
+  user              User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+}
+
+model SetupConfirmation {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  idempotencyKey String   @db.Uuid
+  payloadHash    String   @db.VarChar(64)
+  result         Json
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId])
 }
 
 enum FinancialCategoryType {
