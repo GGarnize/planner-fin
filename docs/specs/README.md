@@ -85,3 +85,4 @@ Se uma seção do template não se aplicar, escreva **“Não aplicável”** e 
 | [SPEC-020](SPEC-020-DX-COMANDOS-ANDROID-LOCAL.md) | DX comandos Android local | Aprovada |
 | [SPEC-021](SPEC-021-IMPORTACAO-OFX-CSV.md) | Importação financeira OFX/CSV com revisão humana | Aprovada |
 | [SPEC-022](SPEC-022-CAPTURA-NOTIFICACOES-ANDROID.md) | Captura assistida de movimentações por notificações Android | Aprovada |
+| [SPEC-023](SPEC-023-DEPLOY-PRD-RAILWAY-ANDROID.md) | Deploy pessoal de produção no Railway e distribuição Android | Aprovada |
