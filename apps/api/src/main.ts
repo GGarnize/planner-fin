@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { BadRequestException, Logger, ValidationPipe } from '@nestjs/common';
+import type { INestApplication, Type } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
@@ -7,10 +8,10 @@ import { HttpExceptionFilter } from './common/http-exception.filter';
 import { loadApiConfig } from './config/env';
 import { isCorsOriginAllowed } from './cors';
 
-async function bootstrap(): Promise<void> {
+export async function bootstrap(rootModule: Type<unknown> = AppModule): Promise<INestApplication> {
   const logger = new Logger('Bootstrap');
   const config = loadApiConfig();
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(rootModule);
   app.use(cookieParser());
   app.setGlobalPrefix('api');
   app.enableCors({
@@ -47,10 +48,17 @@ async function bootstrap(): Promise<void> {
   logger.log(
     `API PlannerFin iniciada em ${config.host ? `${config.host}:` : 'porta '}${config.port}.`,
   );
+  return app;
 }
 
-void bootstrap().catch((error: unknown) => {
-  const logger = new Logger('Bootstrap');
-  logger.error(error instanceof Error ? error.message : 'Erro técnico ao iniciar a API.');
-  process.exit(1);
-});
+function isEntrypoint(): boolean {
+  return require.main === module;
+}
+
+if (isEntrypoint()) {
+  void bootstrap().catch((error: unknown) => {
+    const logger = new Logger('Bootstrap');
+    logger.error(error instanceof Error ? error.message : 'Erro técnico ao iniciar a API.');
+    process.exit(1);
+  });
+}

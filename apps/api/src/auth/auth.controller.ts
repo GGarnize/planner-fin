@@ -36,10 +36,13 @@ export class AuthController {
 
   private cookiePolicy(req: Request) {
     const origin = req.header('Origin');
-    const android = origin === 'https://localhost' && this.config.corsOrigins.includes(origin);
+    const crossSite =
+      !!origin &&
+      this.config.crossSiteOrigins.includes(origin) &&
+      this.config.corsOrigins.includes(origin);
     return {
-      sameSite: android ? ('none' as const) : ('lax' as const),
-      secure: android || this.config.cookieSecure,
+      sameSite: crossSite ? ('none' as const) : ('lax' as const),
+      secure: crossSite || this.config.cookieSecure,
     };
   }
 

@@ -7,6 +7,7 @@
     "dev": "pnpm --filter @planner-fin/shared build && nest start --watch",
     "dev:seed-test-user": "pnpm build && node dist/dev/seed-test-user.js",
     "build": "nest build",
+    "start:prod": "node scripts/start-prod.mjs",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

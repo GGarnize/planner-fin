@@ -33,6 +33,7 @@ describe('auth client Android/web', () => {
     mockedMobile.android = false;
     mockedMobile.flush.mockReset();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it('preserva URL relativa no browser', async () => {
@@ -47,6 +48,53 @@ describe('auth client Android/web', () => {
     expect(() => resolveApiBaseUrl('/api')).toThrow('absoluta');
     expect(() => resolveApiBaseUrl('https://api.example.test')).toThrow('/api');
     expect(resolveApiBaseUrl('https://api.example.test/api')).toBe('https://api.example.test/api');
+  });
+
+  describe('gate PRD do VITE_API_BASE_URL no browser Web (MODE=production)', () => {
+    beforeEach(() => {
+      vi.stubEnv('MODE', 'production');
+      // Mantém a inicialização do módulo (chamada default no import) válida;
+      // cada teste então chama resolveApiBaseUrl com um argumento explícito.
+      vi.stubEnv('VITE_API_BASE_URL', 'https://module-init.example.test/api');
+    });
+
+    it('aceita URL HTTPS terminada em /api', async () => {
+      const { resolveApiBaseUrl } = await loadAuth();
+      expect(resolveApiBaseUrl('https://api.example.test/api')).toBe(
+        'https://api.example.test/api',
+      );
+    });
+
+    it('rejeita VITE_API_BASE_URL vazia (sem fallback local em produção)', async () => {
+      const { resolveApiBaseUrl } = await loadAuth();
+      expect(() => resolveApiBaseUrl('')).toThrow('obrigatória');
+      expect(() => resolveApiBaseUrl('   ')).toThrow('obrigatória');
+    });
+
+    it('rejeita HTTP em produção', async () => {
+      const { resolveApiBaseUrl } = await loadAuth();
+      expect(() => resolveApiBaseUrl('http://api.example.test/api')).toThrow('HTTPS');
+    });
+
+    it('rejeita URL sem sufixo /api', async () => {
+      const { resolveApiBaseUrl } = await loadAuth();
+      expect(() => resolveApiBaseUrl('https://api.example.test')).toThrow('/api');
+    });
+
+    it.each([
+      'https://localhost/api',
+      'https://127.0.0.1/api',
+      'https://10.0.2.2/api',
+      'https://192.168.0.10/api',
+    ])('rejeita host local/LAN %s', async (url) => {
+      const { resolveApiBaseUrl } = await loadAuth();
+      expect(() => resolveApiBaseUrl(url)).toThrow('local/LAN');
+    });
+
+    it('bloqueia o carregamento do módulo se VITE_API_BASE_URL não estiver definida', async () => {
+      vi.stubEnv('VITE_API_BASE_URL', '');
+      await expect(loadAuth()).rejects.toThrow('obrigatória');
+    });
   });
 
   it('faz bootstrap CSRF antes do restore e usa credenciais com header em memória', async () => {

@@ -27,7 +27,7 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm --filter @planner-fin/shared build && pnpm --filter @planner-fin/config build && pnpm -r typecheck",
     "test": "pnpm test:dx && pnpm --filter @planner-fin/shared build && pnpm -r test",
-    "test:dx": "node --test scripts/android/*.test.mjs",
+    "test:dx": "node --test scripts/android/*.test.mjs apps/api/scripts/*.test.mjs apps/web/scripts/*.test.mjs",
     "test:unit": "pnpm --filter @planner-fin/shared build && pnpm -r test:unit",
     "test:e2e": "pnpm --filter @planner-fin/web test:e2e",
     "test:android:notifications": "node scripts/android/test-notifications.mjs",
@@ -41,7 +41,11 @@
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @planner-fin/api db:migrate",
     "db:generate": "pnpm --filter @planner-fin/api db:generate",
-    "db": "pnpm db:generate && pnpm db:migrate"
+    "db": "pnpm db:generate && pnpm db:migrate",
+    "build:prod": "pnpm --filter @planner-fin/shared build && pnpm --filter @planner-fin/api build && pnpm --filter @planner-fin/web build:prod",
+    "start:api:prod": "pnpm --filter @planner-fin/api start:prod",
+    "start:web:prod": "pnpm --filter @planner-fin/web start:prod",
+    "smoke:prod": "node scripts/smoke-prod.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",

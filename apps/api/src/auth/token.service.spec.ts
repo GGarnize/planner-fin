@@ -2,9 +2,11 @@ import { JwtService } from '@nestjs/jwt';
 import { describe, expect, it } from 'vitest';
 import { TokenService } from './token.service';
 const config = {
+  nodeEnv: 'test',
   port: 3000,
   databaseUrl: 'postgresql://x',
   corsOrigins: ['http://localhost:9000'],
+  crossSiteOrigins: ['https://localhost'],
   jwtSecret: 'a'.repeat(32),
   refreshHmacSecret: 'b'.repeat(32),
   jwtIssuer: 'planner-fin-api',

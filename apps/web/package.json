@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 9000",
     "build": "vue-tsc -b && vite build",
+    "build:prod": "node scripts/validate-prod-web-env.mjs && vue-tsc -b && vite build",
+    "start:prod": "node scripts/serve-prod.mjs",
     "lint": "eslint src/**/*.{ts,vue} e2e/**/*.ts",
     "typecheck": "vue-tsc -b --noEmit",
     "test": "vitest run",
