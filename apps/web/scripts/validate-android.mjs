@@ -37,12 +37,17 @@ if (/server\s*:\s*\{|url\s*:/.test(capConfig)) {
 }
 
 const gradle = read('android/app/build.gradle');
-const versionCodeMatch = gradle.match(/def plannerFinVersionCode = (\d+)/);
-if (!versionCodeMatch || Number(versionCodeMatch[1]) < 1) {
-  fail('versionCode deve ser inteiro positivo.');
-}
 if (!gradle.includes('versionName plannerFinVersionName')) {
   fail('versionName deve derivar de apps/web/package.json.');
+}
+if (!gradle.includes("new JsonSlurper().parse(file('../version.json'))")) {
+  fail('versionCode deve derivar de apps/web/android/version.json.');
+}
+
+const versionFile = JSON.parse(read('android/version.json'));
+const versionCode = versionFile.versionCode;
+if (!Number.isInteger(versionCode) || versionCode < 1) {
+  fail('android/version.json.versionCode deve ser inteiro positivo.');
 }
 
 const manifest = read('android/app/src/main/AndroidManifest.xml');
@@ -101,4 +106,4 @@ if (nonDebugTrustMatches.length) {
   fail(`CA de usuÃ¡rio sÃ³ pode ser confiada em debug: ${nonDebugTrustMatches.join(', ')}.`);
 }
 
-console.log(`Android validado: PlannerFin ${webPackage.version} (${versionCodeMatch[1]}).`);
+console.log(`Android validado: PlannerFin ${webPackage.version} (${versionCode}).`);

@@ -3,9 +3,10 @@ apply plugin: 'com.android.application'
 import groovy.json.JsonSlurper
 
 def webPackage = new JsonSlurper().parse(file('../../package.json'))
+def versionFile = new JsonSlurper().parse(file('../version.json'))
 def plannerFinVersionName = webPackage.version
-def plannerFinVersionCode = 1
-def hasInternalSigning = System.getenv("PLANNER_FIN_KEYSTORE_FILE") &&
+def plannerFinVersionCode = versionFile.versionCode
+def hasPlannerFinSigning = System.getenv("PLANNER_FIN_KEYSTORE_FILE") &&
         System.getenv("PLANNER_FIN_KEYSTORE_PASSWORD") &&
         System.getenv("PLANNER_FIN_KEY_ALIAS") &&
         System.getenv("PLANNER_FIN_KEY_PASSWORD")
@@ -27,8 +28,8 @@ android {
         }
     }
     signingConfigs {
-        internal {
-            if (hasInternalSigning) {
+        plannerFin {
+            if (hasPlannerFinSigning) {
                 storeFile file(System.getenv("PLANNER_FIN_KEYSTORE_FILE"))
                 storePassword System.getenv("PLANNER_FIN_KEYSTORE_PASSWORD")
                 keyAlias System.getenv("PLANNER_FIN_KEY_ALIAS")
@@ -40,25 +41,30 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig = signingConfigs.plannerFin
         }
         internal {
             initWith release
             matchingFallbacks = ['release']
-            signingConfig = signingConfigs.internal
+            signingConfig = signingConfigs.plannerFin
         }
     }
 }
 
 gradle.taskGraph.whenReady { graph ->
-    def internalSigningTask = graph.allTasks.any {
+    def signingRequiredTask = graph.allTasks.any {
         def taskName = it.name.toLowerCase()
         taskName == "assembleinternal" ||
                 taskName == "bundleinternal" ||
                 taskName == "packageinternal" ||
-                taskName == "signinternalbundle"
+                taskName == "signinternalbundle" ||
+                taskName == "assemblerelease" ||
+                taskName == "bundlerelease" ||
+                taskName == "packagerelease" ||
+                taskName == "signreleasebundle"
     }
-    if (internalSigningTask && !hasInternalSigning) {
-        throw new GradleException("Assinatura internal indisponível: configure PLANNER_FIN_KEYSTORE_FILE, PLANNER_FIN_KEYSTORE_PASSWORD, PLANNER_FIN_KEY_ALIAS e PLANNER_FIN_KEY_PASSWORD.")
+    if (signingRequiredTask && !hasPlannerFinSigning) {
+        throw new GradleException("Assinatura indisponível: configure PLANNER_FIN_KEYSTORE_FILE, PLANNER_FIN_KEYSTORE_PASSWORD, PLANNER_FIN_KEY_ALIAS e PLANNER_FIN_KEY_PASSWORD.")
     }
 }
 
