@@ -103,6 +103,7 @@ async function main() {
   await testForceStop();
   await testReconnect();
   await testReboot();
+  await testSecureQueueControls();
 
   console.log('\nMatriz:');
   for (const result of results) console.log(`${result.ok ? 'PASS' : 'FAIL'} ${result.name}`);
@@ -224,10 +225,18 @@ function grantEmitterPermissions() {
 
 function authorizeListener() {
   run(adb, ['-s', serial, 'shell', 'cmd', 'notification', 'allow_listener', listenerComponent]);
-  const enabled = adbShell(['settings', 'get', 'secure', 'enabled_notification_listeners']).stdout;
-  assert(enabled.includes('PlannerFinNotificationListenerService'), 'listener deve constar em enabled_notification_listeners');
-  const listeners = adbShell(['dumpsys', 'notification', 'listeners']).stdout;
-  assert(listeners.includes('PlannerFinNotificationListenerService'), 'listener deve constar em dumpsys notification listeners');
+  const enabled = waitForSync(() =>
+    adbShell(['settings', 'get', 'secure', 'enabled_notification_listeners']).stdout.includes(
+      'PlannerFinNotificationListenerService',
+    ),
+  );
+  assert(enabled, 'listener deve constar em enabled_notification_listeners');
+  const live = waitForSync(() =>
+    adbShell(['dumpsys', 'notification', 'listeners']).stdout.includes(
+      'PlannerFinNotificationListenerService',
+    ),
+  );
+  assert(live, 'listener deve constar em dumpsys notification listeners');
 }
 
 function configureCapture(captureEnabled, packages) {
@@ -237,6 +246,36 @@ function configureCapture(captureEnabled, packages) {
 function clearBuffer() {
   debugCommand('clear');
   run(adb, ['-s', serial, 'logcat', '-c']);
+}
+
+function debugStats() {
+  return JSON.parse(debugCommand('stats'));
+}
+
+function seedQueue(extraArgs = []) {
+  try {
+    return JSON.parse(debugCommand('seed', extraArgs));
+  } catch (error) {
+    if (extraArgs.includes('statsOnly')) return debugStats();
+    throw error;
+  }
+}
+
+function ackQueue(localIds) {
+  return JSON.parse(debugCommand('ack', ['--es', 'localIds', localIds.join(',')]));
+}
+
+function seedOpaqueLimit(count, payloadBytes) {
+  return JSON.parse(
+    debugCommand('seedOpaqueLimit', [
+      '--ei',
+      'count',
+      String(count),
+      '--ei',
+      'payloadBytes',
+      String(payloadBytes),
+    ]),
+  );
 }
 
 function debugState() {
@@ -354,6 +393,73 @@ async function testReboot() {
   pass('Reboot');
 }
 
+async function testSecureQueueControls() {
+  configureCapture(true, monitoredPackage);
+  clearBuffer();
+  const marker = `PLAINTEXT_MARKER_SPEC022_${Date.now()}`;
+  let state = seedQueue(['--ei', 'count', '1', '--es', 'marker', marker]);
+  assertEqual(state.pendingCount, 1, 'pendingCount');
+  assertIncludes(onlyEvent(state).text, marker, 'texto descriptografado via bridge debug');
+
+  run(adb, ['-s', serial, 'shell', 'am', 'kill', plannerPackage], { allowFailure: true });
+  state = debugState();
+  assertEqual(state.pendingCount, 1, 'fila persiste apos kill do processo');
+
+  const grep = run(
+    adb,
+    [
+      '-s',
+      serial,
+      'shell',
+      'run-as',
+      plannerPackage,
+      'sh',
+      '-c',
+      `grep -R "${marker}" shared_prefs databases files 2>/dev/null`,
+    ],
+    { allowFailure: true },
+  );
+  assert(!grep.stdout.includes(marker), 'marcador nao deve aparecer em claro no storage privado');
+  pass('Fila criptografada sem plaintext');
+
+  const firstLocalId = state.events[0].localId;
+  ackQueue([firstLocalId]);
+  assertEqual(debugState().pendingCount, 0, 'ack deve remover item confirmado');
+  pass('ACK remove somente confirmado');
+
+  seedQueue(['--ei', 'count', '1', '--es', 'marker', 'FALHA_SEM_ACK']);
+  assertEqual(debugState().pendingCount, 1, 'falha sem ack mantem item');
+  pass('Falha sem ACK mantem fila');
+
+  clearBuffer();
+  seedQueue(['--ei', 'count', '1', '--es', 'marker', 'EXPIRADO', '--el', 'ageMs', String(8 * 24 * 60 * 60 * 1000)]);
+  state = debugState();
+  assertEqual(state.pendingCount, 0, 'TTL 7 dias deve purgar item antigo');
+  assert(state.expiredPurged >= 1, 'contador de TTL deve incrementar');
+  pass('TTL 7 dias e purge');
+
+  clearBuffer();
+  state = seedQueue(['--ei', 'count', '501', '--es', 'marker', 'LIMITE_500']);
+  assertEqual(state.pendingCount, 500, 'limite de 500 itens');
+  assert(state.evictedOldest >= 1, 'eviction oldest-first deve incrementar');
+  pass('Limite 500 e eviction oldest-first');
+
+  clearBuffer();
+  state = seedOpaqueLimit(40, 300000);
+  assert(state.encryptedBytes <= 10 * 1024 * 1024, 'fila deve respeitar limite de 10 MiB');
+  assert(state.evictedOldest > 0, 'limite de bytes deve descartar oldest-first');
+  pass('Limite 10 MiB');
+
+  clearBuffer();
+  seedQueue(['--ei', 'count', '1', '--es', 'marker', 'PURGE_LOGOUT']);
+  debugCommand('unbind');
+  state = debugState();
+  assertEqual(state.pendingCount, 0, 'logout deve purgar fila');
+  assertEqual(state.captureEnabled, false, 'logout deve desativar captura');
+  assertEqual(state.ownerBindingId, '', 'logout deve remover ownerBinding');
+  pass('Logout/unbind purga fila e desativa captura');
+}
+
 async function waitForState(predicate, label) {
   let last;
   await waitFor(() => {
@@ -370,6 +476,18 @@ async function waitFor(predicate, timeoutMs, label) {
     await sleep(500);
   }
   throw new Error(`timeout aguardando ${label}`);
+}
+
+function waitForSync(predicate, timeoutMs = 10000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (predicate()) return true;
+    spawnSync(process.platform === 'win32' ? 'powershell.exe' : 'sleep', process.platform === 'win32' ? ['-NoProfile', '-Command', 'Start-Sleep -Milliseconds 500'] : ['0.5'], {
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+    });
+  }
+  return false;
 }
 
 function adbShell(args) {

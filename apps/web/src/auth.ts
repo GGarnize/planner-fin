@@ -6,6 +6,7 @@ import {
   resetPublicVisualPreferences,
 } from './appearance';
 import { flushAndroidCookies, isAndroidNative } from './mobile';
+import { unbindOwnerAndPurge } from './notification-listener';
 
 export function resolveApiBaseUrl(raw = import.meta.env.VITE_API_BASE_URL): string {
   const value = raw?.trim() || 'http://localhost:3000/api';
@@ -73,6 +74,7 @@ async function requestAuth(path: string, body?: object): Promise<AuthResponse> {
   authState.csrfToken = (data as AuthResponse).csrfToken;
   authState.user = (data as AuthResponse).user;
   await flushAndroidCookies();
+  window.dispatchEvent(new Event('plannerfin:auth-ready'));
   try {
     await loadCanonicalPreferences((preferencesPath, init) =>
       fetch(`${api}${preferencesPath}`, {
@@ -100,6 +102,7 @@ export async function restore(): Promise<void> {
   try {
     await bootstrapCsrf();
     await requestAuth('refresh');
+    window.dispatchEvent(new Event('plannerfin:auth-ready'));
   } catch {
     authState.token = null;
     authState.user = null;
@@ -110,6 +113,7 @@ export async function restore(): Promise<void> {
 }
 export async function logout(): Promise<void> {
   try {
+    await unbindOwnerAndPurge();
     if (!authState.csrfToken) await bootstrapCsrf();
     await fetch(`${api}/auth/logout`, {
       method: 'POST',

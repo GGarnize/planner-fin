@@ -10,17 +10,30 @@ export interface NotificationCaptureState {
   captureEnabled: boolean;
   monitoredPackages: string[];
   capturedCount: number;
+  pendingCount?: number;
+  encryptedBytes?: number;
   secretDropped: number;
+  evictedOldest?: number;
+  expiredPurged?: number;
+  deviceId?: string;
+  ownerBindingId?: string;
 }
 
 export interface CapturedNotificationDebugEvent {
+  localId?: string;
+  ownerBindingId?: string;
+  deviceId?: string;
   packageName: string;
-  key: string;
-  postTime: number;
+  key?: string;
+  notificationKeyHash?: string;
+  postTime?: number;
+  postedAt?: number;
+  capturedAt?: number;
   title: string;
   text: string;
   subText: string;
   bigText: string;
+  fingerprintVersion?: 1;
 }
 
 export interface CapturedNotificationsDebug {
@@ -35,6 +48,19 @@ interface PlannerFinNotificationListenerPlugin {
   setCaptureEnabled(options: { enabled: boolean }): Promise<NotificationCaptureState>;
   setMonitoredPackages(options: { packages: string[] }): Promise<NotificationCaptureState>;
   getCaptureState(): Promise<NotificationCaptureState>;
+  getOrCreateDeviceId(): Promise<{ deviceId: string }>;
+  bindOwner(options: { deviceId: string; ownerBindingId: string }): Promise<NotificationCaptureState>;
+  unbindOwnerAndPurge(): Promise<NotificationCaptureState>;
+  getQueueStats(): Promise<{
+    pendingCount: number;
+    encryptedBytes: number;
+    secretDropped: number;
+    evictedOldest: number;
+    expiredPurged: number;
+  }>;
+  peekPendingBatch(options: { limit: number }): Promise<{ items: CapturedNotificationDebugEvent[] }>;
+  ackPending(options: { localIds: string[] }): Promise<NotificationCaptureState>;
+  purgeExpired(): Promise<NotificationCaptureState & { purgedCount: number }>;
   getRecentCapturedNotifications(): Promise<CapturedNotificationsDebug>;
   clearRecentCapturedNotifications(): Promise<CapturedNotificationsDebug>;
 }
@@ -82,4 +108,34 @@ export async function clearRecentCapturedNotifications(): Promise<CapturedNotifi
     return { events: [], capturedCount: 0, secretDropped: 0 };
   }
   return plugin.clearRecentCapturedNotifications();
+}
+
+export async function getOrCreateDeviceId(): Promise<string | null> {
+  if (!isNotificationListenerDiagnosticAvailable()) return null;
+  return (await plugin.getOrCreateDeviceId()).deviceId;
+}
+
+export async function bindOwnerNative(deviceId: string, ownerBindingId: string) {
+  if (!isNotificationListenerDiagnosticAvailable()) return;
+  await plugin.bindOwner({ deviceId, ownerBindingId });
+}
+
+export async function unbindOwnerAndPurge(): Promise<void> {
+  if (!isNotificationListenerDiagnosticAvailable()) return;
+  await plugin.unbindOwnerAndPurge();
+}
+
+export async function peekPendingBatch(limit = 50): Promise<CapturedNotificationDebugEvent[]> {
+  if (!isNotificationListenerDiagnosticAvailable()) return [];
+  return (await plugin.peekPendingBatch({ limit })).items;
+}
+
+export async function ackPending(localIds: string[]): Promise<void> {
+  if (!isNotificationListenerDiagnosticAvailable() || !localIds.length) return;
+  await plugin.ackPending({ localIds });
+}
+
+export async function purgeExpired(): Promise<void> {
+  if (!isNotificationListenerDiagnosticAvailable()) return;
+  await plugin.purgeExpired();
 }

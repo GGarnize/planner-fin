@@ -17,6 +17,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 @CapacitorPlugin(name = "PlannerFinNotificationListener")
@@ -65,15 +66,87 @@ public class PlannerFinNotificationListenerPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getOrCreateDeviceId(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("deviceId", PlannerFinNotificationPreferences.getOrCreateDeviceId(getContext()));
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void bindOwner(PluginCall call) {
+        String deviceId = call.getString("deviceId", "");
+        String ownerBindingId = call.getString("ownerBindingId", "");
+        if (deviceId.isBlank() || ownerBindingId.isBlank()) {
+            call.reject("deviceId e ownerBindingId sao obrigatorios.");
+            return;
+        }
+        PlannerFinNotificationPreferences.bindOwner(getContext(), deviceId, ownerBindingId);
+        JSObject result = getCaptureStateResult();
+        result.put("deviceId", deviceId);
+        result.put("ownerBindingId", ownerBindingId);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void unbindOwnerAndPurge(PluginCall call) {
+        PlannerFinNotificationPreferences.load(getContext());
+        new PlannerFinNotificationQueue(getContext()).purgeAll();
+        PlannerFinNotificationPreferences.unbindOwner(getContext());
+        PlannerFinNotificationBuffer.clear();
+        call.resolve(getCaptureStateResult());
+    }
+
+    @PluginMethod
+    public void getQueueStats(PluginCall call) {
+        PlannerFinNotificationPreferences.load(getContext());
+        call.resolve(new PlannerFinNotificationQueue(getContext()).stats());
+    }
+
+    @PluginMethod
+    public void peekPendingBatch(PluginCall call) {
+        int limit = call.getInt("limit", 50);
+        try {
+            JSObject result = new JSObject();
+            JSArray items = new PlannerFinNotificationQueue(getContext()).peek(limit);
+            result.put("items", items);
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject("Nao foi possivel ler a fila.");
+        }
+    }
+
+    @PluginMethod
+    public void ackPending(PluginCall call) {
+        JSArray input = call.getArray("localIds", new JSArray());
+        List<String> localIds = PlannerFinNotificationQueue.localIdsFromArray(input);
+        new PlannerFinNotificationQueue(getContext()).ack(localIds);
+        call.resolve(new PlannerFinNotificationQueue(getContext()).stats());
+    }
+
+    @PluginMethod
+    public void purgeExpired(PluginCall call) {
+        int purged = new PlannerFinNotificationQueue(getContext()).purgeExpired(System.currentTimeMillis());
+        JSObject result = new PlannerFinNotificationQueue(getContext()).stats();
+        result.put("purgedCount", purged);
+        call.resolve(result);
+    }
+
+    @PluginMethod
     public void getRecentCapturedNotifications(PluginCall call) {
         if (!isDebuggableBuild()) {
             call.reject("Disponivel somente em build debug.");
             return;
         }
         JSObject result = new JSObject();
-        result.put("events", PlannerFinNotificationBuffer.toJson());
-        result.put("capturedCount", PlannerFinNotificationBuffer.getCapturedCount());
-        result.put("secretDropped", PlannerFinNotificationBuffer.getSecretDropped());
+        try {
+            JSObject stats = new PlannerFinNotificationQueue(getContext()).stats();
+            result.put("events", new PlannerFinNotificationQueue(getContext()).peek(50));
+            result.put("capturedCount", stats.optInt("pendingCount"));
+            result.put("secretDropped", stats.optInt("secretDropped"));
+        } catch (Exception error) {
+            call.reject("Nao foi possivel ler a fila.");
+            return;
+        }
         call.resolve(result);
     }
 
@@ -84,6 +157,8 @@ public class PlannerFinNotificationListenerPlugin extends Plugin {
             return;
         }
         PlannerFinNotificationBuffer.clear();
+        new PlannerFinNotificationQueue(getContext()).purgeAll();
+        PlannerFinNotificationPreferences.resetCounters(getContext());
         JSObject result = new JSObject();
         result.put("events", new JSArray());
         result.put("capturedCount", 0);
@@ -96,8 +171,16 @@ public class PlannerFinNotificationListenerPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("captureEnabled", PlannerFinNotificationCaptureState.isCaptureEnabled());
         result.put("monitoredPackages", new JSArray(PlannerFinNotificationCaptureState.getMonitoredPackages()));
-        result.put("capturedCount", PlannerFinNotificationBuffer.getCapturedCount());
-        result.put("secretDropped", PlannerFinNotificationBuffer.getSecretDropped());
+        JSObject stats = new PlannerFinNotificationQueue(getContext()).stats();
+        result.put("capturedCount", stats.optInt("pendingCount"));
+        result.put("pendingCount", stats.optInt("pendingCount"));
+        result.put("encryptedBytes", stats.optLong("encryptedBytes"));
+        result.put("secretDropped", stats.optInt("secretDropped"));
+        result.put("evictedOldest", stats.optInt("evictedOldest"));
+        result.put("expiredPurged", stats.optInt("expiredPurged"));
+        PlannerFinNotificationPreferences.Snapshot snapshot = PlannerFinNotificationPreferences.snapshot();
+        result.put("deviceId", snapshot.deviceId);
+        result.put("ownerBindingId", snapshot.ownerBindingId);
         return result;
     }
 

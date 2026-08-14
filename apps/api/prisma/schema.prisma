@@ -36,6 +36,89 @@ model User {
   importSessions        ImportSession[]
   importRows            ImportRow[]
   importConfirmations   ImportConfirmation[]
+  notificationDevices   NotificationDevice[]
+  capturedNotifications CapturedNotification[]
+  notificationIngestions NotificationIngestConfirmation[]
+}
+
+enum NotificationDeviceStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum CapturedNotificationStatus {
+  UNCLASSIFIED
+  NON_FINANCIAL
+  AMBIGUOUS
+  IGNORED
+  DISMISSED
+  CONFIRMED
+}
+
+model NotificationDevice {
+  id                String                   @id @default(uuid()) @db.Uuid
+  userId            String                   @db.Uuid
+  deviceId          String                   @db.VarChar(80)
+  ownerBindingId    String                   @unique @db.Uuid
+  name              String?                  @db.VarChar(120)
+  status            NotificationDeviceStatus @default(ACTIVE)
+  captureEnabled    Boolean                  @default(false)
+  monitoredPackages Json                     @default("[]")
+  lastSeenAt        DateTime                 @default(now()) @db.Timestamptz(3)
+  revokedAt         DateTime?                @db.Timestamptz(3)
+  createdAt         DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime                 @updatedAt @db.Timestamptz(3)
+  user              User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  notifications     CapturedNotification[]
+  ingestions        NotificationIngestConfirmation[]
+
+  @@unique([userId, deviceId])
+  @@index([userId, status, lastSeenAt(sort: Desc)])
+}
+
+model CapturedNotification {
+  id                  String                     @id @default(uuid()) @db.Uuid
+  userId              String                     @db.Uuid
+  deviceRecordId      String                     @db.Uuid
+  deviceId            String                     @db.VarChar(80)
+  ownerBindingId      String                     @db.Uuid
+  packageName         String                     @db.VarChar(255)
+  notificationKeyHash String                     @db.Char(64)
+  fingerprintHash     String                     @db.Char(64)
+  fingerprintVersion  Int                        @default(1)
+  postedAt            DateTime                   @db.Timestamptz(3)
+  capturedAt          DateTime                   @db.Timestamptz(3)
+  receivedAt          DateTime                   @default(now()) @db.Timestamptz(3)
+  title               String?                    @db.VarChar(300)
+  text                String?                    @db.VarChar(1000)
+  subText             String?                    @db.VarChar(300)
+  bigText             String?                    @db.VarChar(4000)
+  status              CapturedNotificationStatus @default(UNCLASSIFIED)
+  expiresAt           DateTime                   @db.Timestamptz(3)
+  createdAt           DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime                   @updatedAt @db.Timestamptz(3)
+  user                User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  device              NotificationDevice         @relation(fields: [deviceRecordId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, deviceId, packageName, notificationKeyHash, postedAt, fingerprintVersion])
+  @@index([userId, status, receivedAt(sort: Desc)])
+  @@index([expiresAt])
+  @@index([fingerprintHash])
+}
+
+model NotificationIngestConfirmation {
+  id             String             @id @default(uuid()) @db.Uuid
+  userId         String             @db.Uuid
+  deviceRecordId String             @db.Uuid
+  idempotencyKey String             @db.Uuid
+  payloadHash    String             @db.Char(64)
+  result         Json
+  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
+  user           User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  device         NotificationDevice @relation(fields: [deviceRecordId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 enum UserAppearance {

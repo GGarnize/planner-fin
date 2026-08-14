@@ -17,6 +17,7 @@ import { BudgetsModule } from './budgets/budgets.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { TransactionTemplatesModule } from './transaction-templates/transaction-templates.module';
 import { ImportsModule } from './imports/imports.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { ImportsModule } from './imports/imports.module';
     DashboardModule,
     TransactionTemplatesModule,
     ImportsModule,
+    NotificationsModule,
   ],
   controllers: [HealthController],
 })
