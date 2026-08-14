@@ -71,13 +71,16 @@ public class PlannerFinNotificationDebugReceiver extends BroadcastReceiver {
                 long now = System.currentTimeMillis() - Math.max(0L, ageMs);
                 String bigText = intent.getStringExtra("bigText");
                 int bigBytes = Math.max(0, intent.getIntExtra("bigBytes", 0));
+                String fixedKey = intent.getStringExtra("fixedKey");
+                long fixedPostTime = intent.getLongExtra("fixedPostTime", -1L);
                 if (bigText == null && bigBytes > 0) bigText = repeated("X", bigBytes);
                 for (int index = 0; index < count; index += 1) {
                     String suffix = "-" + index + "-" + now;
+                    long postTime = fixedPostTime >= 0 ? fixedPostTime + index : now + index;
                     queue.enqueueAt(new PlannerFinNotificationEvent(
                             "com.plannerfin.notificationtest",
-                            "debug-key" + suffix,
-                            now + index,
+                            fixedKey == null ? "debug-key" + suffix : fixedKey + "-" + index,
+                            postTime,
                             "Compra aprovada",
                             marker == null ? "Compra de teste" : marker + suffix,
                             "",

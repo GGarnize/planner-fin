@@ -93,6 +93,14 @@ describe('fixture local de usuário sintético', () => {
     expect(config.databaseName).toBe('planner_fin_local');
   });
 
+  it('aceita banco sintetico isolado da SPEC-022', () => {
+    const config = loadLocalTestSeedConfig({
+      ...baseEnv,
+      DATABASE_URL: 'postgresql://user:pass@localhost:5432/planner_fin_spec022_integrated',
+    });
+    expect(config.databaseName).toBe('planner_fin_spec022_integrated');
+  });
+
   it('recusa e-mail de teste fora de domínio sintético .test', () => {
     expect(() =>
       loadLocalTestSeedConfig({
@@ -129,7 +137,16 @@ describe('fixture local de usuário sintético', () => {
       databaseName: 'planner_fin_local',
     };
 
-    const result = await seedLocalTestUser(store.prisma, config);
+    let setupUserId = '';
+    const prisma = {
+      ...store.prisma,
+      userInitialSetup: {
+        async upsert({ where }: { where: { userId: string } }) {
+          setupUserId = where.userId;
+        },
+      },
+    };
+    const result = await seedLocalTestUser(prisma, config);
     const user = store.users.get(config.email);
 
     expect(result).toEqual({
@@ -142,5 +159,6 @@ describe('fixture local de usuário sintético', () => {
     expect(JSON.stringify(result)).not.toContain('token');
     expect(JSON.stringify(result)).not.toContain('password');
     expect(store.sessionsCreated).toBe(0);
+    expect(setupUserId).toBe('user-1');
   });
 });
