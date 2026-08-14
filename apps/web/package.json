@@ -17,13 +17,16 @@
     "android:sync": "pnpm build && cap sync android",
     "android:open": "cap open android",
     "android:build:debug": "pnpm android:sync && node scripts/build-android.mjs debug",
-    "android:build:internal": "pnpm android:sync && node scripts/build-android.mjs internal"
+    "android:build:internal": "pnpm android:sync && node scripts/build-android.mjs internal",
+    "android:release:build": "pnpm android:sync && node scripts/build-android-release.mjs",
+    "android:release:publish": "node scripts/publish-android-release.mjs"
   },
   "dependencies": {
     "@capacitor/android": "8.5.0",
     "@capacitor/app": "8.1.1",
     "@capacitor/core": "8.5.0",
     "@planner-fin/shared": "workspace:*",
+    "@planner-fin/storage": "workspace:*",
     "@quasar/extras": "^1.17.0",
     "@vitejs/plugin-vue": "^6.0.1",
     "quasar": "^2.18.2",

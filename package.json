@@ -37,6 +37,8 @@
     "android:open": "pnpm --filter @planner-fin/web android:open",
     "android:build:debug": "pnpm --filter @planner-fin/web android:build:debug",
     "android:build:internal": "pnpm --filter @planner-fin/web android:build:internal",
+    "android:release:build": "pnpm --filter @planner-fin/web android:release:build",
+    "android:release:publish": "pnpm --filter @planner-fin/web android:release:publish",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @planner-fin/api db:migrate",
