@@ -19,9 +19,15 @@ export interface ReleaseStorage {
   /**
    * Falha com ReleaseObjectAlreadyExistsError se um HEAD anterior ao PUT encontrar o objeto.
    * Railway Bucket não suporta object-lock/versionamento nativo, então a imutabilidade é
-   * garantida pela aplicação (check-then-put), não pelo backend de storage.
+   * garantida pela aplicação (check-then-put), não pelo backend de storage. Use apenas para
+   * releases imutáveis (APK/checksum/metadata) — nunca para ponteiros mutáveis.
    */
   putObjectIfAbsent(key: string, body: Buffer, contentType: string): Promise<void>;
+  /**
+   * Sobrescreve o objeto incondicionalmente (PUT direto, sem HEAD prévio nem delete).
+   * Reservado para ponteiros mutáveis como latest.json — nunca para releases imutáveis.
+   */
+  putObject(key: string, body: Buffer, contentType: string): Promise<void>;
   getObject(key: string): Promise<Buffer>;
   deleteObject(key: string): Promise<void>;
   listKeys(prefix: string): Promise<string[]>;
@@ -77,6 +83,11 @@ export function createS3ReleaseStorage(config: S3ReleaseStorageConfig): ReleaseS
     async putObjectIfAbsent(key, body, contentType) {
       const existing = await headObject(key);
       if (existing.exists) throw new ReleaseObjectAlreadyExistsError(key);
+      await client.send(
+        new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType }),
+      );
+    },
+    async putObject(key, body, contentType) {
       await client.send(
         new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType }),
       );
@@ -147,6 +158,9 @@ export function createInMemoryReleaseStorage(): ReleaseStorage & {
     },
     async putObjectIfAbsent(key, body, contentType) {
       if (store.has(key)) throw new ReleaseObjectAlreadyExistsError(key);
+      store.set(key, { body, contentType });
+    },
+    async putObject(key, body, contentType) {
       store.set(key, { body, contentType });
     },
     async getObject(key) {

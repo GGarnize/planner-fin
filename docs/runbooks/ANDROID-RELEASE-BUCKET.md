@@ -25,26 +25,32 @@ Fonte de verdade: `docs/specs/SPEC-023-DEPLOY-PRD-RAILWAY-ANDROID.md` (§16, §1
   qualquer uma faltar ao rodar `assembleRelease`/`bundleRelease`/`assembleInternal`/etc.
 - **Build de release**: `apps/web/scripts/build-android-release.mjs` valida
   `VITE_API_BASE_URL` de produção (reaproveita `assertProductionWebApiBaseUrl`), valida as
-  variáveis de assinatura, roda `assembleRelease`, verifica o APK gerado com
-  `apksigner`/`aapt` quando disponíveis no PATH (best-effort — ferramentas ausentes geram
-  apenas aviso; um APK presente porém inconsistente falha fechado, incluindo detecção de
-  assinatura acidental com a keystore de debug local), calcula SHA-256 e grava
-  `artifacts/android-releases/<version>/{planner-fin-<version>.apk, .apk.sha256,
-  metadata.json}`.
+  variáveis de assinatura, roda `assembleRelease`, e **exige** verificação do APK gerado:
+  `apksigner` precisa estar no PATH e validar a assinatura (falha fechado se ausente ou se
+  reportar assinatura inválida, incluindo detecção de assinatura acidental com a keystore de
+  debug local), e `aapt` **ou** `apkanalyzer` precisa estar no PATH e confirmar
+  applicationId/versionName/versionCode do APK (falha fechado se nenhum dos dois estiver
+  disponível, ou se o APK gerado divergir). Não existe modo "melhor esforço" para release —
+  `debug`/`internal` (via `build-android.mjs`) não são afetados por essa exigência. Ao final,
+  calcula SHA-256 e grava `artifacts/android-releases/<version>/{planner-fin-<version>.apk,
+  .apk.sha256, metadata.json}`.
 - **Storage isolado**: `@planner-fin/storage` (novo pacote do workspace) encapsula
   `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner` atrás de uma interface
-  `ReleaseStorage` (`headObject`, `putObjectIfAbsent`, `getObject`, `deleteObject`,
-  `listKeys`, `presignGetObject`) com duas implementações: `createS3ReleaseStorage` (real)
+  `ReleaseStorage` (`headObject`, `putObjectIfAbsent`, `putObject`, `getObject`,
+  `deleteObject`, `listKeys`, `presignGetObject`) com duas implementações:
+  `createS3ReleaseStorage` (real)
   e `createInMemoryReleaseStorage` (fake, usada em todos os testes automatizados — nada
   toca o Railway real em CI). Railway Bucket não suporta object-lock/versionamento nativo,
   então a imutabilidade é garantida pela aplicação (checagem antes do upload), não pelo
   backend de storage.
 - **Publish**: `apps/web/scripts/publish-android-release.mjs` lê os artefatos locais, exige
   `--yes` explícito, falha se a versão já existir no bucket, faz upload do APK +
-  `.sha256` + `metadata.json`, verifica o objeto remoto (novo download + SHA-256) e só then
-  atualiza `android/latest.json` — o único objeto que pode ser sobrescrito, pois é um
-  ponteiro, nunca o APK. Se a verificação remota falhar, os objetos recém-enviados são
-  removidos antes de retornar erro (nada fica "meio publicado").
+  `.sha256` + `metadata.json` (sempre via `putObjectIfAbsent`, que falha se o objeto já
+  existir), verifica o objeto remoto (novo download + SHA-256) e só então substitui
+  `android/latest.json` via `putObject` (PUT direto, nunca delete seguido de put) — o único
+  objeto mutável do layout, pois é apenas um ponteiro, nunca o APK. Se a verificação remota
+  falhar, os objetos recém-enviados são removidos antes de retornar erro (nada fica "meio
+  publicado"); `latest.json` nunca fica ausente entre duas publicações.
 - **API de leitura**: `apps/api/src/releases/*` expõe os quatro endpoints públicos abaixo,
   usando o mesmo `@planner-fin/storage` em modo somente leitura/presign. Se as variáveis do
   bucket não estiverem configuradas, a API continua subindo normalmente (não quebra o

@@ -80,47 +80,13 @@ function extractKeytoolSha256(output) {
   return match ? match[1].replaceAll(':', '').toLowerCase() : null;
 }
 
-/**
- * Verificação best-effort do APK gerado usando apksigner/aapt quando disponíveis no PATH.
- * Ferramentas ausentes geram apenas aviso (não fecham o build); um APK presente porém
- * inconsistente (applicationId/versão/assinatura de debug) falha fechado.
- */
-export function verifyApkBestEffort(apkPath, { applicationId, versionName, versionCode }) {
-  const messages = [];
-  const spawnOpts = { shell: process.platform === 'win32' };
+function isToolMissing(result) {
+  return Boolean(result.error && result.error.code === 'ENOENT');
+}
 
-  const apksigner = spawnSync('apksigner', ['verify', '--print-certs', apkPath], spawnOpts);
-  if (apksigner.error && apksigner.error.code === 'ENOENT') {
-    messages.push('aviso: apksigner não encontrado no PATH; verificação de assinatura pulada.');
-  } else {
-    const output = `${apksigner.stdout ?? ''}${apksigner.stderr ?? ''}`;
-    if (apksigner.status !== 0) {
-      throw new Error(`apksigner reportou falha na verificação da assinatura release: ${output}`);
-    }
-    const releaseFingerprint = extractApksignerSha256(output);
-    const debugKeystorePath = join(homedir(), '.android', 'debug.keystore');
-    if (releaseFingerprint && existsSync(debugKeystorePath)) {
-      const debugCert = spawnSync(
-        'keytool',
-        ['-list', '-v', '-keystore', debugKeystorePath, '-storepass', 'android', '-alias', 'androiddebugkey'],
-        spawnOpts,
-      );
-      if (!debugCert.error) {
-        const debugFingerprint = extractKeytoolSha256(`${debugCert.stdout ?? ''}`);
-        if (debugFingerprint && debugFingerprint === releaseFingerprint) {
-          throw new Error(
-            'APK release está assinado com a keystore de debug local — assinatura de produção inválida.',
-          );
-        }
-      }
-    }
-    messages.push('apksigner: assinatura verificada com sucesso.');
-  }
-
-  const aapt = spawnSync('aapt', ['dump', 'badging', apkPath], spawnOpts);
-  if (aapt.error && aapt.error.code === 'ENOENT') {
-    messages.push('aviso: aapt não encontrado no PATH; verificação de manifesto pulada.');
-  } else {
+function verifyManifestOrThrow(apkPath, { applicationId, versionName, versionCode }, spawnOpts, spawn) {
+  const aapt = spawn('aapt', ['dump', 'badging', apkPath], spawnOpts);
+  if (!isToolMissing(aapt)) {
     if (aapt.status !== 0) throw new Error('aapt não conseguiu inspecionar o APK release gerado.');
     const badging = `${aapt.stdout ?? ''}`;
     if (!badging.includes(`package: name='${applicationId}'`)) {
@@ -132,8 +98,90 @@ export function verifyApkBestEffort(apkPath, { applicationId, versionName, versi
     if (!badging.includes(`versionCode='${versionCode}'`)) {
       throw new Error(`APK release gerado não corresponde ao versionCode ${versionCode}.`);
     }
-    messages.push('aapt: applicationId/versionName/versionCode confirmados no APK.');
+    return ['aapt: applicationId/versionName/versionCode confirmados no APK.'];
   }
+
+  const appId = spawn('apkanalyzer', ['manifest', 'application-id', apkPath], spawnOpts);
+  if (isToolMissing(appId)) {
+    throw new Error(
+      'Nem aapt nem apkanalyzer encontrados no PATH — verificação de manifesto é obrigatória para release.',
+    );
+  }
+  if (appId.status !== 0) throw new Error('apkanalyzer não conseguiu ler o applicationId do APK release gerado.');
+  const actualAppId = `${appId.stdout ?? ''}`.trim();
+  if (actualAppId !== applicationId) {
+    throw new Error(`APK release gerado não corresponde ao applicationId ${applicationId} (obtido: ${actualAppId}).`);
+  }
+
+  const versionNameResult = spawn('apkanalyzer', ['manifest', 'version-name', apkPath], spawnOpts);
+  if (versionNameResult.status !== 0) {
+    throw new Error('apkanalyzer não conseguiu ler o versionName do APK release gerado.');
+  }
+  const actualVersionName = `${versionNameResult.stdout ?? ''}`.trim();
+  if (actualVersionName !== versionName) {
+    throw new Error(
+      `APK release gerado não corresponde ao versionName ${versionName} (obtido: ${actualVersionName}).`,
+    );
+  }
+
+  const versionCodeResult = spawn('apkanalyzer', ['manifest', 'version-code', apkPath], spawnOpts);
+  if (versionCodeResult.status !== 0) {
+    throw new Error('apkanalyzer não conseguiu ler o versionCode do APK release gerado.');
+  }
+  const actualVersionCode = Number(`${versionCodeResult.stdout ?? ''}`.trim());
+  if (actualVersionCode !== versionCode) {
+    throw new Error(
+      `APK release gerado não corresponde ao versionCode ${versionCode} (obtido: ${actualVersionCode}).`,
+    );
+  }
+  return ['apkanalyzer: applicationId/versionName/versionCode confirmados no APK.'];
+}
+
+/**
+ * Verificação obrigatória do APK release: apksigner precisa estar disponível e validar a
+ * assinatura; aapt ou apkanalyzer precisa estar disponível e confirmar applicationId/
+ * versionName/versionCode. Ferramenta ausente ou APK inconsistente falha o build fechado —
+ * não há modo "melhor esforço" para release. `spawn`/`fileExists` são injetáveis apenas
+ * para teste.
+ */
+export function verifyApkOrThrow(
+  apkPath,
+  { applicationId, versionName, versionCode },
+  spawn = spawnSync,
+  fileExists = existsSync,
+) {
+  const messages = [];
+  const spawnOpts = { shell: process.platform === 'win32' };
+
+  const apksigner = spawn('apksigner', ['verify', '--print-certs', apkPath], spawnOpts);
+  if (isToolMissing(apksigner)) {
+    throw new Error(
+      'apksigner não encontrado no PATH — obrigatório para verificar a assinatura de uma release.',
+    );
+  }
+  const apksignerOutput = `${apksigner.stdout ?? ''}${apksigner.stderr ?? ''}`;
+  if (apksigner.status !== 0) {
+    throw new Error(`apksigner reportou falha na verificação da assinatura release: ${apksignerOutput}`);
+  }
+  const releaseFingerprint = extractApksignerSha256(apksignerOutput);
+  const debugKeystorePath = join(homedir(), '.android', 'debug.keystore');
+  if (releaseFingerprint && fileExists(debugKeystorePath)) {
+    const debugCert = spawn(
+      'keytool',
+      ['-list', '-v', '-keystore', debugKeystorePath, '-storepass', 'android', '-alias', 'androiddebugkey'],
+      spawnOpts,
+    );
+    if (!debugCert.error) {
+      const debugFingerprint = extractKeytoolSha256(`${debugCert.stdout ?? ''}`);
+      if (debugFingerprint && debugFingerprint === releaseFingerprint) {
+        throw new Error(
+          'APK release está assinado com a keystore de debug local — assinatura de produção inválida.',
+        );
+      }
+    }
+  }
+  messages.push('apksigner: assinatura verificada com sucesso.');
+  messages.push(...verifyManifestOrThrow(apkPath, { applicationId, versionName, versionCode }, spawnOpts, spawn));
   return messages;
 }
 
@@ -166,7 +214,7 @@ function main() {
   run(process.platform === 'win32' ? '.\\gradlew.bat' : './gradlew', ['assembleRelease'], 'android');
 
   const apkSource = join('android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
-  const messages = verifyApkBestEffort(apkSource, {
+  const messages = verifyApkOrThrow(apkSource, {
     applicationId: 'com.plannerfin.app',
     versionName: version,
     versionCode,

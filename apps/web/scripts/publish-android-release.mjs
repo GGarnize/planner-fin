@@ -72,8 +72,9 @@ export async function readCurrentLatest(storage) {
 
 /**
  * Publica uma release de forma imutável: falha se a versão já existir, verifica o objeto
- * remoto após o upload e só então atualiza o ponteiro latest.json (única exceção que pode
- * ser sobrescrita, pois é apenas metadado — nunca o APK).
+ * remoto após o upload e só então substitui o ponteiro latest.json via PUT direto
+ * (storage.putObject, nunca delete+put) — latest.json é a única exceção que pode ser
+ * sobrescrita, pois é apenas um ponteiro/metadado, nunca o APK em si.
  */
 export async function publishRelease({ storage, version, apkBuffer, sha256, metadata, confirm, log = () => {} }) {
   assertValidVersion(version);
@@ -133,8 +134,7 @@ export async function publishRelease({ storage, version, apkBuffer, sha256, meta
     applicationId: metadata.applicationId,
     createdAt: metadata.createdAt,
   };
-  await storage.deleteObject(LATEST_KEY).catch(() => {});
-  await storage.putObjectIfAbsent(
+  await storage.putObject(
     LATEST_KEY,
     Buffer.from(`${JSON.stringify(latestPointer, null, 2)}\n`),
     'application/json',

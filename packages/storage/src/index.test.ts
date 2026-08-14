@@ -47,6 +47,24 @@ describe('createInMemoryReleaseStorage', () => {
     await expect(storage.getObject('k')).resolves.toStrictEqual(Buffer.from('v2'));
   });
 
+  it('putObject sobrescreve incondicionalmente (ponteiro mutável como latest.json)', async () => {
+    const storage = createInMemoryReleaseStorage();
+    await storage.putObject('android/latest.json', Buffer.from('{"version":"0.1.0"}'), 'application/json');
+    await expect(storage.getObject('android/latest.json')).resolves.toStrictEqual(
+      Buffer.from('{"version":"0.1.0"}'),
+    );
+    await storage.putObject('android/latest.json', Buffer.from('{"version":"0.1.1"}'), 'application/json');
+    await expect(storage.getObject('android/latest.json')).resolves.toStrictEqual(
+      Buffer.from('{"version":"0.1.1"}'),
+    );
+  });
+
+  it('putObject nunca lança ReleaseObjectAlreadyExistsError, mesmo sobre objeto existente', async () => {
+    const storage = createInMemoryReleaseStorage();
+    await storage.putObject('k', Buffer.from('v1'), 'text/plain');
+    await expect(storage.putObject('k', Buffer.from('v2'), 'text/plain')).resolves.toBeUndefined();
+  });
+
   it('listKeys filtra por prefixo', async () => {
     const storage = createInMemoryReleaseStorage();
     await storage.putObjectIfAbsent('android/releases/0.1.0/apk', Buffer.from('a'), 'text/plain');

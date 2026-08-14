@@ -151,6 +151,50 @@ test('publishRelease bloqueia versionCode não crescente em relação ao latest 
   );
 });
 
+test('publishRelease atualiza latest.json de 0.1.0 para 0.1.1 via PUT direto, mantendo o histórico de 0.1.0', async () => {
+  const storage = createInMemoryReleaseStorage();
+  const logs = [];
+
+  const apkA = Buffer.from('apk-0.1.0');
+  const metadataA = metadataFor('0.1.0', { sha256: shaOf(apkA), size: apkA.byteLength, versionCode: 1 });
+  await publishRelease({
+    storage,
+    version: '0.1.0',
+    apkBuffer: apkA,
+    sha256: metadataA.sha256,
+    metadata: metadataA,
+    confirm: true,
+    log: (message) => logs.push(message),
+  });
+  const latestAfterFirst = await readCurrentLatest(storage);
+  assert.equal(latestAfterFirst.version, '0.1.0');
+
+  const apkB = Buffer.from('apk-0.1.1');
+  const metadataB = metadataFor('0.1.1', { sha256: shaOf(apkB), size: apkB.byteLength, versionCode: 2 });
+  const latestAfterSecond = await publishRelease({
+    storage,
+    version: '0.1.1',
+    apkBuffer: apkB,
+    sha256: metadataB.sha256,
+    metadata: metadataB,
+    confirm: true,
+    log: (message) => logs.push(message),
+  });
+
+  assert.equal(latestAfterSecond.version, '0.1.1');
+  assert.equal(latestAfterSecond.versionCode, 2);
+  const storedLatest = await readCurrentLatest(storage);
+  assert.deepEqual(storedLatest, latestAfterSecond);
+
+  // 0.1.0 continua disponível no histórico — publicar 0.1.1 não apaga nem move a release anterior.
+  await assert.doesNotReject(storage.getObject(releaseKeyFor('0.1.0')));
+  await assert.doesNotReject(storage.getObject(metadataKeyFor('0.1.0')));
+  await assert.doesNotReject(storage.getObject(releaseKeyFor('0.1.1')));
+
+  // latest.json é atualizado por PUT direto (mutável), nunca fica ausente entre as duas publicações.
+  assert.ok(logs.filter((line) => line.includes('latest.json atualizado')).length === 2);
+});
+
 test('readCurrentLatest retorna null quando latest.json ainda não existe', async () => {
   const storage = createInMemoryReleaseStorage();
   assert.equal(await readCurrentLatest(storage), null);
