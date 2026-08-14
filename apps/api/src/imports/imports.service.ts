@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ImportStatus, Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
-import type { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 import type { ConfirmImportDto, CreateImportDto, PatchImportRowDto } from './dto';
 import {
   canonicalMoney,

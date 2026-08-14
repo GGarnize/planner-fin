@@ -6,6 +6,7 @@ const DEFAULT_PASSWORD = 'PlannerFinLocal123!';
 const DEFAULT_NAME = 'Conta Sintética Local';
 const LOCAL_DATABASE_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 const LOCAL_DATABASE_NAMES = new Set(['planner_fin_local', 'planner_fin_test']);
+const SPEC022_SYNTHETIC_DATABASE_PREFIX = 'planner_fin_spec022_';
 const SYNTHETIC_EMAIL_DOMAIN = '.test';
 
 export class LocalTestSeedGuardError extends Error {
@@ -48,6 +49,13 @@ interface UserStore {
       select: { id: true; email: true; passwordHash: true };
     }): Promise<{ id: string; email: string; passwordHash: string }>;
   };
+  userInitialSetup?: {
+    upsert(args: {
+      where: { userId: string };
+      create: { userId: string };
+      update: Record<string, never>;
+    }): Promise<unknown>;
+  };
 }
 
 function readDatabaseUrl(raw: string | undefined): URL {
@@ -78,7 +86,10 @@ export function loadLocalTestSeedConfig(env: NodeJS.ProcessEnv): LocalTestSeedCo
     );
 
   const databaseName = decodeURIComponent(databaseUrl.pathname.replace(/^\//, ''));
-  if (!LOCAL_DATABASE_NAMES.has(databaseName))
+  if (
+    !LOCAL_DATABASE_NAMES.has(databaseName) &&
+    !databaseName.startsWith(SPEC022_SYNTHETIC_DATABASE_PREFIX)
+  )
     throw new LocalTestSeedGuardError(
       `Fixture local recusada: banco não aprovado (${databaseName || '<vazio>'}).`,
     );
@@ -126,6 +137,12 @@ export async function seedLocalTestUser(
 
   if (!(await verifyPassword(user.passwordHash, config.password)))
     throw new Error('Fixture local falhou: hash gerado não valida a senha sintética.');
+
+  await prisma.userInitialSetup?.upsert({
+    where: { userId: user.id },
+    create: { userId: user.id },
+    update: {},
+  });
 
   return { userId: user.id, email: user.email, created: !existing };
 }
