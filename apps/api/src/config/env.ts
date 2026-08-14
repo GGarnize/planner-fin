@@ -1,8 +1,12 @@
+import { assertProductionSafety } from './prod-guards';
+
 export interface ApiConfig {
+  nodeEnv: string;
   port: number;
   host?: string;
   databaseUrl: string;
   corsOrigins: string[];
+  crossSiteOrigins: string[];
   jwtSecret: string;
   refreshHmacSecret: string;
   jwtIssuer: string;
@@ -31,12 +35,32 @@ function strongSecret(name: string): string {
   return value;
 }
 
-export function loadApiConfig(): ApiConfig {
+function resolvePort(isProduction: boolean): number {
+  if (isProduction) {
+    const railwayPort = required('PORT');
+    const port = Number(railwayPort);
+    if (!Number.isInteger(port) || port <= 0 || port > 65535)
+      throw new Error('Configuração inválida: PORT deve ser uma porta TCP válida.');
+    return port;
+  }
   const port = Number(process.env.API_PORT ?? '3000');
   if (!Number.isInteger(port) || port <= 0 || port > 65535)
     throw new Error('Configuração inválida: API_PORT deve ser uma porta TCP válida.');
+  return port;
+}
+
+function resolveHost(isProduction: boolean): string | undefined {
   const host = process.env.API_HOST?.trim();
   if (host === '') throw new Error('Configuração inválida: API_HOST não pode ser vazio.');
+  if (isProduction) return host ?? '0.0.0.0';
+  return host;
+}
+
+export function loadApiConfig(): ApiConfig {
+  const nodeEnv = process.env.NODE_ENV ?? 'development';
+  const isProduction = nodeEnv === 'production';
+  const port = resolvePort(isProduction);
+  const host = resolveHost(isProduction);
   const databaseUrl = required('DATABASE_URL');
   if (!/^postgres(ql)?:\/\//.test(databaseUrl))
     throw new Error('Configuração inválida: DATABASE_URL deve usar PostgreSQL.');
@@ -68,21 +92,29 @@ export function loadApiConfig(): ApiConfig {
       }),
     ),
   ];
+  const crossSiteOrigins = (process.env.API_CROSS_SITE_ORIGINS ?? 'https://localhost')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
   const jwtSecret = strongSecret('JWT_SECRET');
   const refreshHmacSecret = strongSecret('REFRESH_HMAC_SECRET');
   if (jwtSecret === refreshHmacSecret)
     throw new Error('Configuração inválida: os segredos JWT e HMAC devem ser independentes.');
+  const cookieSecure = process.env.COOKIE_SECURE !== 'false';
+  if (isProduction) assertProductionSafety({ cookieSecure, corsOrigins, databaseUrl }, process.env);
   return {
+    nodeEnv,
     port,
     host,
     databaseUrl,
     corsOrigins,
+    crossSiteOrigins,
     jwtSecret,
     refreshHmacSecret,
     jwtIssuer: process.env.JWT_ISSUER ?? 'planner-fin-api',
     jwtAudience: process.env.JWT_AUDIENCE ?? 'planner-fin-web',
     accessTokenSeconds: 900,
     refreshTokenSeconds: 2592000,
-    cookieSecure: process.env.COOKIE_SECURE !== 'false',
+    cookieSecure,
   };
 }

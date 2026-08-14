@@ -21,9 +21,11 @@ const issued: IssuedAuth = {
   csrfToken: 'csrf',
 };
 const config: ApiConfig = {
+  nodeEnv: 'test',
   port: 3000,
   databaseUrl: 'postgresql://test',
   corsOrigins: ['https://web.example.test', 'https://localhost'],
+  crossSiteOrigins: ['https://localhost'],
   jwtSecret: 'x'.repeat(32),
   refreshHmacSecret: 'y'.repeat(32),
   jwtIssuer: 'issuer',
@@ -33,14 +35,14 @@ const config: ApiConfig = {
   cookieSecure: true,
 };
 
-function setup(origin: string) {
+function setup(origin: string, overrides: Partial<ApiConfig> = {}) {
   const auth = {
     login: vi.fn().mockResolvedValue(issued),
     register: vi.fn().mockResolvedValue(issued),
     refresh: vi.fn().mockResolvedValue(issued),
   } as unknown as AuthService;
   const limits = { check: vi.fn(), clear: vi.fn() } as unknown as RateLimitService;
-  const controller = new AuthController(auth, limits, config);
+  const controller = new AuthController(auth, limits, { ...config, ...overrides });
   const req = {
     cookies: { planner_fin_refresh: issued.refreshToken },
     header: (name: string) => (name === 'Origin' ? origin : undefined),
@@ -70,6 +72,38 @@ describe('cookies e bootstrap CSRF', () => {
       'planner_fin_csrf',
       issued.csrfToken,
       expect.objectContaining({ httpOnly: false, sameSite, path: '/' }),
+    );
+  });
+
+  it('crossSiteOrigins é configurável: origem Web marcada como cross-site também recebe None+Secure', async () => {
+    const { controller, req, res } = setup('https://web.example.test', {
+      crossSiteOrigins: ['https://localhost', 'https://web.example.test'],
+    });
+    await controller.login(
+      { email: 'pessoa@example.test', password: 'senha123456' },
+      '127.0.0.1',
+      req,
+      res,
+    );
+    expect(res.cookie).toHaveBeenCalledWith(
+      'planner_fin_refresh',
+      issued.refreshToken,
+      expect.objectContaining({ sameSite: 'none', secure: true }),
+    );
+  });
+
+  it('crossSiteOrigins é configurável: sem a origem Android na lista, ela volta a ser Lax', async () => {
+    const { controller, req, res } = setup('https://localhost', { crossSiteOrigins: [] });
+    await controller.login(
+      { email: 'pessoa@example.test', password: 'senha123456' },
+      '127.0.0.1',
+      req,
+      res,
+    );
+    expect(res.cookie).toHaveBeenCalledWith(
+      'planner_fin_refresh',
+      issued.refreshToken,
+      expect.objectContaining({ sameSite: 'lax' }),
     );
   });
 

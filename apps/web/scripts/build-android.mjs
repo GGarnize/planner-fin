@@ -28,7 +28,7 @@ if (variant === 'internal') {
 
 run('node', ['scripts/validate-android.mjs']);
 run(
-  process.platform === 'win32' ? 'gradlew.bat' : './gradlew',
+  process.platform === 'win32' ? '.\\gradlew.bat' : './gradlew',
   [variant === 'debug' ? 'assembleDebug' : 'assembleInternal'],
   'android',
 );

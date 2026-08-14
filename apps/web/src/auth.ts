@@ -8,7 +8,30 @@ import {
 import { flushAndroidCookies, isAndroidNative } from './mobile';
 import { unbindOwnerAndPurge } from './notification-listener';
 
+const LOCAL_OR_LAN_HOSTNAME_PATTERN =
+  /^(localhost|127\.0\.0\.1|10\.0\.2\.2|192\.168\.\d{1,3}\.\d{1,3})$/i;
+
+function assertProductionWebApiBaseUrl(raw?: string): string {
+  const value = raw?.trim();
+  if (!value) throw new Error('VITE_API_BASE_URL é obrigatória em produção.');
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('VITE_API_BASE_URL deve ser uma URL absoluta em produção.');
+  }
+  if (url.protocol !== 'https:')
+    throw new Error('VITE_API_BASE_URL deve usar HTTPS em produção.');
+  if (url.pathname.replace(/\/$/, '') !== '/api')
+    throw new Error('VITE_API_BASE_URL deve terminar em /api em produção.');
+  if (LOCAL_OR_LAN_HOSTNAME_PATTERN.test(url.hostname))
+    throw new Error('VITE_API_BASE_URL não pode apontar a host local/LAN em produção.');
+  return value.replace(/\/$/, '');
+}
+
 export function resolveApiBaseUrl(raw = import.meta.env.VITE_API_BASE_URL): string {
+  if (!isAndroidNative() && import.meta.env.MODE === 'production')
+    return assertProductionWebApiBaseUrl(raw);
   const value = raw?.trim() || 'http://localhost:3000/api';
   if (!isAndroidNative()) return value.replace(/\/$/, '');
   let url: URL;

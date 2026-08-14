@@ -56,6 +56,77 @@ describe('loadApiConfig', () => {
   });
 });
 
+describe('PORT/host em produção', () => {
+  const validProd = () => {
+    process.env.NODE_ENV = 'production';
+    process.env.DATABASE_URL = 'postgresql://user:pass@postgres.railway.internal:5432/railway';
+    process.env.API_CORS_ORIGINS = 'https://web.example.test';
+    process.env.JWT_SECRET = 'jwt-prod-sintetico-ABCDEF-1234567890-xyz';
+    process.env.REFRESH_HMAC_SECRET = 'hmac-prod-sintetico-9876543210-ZYX-fed';
+  };
+
+  it('exige PORT em produção e ignora API_PORT', () => {
+    validProd();
+    process.env.API_PORT = '9999';
+    process.env.PORT = '8080';
+    expect(loadApiConfig().port).toBe(8080);
+  });
+
+  it('falha se PORT ausente em produção', () => {
+    validProd();
+    delete process.env.PORT;
+    expect(() => loadApiConfig()).toThrow('PORT');
+  });
+
+  it('faz bind em 0.0.0.0 por padrão em produção', () => {
+    validProd();
+    process.env.PORT = '8080';
+    delete process.env.API_HOST;
+    expect(loadApiConfig().host).toBe('0.0.0.0');
+  });
+
+  it('preserva API_HOST explícito em produção quando definido', () => {
+    validProd();
+    process.env.PORT = '8080';
+    process.env.API_HOST = '10.0.0.5';
+    expect(loadApiConfig().host).toBe('10.0.0.5');
+  });
+
+  it('fora de produção continua usando API_PORT (default 3000) e ignora PORT', () => {
+    process.env.DATABASE_URL = 'postgresql://local:local@localhost:5432/local';
+    process.env.JWT_SECRET = 'jwt-local-sintetico-ABCDEF-1234567890-xyz';
+    process.env.REFRESH_HMAC_SECRET = 'hmac-local-sintetico-9876543210-ZYX-fed';
+    process.env.PORT = '9999';
+    delete process.env.API_PORT;
+    expect(loadApiConfig().port).toBe(3000);
+  });
+
+  it('bloqueia start com configuração insegura em produção (guard PRD)', () => {
+    validProd();
+    process.env.PORT = '8080';
+    process.env.COOKIE_SECURE = 'false';
+    expect(() => loadApiConfig()).toThrow('COOKIE_SECURE');
+  });
+});
+
+describe('crossSiteOrigins', () => {
+  it('usa https://localhost como padrão (compatível com o comportamento atual do Android)', () => {
+    process.env.DATABASE_URL = 'postgresql://local:local@localhost:5432/local';
+    process.env.JWT_SECRET = 'jwt-local-sintetico-ABCDEF-1234567890-xyz';
+    process.env.REFRESH_HMAC_SECRET = 'hmac-local-sintetico-9876543210-ZYX-fed';
+    delete process.env.API_CROSS_SITE_ORIGINS;
+    expect(loadApiConfig().crossSiteOrigins).toEqual(['https://localhost']);
+  });
+
+  it('aceita lista customizada separada por vírgula', () => {
+    process.env.DATABASE_URL = 'postgresql://local:local@localhost:5432/local';
+    process.env.JWT_SECRET = 'jwt-local-sintetico-ABCDEF-1234567890-xyz';
+    process.env.REFRESH_HMAC_SECRET = 'hmac-local-sintetico-9876543210-ZYX-fed';
+    process.env.API_CROSS_SITE_ORIGINS = ' https://localhost , https://web.example.test ';
+    expect(loadApiConfig().crossSiteOrigins).toEqual(['https://localhost', 'https://web.example.test']);
+  });
+});
+
 describe('allowlist CORS', () => {
   const valid = () => {
     process.env.DATABASE_URL = 'postgresql://local:local@localhost:5432/local';
