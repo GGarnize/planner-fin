@@ -45,6 +45,7 @@
     "android:release:lib:selftest": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android-release.lib.selftest.ps1",
     "android:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android-release.ps1 -Command release",
     "android:release:commit": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android-release.ps1 -Command commit",
+    "android:release:commit:selftest": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android-release.commit.selftest.ps1",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:migrate": "pnpm --filter @planner-fin/api db:migrate",
