@@ -31,11 +31,23 @@ describe('MorePage', () => {
       '/transfers',
       '/transaction-templates',
       '/imports',
+      '/notifications',
       '/recurrences',
       '/cards',
       '/debts',
       '/conta',
     ]);
-    expect(wrapper.findAll('a,button')).toHaveLength(10);
+    expect(wrapper.findAll('a,button')).toHaveLength(11);
+  });
+  it('inclui a entrada de captura por notificacoes com descricao curta', () => {
+    const wrapper = mount(MorePage, { global: { stubs: { RouterLink: RouterLinkStub } } });
+    const link = wrapper
+      .findAllComponents(RouterLinkStub)
+      .find((candidate) => candidate.props('to') === '/notifications');
+    expect(link).toBeTruthy();
+    expect(link!.text()).toContain('Captura por notificações');
+    expect(link!.text()).toContain(
+      'Use notificações de apps financeiros para preparar movimentações para revisão.',
+    );
   });
 });

@@ -11,6 +11,12 @@ const groups = [
       ['Transferências', '/transfers', 'swap_horiz'],
       ['Modelos de lançamento', '/transaction-templates', 'content_copy'],
       ['Importar extrato', '/imports', 'upload_file'],
+      [
+        'Captura por notificações',
+        '/notifications',
+        'notifications',
+        'Use notificações de apps financeiros para preparar movimentações para revisão.',
+      ],
     ],
   },
   { title: 'Planejamento', items: [['Recorrências', '/recurrences', 'event_repeat']] },
@@ -34,7 +40,9 @@ async function leave() {
       <h2>{{ group.title }}</h2>
       <router-link v-for="item in group.items" :key="item[1]" :to="item[1]"
         ><span class="material-icons" aria-hidden="true">{{ item[2] }}</span
-        ><span>{{ item[0] }}</span
+        ><span
+          ><span class="item-label">{{ item[0] }}</span
+          ><small v-if="item[3]" class="item-description">{{ item[3] }}</small></span
         ><span class="material-icons" aria-hidden="true">chevron_right</span></router-link
       >
     </section>
@@ -97,5 +105,14 @@ async function leave() {
 }
 .material-icons {
   font-size: 1.25rem;
+}
+.item-label {
+  display: block;
+}
+.item-description {
+  display: block;
+  color: var(--color-text-muted);
+  font-weight: 400;
+  white-space: normal;
 }
 </style>

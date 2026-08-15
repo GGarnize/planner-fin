@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
@@ -11,11 +11,19 @@ import {
   Length,
   Matches,
   MaxLength,
+  Validate,
   ValidateNested,
 } from 'class-validator';
+import {
+  CivilDateConstraint,
+  DescriptionConstraint,
+  MoneyConstraint,
+  TRANSACTION_TYPES,
+} from '../transactions/dto';
 
 const PACKAGE_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
 export class BindNotificationDeviceDto {
   @IsString()
@@ -108,4 +116,28 @@ export class IngestCapturedNotificationsDto {
   @ValidateNested({ each: true })
   @Type(() => CapturedNotificationIngestItemDto)
   items!: CapturedNotificationIngestItemDto[];
+}
+
+export class ConfirmCapturedNotificationDto {
+  @IsUUID()
+  accountId!: string;
+
+  @IsUUID()
+  categoryId!: string;
+
+  @IsIn(TRANSACTION_TYPES)
+  type!: (typeof TRANSACTION_TYPES)[number];
+
+  @IsString()
+  @Validate(MoneyConstraint)
+  amount!: string;
+
+  @Transform(trim)
+  @IsString()
+  @Validate(DescriptionConstraint)
+  description!: string;
+
+  @IsString()
+  @Validate(CivilDateConstraint)
+  date!: string;
 }

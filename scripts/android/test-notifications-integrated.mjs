@@ -125,7 +125,9 @@ async function main() {
   assertEqual(debugState().pendingCount, 0, 'fila apos ACK');
   const first = await onlyCaptured(userA.email);
   assertEqual(first.packageName, monitoredPackage, 'packageName PG');
-  assertEqual(first.status, 'UNCLASSIFIED', 'status PG');
+  assertEqual(first.status, 'FINANCIAL_CANDIDATE', 'status PG');
+  assertEqual(first.parsedType, 'EXPENSE', 'parsedType PG');
+  assertEqual(first.parsedAmount?.toFixed(2), '42.90', 'parsedAmount PG');
   assertEqual(first.device.ownerBindingId, bindingA.ownerBindingId, 'device PG');
   assertNoNativeCredentialPlaintext();
   pass('Sync SPA -> PG=1 -> ACK limpa fila');

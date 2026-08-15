@@ -18,6 +18,8 @@ import TransactionTemplatesPage from './pages/TransactionTemplatesPage.vue';
 import InitialSetupPage from './pages/InitialSetupPage.vue';
 import ImportPage from './pages/ImportPage.vue';
 import NotificationListenerDevPage from './pages/NotificationListenerDevPage.vue';
+import NotificationsPage from './pages/NotificationsPage.vue';
+import NotificationsInboxPage from './pages/NotificationsInboxPage.vue';
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -42,6 +44,9 @@ export const router = createRouter({
     { path: '/imports', component: ImportPage },
     { path: '/imports/:id', component: ImportPage },
     { path: '/setup', component: InitialSetupPage },
+    { path: '/notifications', component: NotificationsPage },
+    { path: '/notifications/inbox', component: NotificationsInboxPage },
+    { path: '/notifications/inbox/:id', component: NotificationsInboxPage },
     { path: '/dev/notification-listener', component: NotificationListenerDevPage },
   ],
 });

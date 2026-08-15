@@ -81,11 +81,20 @@ export async function openNotificationAccessSettings(): Promise<void> {
   await plugin.openNotificationAccessSettings();
 }
 
+const EMPTY_CAPTURE_STATE: NotificationCaptureState = {
+  captureEnabled: false,
+  monitoredPackages: [],
+  capturedCount: 0,
+  secretDropped: 0,
+};
+
 export async function setCaptureEnabled(enabled: boolean): Promise<NotificationCaptureState> {
+  if (!isNotificationListenerDiagnosticAvailable()) return { ...EMPTY_CAPTURE_STATE, captureEnabled: enabled };
   return plugin.setCaptureEnabled({ enabled });
 }
 
 export async function setMonitoredPackages(packages: string[]): Promise<NotificationCaptureState> {
+  if (!isNotificationListenerDiagnosticAvailable()) return { ...EMPTY_CAPTURE_STATE, monitoredPackages: packages };
   return plugin.setMonitoredPackages({ packages });
 }
 
