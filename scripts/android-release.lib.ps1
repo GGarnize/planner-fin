@@ -558,11 +558,36 @@ function Invoke-PublishCommand {
   return $script:LastPublishExit
 }
 
-function Invoke-CommitCommand {
-  $info = Get-CurrentVersionInfo
+function Test-ReleaseBumpFilesChanged {
+  <#
+    Retorna $true se apps/web/package.json e/ou apps/web/android/version.json tem
+    alteracao pendente (working tree ou staged) em relacao ao HEAD; $false se os dois
+    estiverem exatamente como no ultimo commit. So olha para esses dois caminhos --
+    outros arquivos modificados no repo nao entram nessa checagem (e portanto nunca
+    disparam nem entram num commit criado por Invoke-CommitCommand). Nunca depende de
+    interpretar a saida textual (localizada) de `git commit`.
+  #>
+  param([Parameter(Mandatory = $true)] $Info)
   Push-Location $script:RepoRoot
   try {
-    & git add $info.PackageJsonPath $info.VersionJsonPath
+    $status = & git status --porcelain -- $Info.PackageJsonPath $Info.VersionJsonPath
+    if ($LASTEXITCODE -ne 0) { throw 'git status falhou ao verificar bump pendente para commit.' }
+  } finally {
+    Pop-Location
+  }
+  return [bool]$status
+}
+
+function Invoke-CommitCommand {
+  $info = Get-CurrentVersionInfo
+  if (-not (Test-ReleaseBumpFilesChanged -Info $info)) {
+    Write-Host 'Nenhum bump de release pendente para commit. Working tree ja esta consistente.' -ForegroundColor Yellow
+    return
+  }
+  Push-Location $script:RepoRoot
+  try {
+    & git add -- $info.PackageJsonPath $info.VersionJsonPath
+    if ($LASTEXITCODE -ne 0) { throw 'git add falhou ao preparar o bump para commit.' }
     & git commit -m "chore: release Android $($info.Version)"
     if ($LASTEXITCODE -ne 0) { throw 'git commit falhou.' }
   } finally {

@@ -166,13 +166,14 @@ Toda essa logica (parse/gravacao/comparacao) e pura e testada em
 node --test scripts/android/release-helpers.test.mjs
 pnpm android:release:secrets:selftest   # backend de segredos, so valores sinteticos
 pnpm android:release:lib:selftest       # funcoes de android-release.lib.ps1 sob StrictMode
+pnpm android:release:commit:selftest    # Invoke-CommitCommand num repo git temporario/descartavel
 pnpm test        # inclui test:dx, que ja cobre scripts/android/*.test.mjs
 pnpm lint
 pnpm typecheck
 git diff --check
 ```
 
-Nenhum dos dois `.selftest.ps1` esta no `test:dx` (e PowerShell, nao Node) — rode-os
+Nenhum dos tres `.selftest.ps1` esta no `test:dx` (e PowerShell, nao Node) — rode-os
 manualmente sempre que mexer nos arquivos correspondentes.
 
 `windows-credentials.selftest.ps1` **nunca grava, remove, ou le-para-restaurar** nenhum dos
@@ -202,6 +203,18 @@ resultado nao retorna uma colecao (retorna `$null` ou um escalar) — `.Count` n
 lanca `PropertyNotFoundStrict`. O teste cobre explicitamente 0/1/2 segredos faltando e
 0/1/2 dispositivos ADB conectados (com linhas sinteticas, sem precisar de device real).
 
+`android-release.commit.selftest.ps1` cria um repositorio git **temporario e descartavel**
+do zero (nunca o repo real) para exercitar `Invoke-CommitCommand`/
+`Test-ReleaseBumpFilesChanged`: working tree limpo (no-op, sem excecao, exit 0 — o bug
+original: `git commit` sozinho retorna exit 1 quando nao ha nada para commitar, e isso nao
+e uma falha operacional), somente `package.json` alterado, somente `version.json`
+alterado, ambos alterados, um arquivo nao relacionado alterado (nunca entra no commit,
+mesmo junto com um bump real), e uma falha real de `git commit` (via hook `pre-commit`) que
+precisa continuar propagando erro — nunca mascarada como "nada para commitar". Detecta
+mudanca pendente via `git status --porcelain -- <pathA> <pathB>` (nunca interpretando texto
+localizado da saida de `git commit`), e o `git add`/`git commit` do commit real sao
+escopados so aos dois arquivos de bump (`-- <pathA> <pathB>`), nunca `git add -A`.
+
 ## Troubleshooting
 
 | Sintoma | Causa/acao |
@@ -209,6 +222,7 @@ lanca `PropertyNotFoundStrict`. O teste cobre explicitamente 0/1/2 segredos falt
 | `doctor` reporta `FAIL` em segredo | Rode `pnpm android:release:setup` novamente (so precisa reconfigurar o que falhou). |
 | `doctor` reporta `FAIL` "Backend local de segredos (DPAPI) nao esta funcional" | Rode `pnpm android:release:secrets:selftest` para diagnosticar; provavelmente um problema de permissao em `C:\Users\<usuario>\.planner-fin\`. |
 | `setup` reporta "NAO foi salvo" para um segredo | O erro especifico aparece na linha `[FALHOU]`; os demais segredos ja salvos nao sao afetados — rode `setup` de novo para tentar so o que falhou. |
+| `android:release:commit` falhava com "git commit falhou" mesmo sem nada para commitar | Bug ja corrigido: `Invoke-CommitCommand` agora checa `Test-ReleaseBumpFilesChanged` antes de chamar `git commit` e faz no-op (exit 0) quando os dois arquivos de bump ja estao como no HEAD. Se reaparecer, rode `pnpm android:release:commit:selftest`. |
 | `doctor` reporta `FAIL` em build-tools | Instale uma versao de build-tools que contenha `apksigner.bat` e `aapt.exe` (`sdkmanager --install "build-tools;35.0.0"`). |
 | `doctor` reporta `FAIL` "local.properties aponta para X, mas a config aponta para Y" | Rode `pnpm android:release:build` (ou `android:release`) para sincronizar automaticamente, ou edite `sdk.dir` manualmente. |
 | `release` para em "Repositorio nao esta limpo" | Commite ou descarte alteracoes fora dos dois arquivos de bump antes de rodar de novo. |
