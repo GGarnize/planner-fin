@@ -79,12 +79,12 @@ variavel de ambiente do processo filho `pnpm`/`gradlew`.
 pnpm android:release:setup             # configura release-config.json + segredos (interativo)
 pnpm android:release:doctor            # valida tudo sem alterar nada (SDK, build-tools, keystore, segredos, versao)
 pnpm android:release                   # fluxo completo: bump -> build -> instalar (opcional) -> publish (com confirmacao dupla)
+pnpm android:release:commit            # so cria o commit local do bump ja gravado (chore: release Android X.Y.Z), sem push
 pnpm android:release:secrets:selftest  # diagnostico do backend de segredos com valores SINTETICOS (nunca reais)
 ```
 
-`scripts/android-release.ps1` tambem aceita `-Command build`, `-Command publish` e
-`-Command commit` para rodar so uma etapa (uteis depois de um bump manual ou para
-reexecutar so o publish).
+`scripts/android-release.ps1` tambem aceita `-Command build` e `-Command publish` para
+rodar so uma etapa (uteis depois de um bump manual ou para reexecutar so o publish).
 
 ### `setup` e reexecucao segura
 
@@ -175,10 +175,22 @@ git diff --check
 Nenhum dos dois `.selftest.ps1` esta no `test:dx` (e PowerShell, nao Node) — rode-os
 manualmente sempre que mexer nos arquivos correspondentes.
 
-`windows-credentials.selftest.ps1` so usa targets sinteticos com prefixo `_SelfTest*` mais
-um round-trip sintetico no target real do Railway access key (nunca com valor real),
-confirma que um segredo de producao pre-existente nesse mesmo target nao e afetado, e
-verifica via transcript que nenhum valor sintetico usado aparece na saida impressa.
+`windows-credentials.selftest.ps1` **nunca grava, remove, ou le-para-restaurar** nenhum dos
+quatro nomes reais (`PlannerFin/KeystorePassword`, `PlannerFin/KeyPassword`,
+`PlannerFin/RailwayBucketAccessKey`, `PlannerFin/RailwayBucketSecretKey`) — todo round-trip
+mutavel (curto, ~60 chars, ~128 chars, e o mesmo "formato" de uma Railway access key) roda
+so em targets sinteticos dedicados com prefixo `_SelfTest*`, sempre limpos em `finally`
+mesmo se uma asserção do meio falhar. Como garantia de regressão, o self-test tira um
+snapshot (so leitura do ciphertext bruto, nunca decifrado) dos quatro targets reais antes
+de rodar qualquer teste e outro depois — essa comparação roda em `finally`, então detecta
+uma regressão futura mesmo que algo quebre no meio — e falha se qualquer um deles mudou.
+(Uma versão anterior deste self-test escrevia temporariamente sobre o target real
+`PlannerFin/RailwayBucketAccessKey`, salvando/restaurando o ciphertext ao redor de um
+round-trip sintético; sem essa restauração estar em `finally`, isso apagou de fato um
+segredo real de produção quando o processo foi interrompido no meio. Removido por completo
+— nenhum teste aqui toca em nome real nenhum; se isso já tiver acontecido,
+`pnpm android:release:setup` reconfigura só o segredo afetado.) O self-test também
+verifica via transcript que nenhum valor sintético usado aparece na saída impressa.
 
 `android-release.lib.selftest.ps1` dot-sourceia so `android-release.lib.ps1` (nunca o
 entrypoint `android-release.ps1`, que dispararia um comando real) sob

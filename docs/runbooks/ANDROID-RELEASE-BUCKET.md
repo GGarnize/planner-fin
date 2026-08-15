@@ -44,13 +44,24 @@ Fonte de verdade: `docs/specs/SPEC-023-DEPLOY-PRD-RAILWAY-ANDROID.md` (§16, §1
   então a imutabilidade é garantida pela aplicação (checagem antes do upload), não pelo
   backend de storage.
 - **Publish**: `apps/web/scripts/publish-android-release.mjs` lê os artefatos locais, exige
-  `--yes` explícito, falha se a versão já existir no bucket, faz upload do APK +
+  `--yes` explícito. Se a versão ainda não existe no bucket, faz upload do APK +
   `.sha256` + `metadata.json` (sempre via `putObjectIfAbsent`, que falha se o objeto já
   existir), verifica o objeto remoto (novo download + SHA-256) e só então substitui
   `android/latest.json` via `putObject` (PUT direto, nunca delete seguido de put) — o único
   objeto mutável do layout, pois é apenas um ponteiro, nunca o APK. Se a verificação remota
   falhar, os objetos recém-enviados são removidos antes de retornar erro (nada fica "meio
   publicado"); `latest.json` nunca fica ausente entre duas publicações.
+- **Publish idempotente (retry seguro)**: se a versão **já existe** no bucket, o publish
+  não falha automaticamente — compara `metadata.json` remoto com o build local
+  (`version`, `versionCode`, `sha256`, `size`, `applicationId`, via
+  `assertRemoteReleaseMatchesLocal`). Se todos os campos baterem, é tratado como sucesso
+  idempotente: **nada é reenviado** (nenhum `putObjectIfAbsent` novo para APK/`.sha256`/
+  `metadata.json` — a release histórica nunca é tocada), e `latest.json` só é atualizado se
+  ainda não apontar para essa mesma release (nunca "rebaixado" se uma versão mais nova já
+  tiver sido publicada depois). Isso torna reexecutar `publish` após uma falha de rede/CLI
+  na etapa de `latest.json` seguro, sem exigir bump de versão. Se qualquer campo divergir
+  (artefato diferente sob o mesmo número de versão), falha fechada com mensagem explícita de
+  conflito/imutabilidade — a release remota original permanece intacta.
 - **API de leitura**: `apps/api/src/releases/*` expõe os quatro endpoints públicos abaixo,
   usando o mesmo `@planner-fin/storage` em modo somente leitura/presign. Se as variáveis do
   bucket não estiverem configuradas, a API continua subindo normalmente (não quebra o
@@ -141,7 +152,7 @@ confirmação explícita.
 |---|---|
 | `android:release:build` falha por variável de assinatura | Configure as quatro `PLANNER_FIN_KEY*`; nunca geradas automaticamente. |
 | `android:release:build` falha por `VITE_API_BASE_URL` | Precisa ser HTTPS, terminar em `/api` e não pode ser localhost/LAN. |
-| `android:release:publish` falha com "já existe" | Releases são imutáveis; publique uma versão nova com `versionCode` maior. |
+| `android:release:publish` roda de novo para uma versão já publicada | Se o artefato local for idêntico ao remoto, é um retry seguro (sucesso idempotente, nada é reenviado). Só falha com "artefato diferente" se o build local realmente divergir da release já publicada — nesse caso, publique uma versão nova com `versionCode` maior. |
 | `android:release:publish` falha com "versionCode não é maior" | O bucket já tem uma release com `versionCode` igual/maior; corrija `android/version.json`. |
 | `/api/releases/android/latest` responde 503 `RELEASES_NOT_CONFIGURED` | Bucket ainda não provisionado/configurado na API; endpoints de release ficam desligados sem quebrar o resto da API. |
 | `/api/releases/android/:version` responde 400 `INVALID_VERSION` | Versão deve ser exatamente `0.x.y`; qualquer outro formato (incluindo tentativas de path traversal) é rejeitado antes de tocar o storage. |

@@ -71,10 +71,99 @@ export async function readCurrentLatest(storage) {
 }
 
 /**
- * Publica uma release de forma imutável: falha se a versão já existir, verifica o objeto
- * remoto após o upload e só então substitui o ponteiro latest.json via PUT direto
- * (storage.putObject, nunca delete+put) — latest.json é a única exceção que pode ser
- * sobrescrita, pois é apenas um ponteiro/metadado, nunca o APK em si.
+ * Compara o metadata.json já publicado no bucket com o build local que se está tentando
+ * publicar de novo. Só os campos que identificam o artefato — nunca dados irrelevantes tipo
+ * createdAt/gitCommit — precisam bater para o replay ser considerado idempotente.
+ */
+export function assertRemoteReleaseMatchesLocal(
+  remoteMetadata,
+  { version, versionCode, sha256, size, applicationId },
+) {
+  const mismatches = [];
+  if (remoteMetadata.version !== version) {
+    mismatches.push(`version (remoto=${remoteMetadata.version}, local=${version})`);
+  }
+  if (remoteMetadata.versionCode !== versionCode) {
+    mismatches.push(`versionCode (remoto=${remoteMetadata.versionCode}, local=${versionCode})`);
+  }
+  if (remoteMetadata.sha256 !== sha256) {
+    mismatches.push(`sha256 (remoto=${remoteMetadata.sha256}, local=${sha256})`);
+  }
+  if (remoteMetadata.size !== size) {
+    mismatches.push(`size (remoto=${remoteMetadata.size}, local=${size})`);
+  }
+  if (remoteMetadata.applicationId !== applicationId) {
+    mismatches.push(`applicationId (remoto=${remoteMetadata.applicationId}, local=${applicationId})`);
+  }
+  if (mismatches.length) {
+    throw new Error(
+      `Release ${version} já existe no bucket com artefato diferente — publicação é imutável e não pode ` +
+        `ser sobrescrita. Divergência: ${mismatches.join(', ')}.`,
+    );
+  }
+}
+
+/**
+ * Trata uma release cujo APK já existe no bucket: se o metadata.json remoto bate
+ * exatamente com o build local (version/versionCode/sha256/size/applicationId), é um
+ * replay seguro — não reenvia APK/.sha256/metadata.json (imutáveis, nunca tocados de
+ * novo) e só ajusta latest.json se ainda não apontar para esta mesma release e nenhuma
+ * versão mais nova já tiver sido publicada depois. Qualquer divergência falha fechado,
+ * sem tocar em nada remoto.
+ */
+async function handleExistingRelease({ storage, version, apkBuffer, sha256, metadata, log }) {
+  const remoteMetadataRaw = await storage.getObject(metadataKeyFor(version));
+  const remoteMetadata = JSON.parse(remoteMetadataRaw.toString('utf8'));
+  assertRemoteReleaseMatchesLocal(remoteMetadata, {
+    version,
+    versionCode: metadata.versionCode,
+    sha256,
+    size: apkBuffer.byteLength,
+    applicationId: metadata.applicationId,
+  });
+
+  log(`Release ${version} já publicada com o mesmo artefato; nada para reenviar.`);
+
+  const latestPointer = {
+    version,
+    versionCode: remoteMetadata.versionCode,
+    key: releaseKeyFor(version),
+    sha256,
+    size: apkBuffer.byteLength,
+    applicationId: remoteMetadata.applicationId,
+    createdAt: remoteMetadata.createdAt,
+  };
+
+  const currentLatest = await readCurrentLatest(storage);
+  const latestAlreadyCorrect =
+    currentLatest &&
+    currentLatest.version === version &&
+    currentLatest.versionCode === remoteMetadata.versionCode &&
+    currentLatest.sha256 === sha256;
+  if (latestAlreadyCorrect) {
+    log(`latest.json já aponta para ${version} — nada para atualizar.`);
+    return { ...latestPointer, idempotent: true };
+  }
+
+  if (currentLatest && currentLatest.versionCode > remoteMetadata.versionCode) {
+    log(
+      `latest.json aponta para uma versão mais nova (versionCode ${currentLatest.versionCode}) — mantido sem alteração.`,
+    );
+    return { ...latestPointer, idempotent: true };
+  }
+
+  await storage.putObject(LATEST_KEY, Buffer.from(`${JSON.stringify(latestPointer, null, 2)}\n`), 'application/json');
+  log(`latest.json atualizado para ${version} (versionCode ${remoteMetadata.versionCode}).`);
+  return { ...latestPointer, idempotent: true };
+}
+
+/**
+ * Publica uma release de forma imutável: se a versão já existir com o MESMO artefato,
+ * trata como sucesso idempotente (seguro para retry); se existir com artefato diferente,
+ * falha fechado sem tocar em nada remoto. Verifica o objeto remoto após o upload de uma
+ * release nova e só então substitui o ponteiro latest.json via PUT direto (storage.putObject,
+ * nunca delete+put) — latest.json é a única exceção que pode ser sobrescrita, pois é apenas
+ * um ponteiro/metadado, nunca o APK em si.
  */
 export async function publishRelease({ storage, version, apkBuffer, sha256, metadata, confirm, log = () => {} }) {
   assertValidVersion(version);
@@ -84,9 +173,7 @@ export async function publishRelease({ storage, version, apkBuffer, sha256, meta
   const apkKey = releaseKeyFor(version);
   const existing = await storage.headObject(apkKey);
   if (existing.exists) {
-    throw new Error(
-      `Release ${version} já existe no bucket — publicação é imutável e não pode ser sobrescrita.`,
-    );
+    return handleExistingRelease({ storage, version, apkBuffer, sha256, metadata, log });
   }
 
   const currentLatest = await readCurrentLatest(storage);
