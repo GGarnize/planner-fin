@@ -11,9 +11,10 @@
 
   Segredos (senha da keystore, senha da key, credenciais do Railway Bucket) nunca sao
   aceitos por argumento de linha de comando nem impressos no console/log. Sao lidos via
-  prompt sem eco (Read-Host -AsSecureString) e persistidos no Windows Credential Manager
-  do usuario atual. Dados nao secretos (URLs, caminhos, nomes de bucket/regiao) ficam em
-  texto plano fora do repo, em C:\Users\<usuario>\.planner-fin\release-config.json.
+  prompt sem eco (Read-Host -AsSecureString) e persistidos cifrados com DPAPI (CurrentUser)
+  em C:\Users\<usuario>\.planner-fin\secrets.dat (ver scripts/android/windows-credentials.ps1).
+  Dados nao secretos (URLs, caminhos, nomes de bucket/regiao) ficam em texto plano fora do
+  repo, em C:\Users\<usuario>\.planner-fin\release-config.json.
 
   Nenhuma etapa aqui faz push, merge ou cria tag git.
 #>
@@ -154,7 +155,7 @@ function Assert-SigningSecretsPresent {
   param($Secrets)
   $missing = @('KeystorePassword', 'KeyPassword') | Where-Object { -not $Secrets[$_] }
   if ($missing.Count -gt 0) {
-    throw "Segredo(s) de assinatura ausente(s) no Credential Manager: $($missing -join ', '). Rode 'pnpm android:release:setup'."
+    throw "Segredo(s) de assinatura ausente(s) no armazenamento local: $($missing -join ', '). Rode 'pnpm android:release:setup'."
   }
 }
 
@@ -162,7 +163,7 @@ function Assert-BucketSecretsPresent {
   param($Secrets)
   $missing = @('RailwayBucketAccessKey', 'RailwayBucketSecretKey') | Where-Object { -not $Secrets[$_] }
   if ($missing.Count -gt 0) {
-    throw "Credencial(is) do Railway Bucket ausente(s) no Credential Manager: $($missing -join ', '). Rode 'pnpm android:release:setup'."
+    throw "Credencial(is) do Railway Bucket ausente(s) no armazenamento local: $($missing -join ', '). Rode 'pnpm android:release:setup'."
   }
 }
 
@@ -343,19 +344,52 @@ function Invoke-SetupCommand {
   Write-Host "Config nao secreta salva em $script:ConfigPath"
   Write-Host ''
 
-  if (Confirm-YesNo 'Configurar/atualizar a senha da keystore agora?' -DefaultYes) {
-    Set-PlannerFinCredential -Name $script:SecretTargets.KeystorePassword -SecureValue (Read-Host -Prompt 'Senha da keystore' -AsSecureString)
-  }
-  if (Confirm-YesNo 'Configurar/atualizar a senha da key agora?' -DefaultYes) {
-    Set-PlannerFinCredential -Name $script:SecretTargets.KeyPassword -SecureValue (Read-Host -Prompt 'Senha da key' -AsSecureString)
-  }
-  if (Confirm-YesNo 'Configurar/atualizar credenciais do Railway Bucket agora?' -DefaultYes) {
-    Set-PlannerFinCredential -Name $script:SecretTargets.RailwayBucketAccessKey -SecureValue (Read-Host -Prompt 'ACCESS_KEY_ID do bucket' -AsSecureString)
-    Set-PlannerFinCredential -Name $script:SecretTargets.RailwayBucketSecretKey -SecureValue (Read-Host -Prompt 'SECRET_ACCESS_KEY do bucket' -AsSecureString)
-  }
+  $outcomes = [ordered]@{}
+  $outcomes['Senha da keystore'] = Set-PlannerFinSecretIfRequested -Target $script:SecretTargets.KeystorePassword -Label 'senha da keystore' -PromptText 'Senha da keystore'
+  $outcomes['Senha da key'] = Set-PlannerFinSecretIfRequested -Target $script:SecretTargets.KeyPassword -Label 'senha da key' -PromptText 'Senha da key'
+  $outcomes['ACCESS_KEY_ID do bucket'] = Set-PlannerFinSecretIfRequested -Target $script:SecretTargets.RailwayBucketAccessKey -Label 'ACCESS_KEY_ID do bucket' -PromptText 'ACCESS_KEY_ID do bucket'
+  $outcomes['SECRET_ACCESS_KEY do bucket'] = Set-PlannerFinSecretIfRequested -Target $script:SecretTargets.RailwayBucketSecretKey -Label 'SECRET_ACCESS_KEY do bucket' -PromptText 'SECRET_ACCESS_KEY do bucket'
 
   Write-Host ''
+  $failedLabels = $outcomes.GetEnumerator() | Where-Object { $_.Value -eq 'failed' } | ForEach-Object { $_.Key }
+  if ($failedLabels) {
+    Write-Host "Atencao: NAO foram salvos: $($failedLabels -join ', '). Os demais segredos ja salvos nao foram afetados. Rode 'pnpm android:release:setup' novamente para tentar de novo so esses." -ForegroundColor Yellow
+  }
   Write-Host "Setup concluido. Rode 'pnpm android:release:doctor' para validar." -ForegroundColor Green
+}
+
+function Set-PlannerFinSecretIfRequested {
+  <#
+    Pergunta antes de mexer em cada segredo individualmente. O default da pergunta muda
+    conforme o estado atual: 'configurar' (default sim) se ainda nao existe, 'atualizar'
+    (default nao) se ja existe - para reexecucoes do setup pularem, por padrao, o que ja
+    esta configurado sem exigir redigitar tudo de novo. Grava um segredo por vez: uma falha
+    aqui nunca apaga nem afeta os outros tres, ja que cada Set-PlannerFinCredential so
+    atualiza a propria chave no arquivo de segredos. Depois de gravar, faz um round-trip de
+    presenca (nunca de valor) para confirmar que a gravacao realmente "pegou" antes de
+    reportar sucesso. Retorna 'saved' | 'skipped' | 'failed'.
+  #>
+  param(
+    [Parameter(Mandatory = $true)][string] $Target,
+    [Parameter(Mandatory = $true)][string] $Label,
+    [Parameter(Mandatory = $true)][string] $PromptText
+  )
+  $alreadyConfigured = Test-PlannerFinCredential -Name $Target
+  $question = if ($alreadyConfigured) { "$Label ja esta configurada. Atualizar agora?" } else { "Configurar $Label agora?" }
+  if (-not (Confirm-YesNo $question -DefaultYes:(-not $alreadyConfigured))) {
+    return 'skipped'
+  }
+  try {
+    Set-PlannerFinCredential -Name $Target -SecureValue (Read-Host -Prompt $PromptText -AsSecureString)
+    if (-not (Test-PlannerFinCredential -Name $Target)) {
+      throw 'gravado, mas a releitura de presenca falhou logo em seguida.'
+    }
+    Write-Host "  [OK] $Label salva e confirmada." -ForegroundColor Green
+    return 'saved'
+  } catch {
+    Write-Host "  [FALHOU] $Label NAO foi salva: $($_.Exception.Message)" -ForegroundColor Red
+    return 'failed'
+  }
 }
 
 function Write-DoctorLine {
@@ -444,14 +478,21 @@ function Invoke-DoctorCommand {
     }
   }
 
+  if (Test-PlannerFinSecretsBackend) {
+    Write-DoctorLine 'OK' 'Backend local de segredos (DPAPI) funcional (round-trip sintetico interno).'
+  } else {
+    Write-DoctorLine 'FAIL' 'Backend local de segredos (DPAPI) nao esta funcional neste ambiente.'
+    $failed = $true
+  }
+
   $secrets = Get-ResolvedSecrets
   foreach ($name in @('KeystorePassword', 'KeyPassword')) {
-    if ($secrets[$name]) { Write-DoctorLine 'OK' "Segredo '$name' presente no Credential Manager." }
-    else { Write-DoctorLine 'FAIL' "Segredo '$name' ausente no Credential Manager."; $failed = $true }
+    if ($secrets[$name]) { Write-DoctorLine 'OK' "Segredo '$name': presente." }
+    else { Write-DoctorLine 'FAIL' "Segredo '$name': ausente."; $failed = $true }
   }
   foreach ($name in @('RailwayBucketAccessKey', 'RailwayBucketSecretKey')) {
-    if ($secrets[$name]) { Write-DoctorLine 'OK' "Segredo '$name' presente no Credential Manager." }
-    else { Write-DoctorLine 'WARN' "Segredo '$name' ausente no Credential Manager (publish ficara indisponivel)." }
+    if ($secrets[$name]) { Write-DoctorLine 'OK' "Segredo '$name': presente." }
+    else { Write-DoctorLine 'WARN' "Segredo '$name': ausente (publish ficara indisponivel)." }
   }
 
   try {

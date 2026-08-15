@@ -7,7 +7,7 @@ elimina o ritual manual de configurar variaveis de ambiente, fazer bump de versa
 buildar, instalar via adb e publicar uma release Android do PlannerFin. Complementa
 `docs/runbooks/ANDROID-RELEASE-BUCKET.md` (que documenta o build/publish em si) — este
 runbook cobre apenas a orquestracao local: descoberta de SDK/build-tools, persistencia de
-config nao secreta, segredos no Windows Credential Manager e o fluxo interativo de release.
+config nao secreta, segredos protegidos por DPAPI e o fluxo interativo de release.
 
 Nenhuma release real foi publicada, nenhuma keystore foi gerada/alterada e nenhuma
 credencial do Railway Bucket foi criada/resetada pela implementacao desta automacao.
@@ -15,33 +15,57 @@ credencial do Railway Bucket foi criada/resetada pela implementacao desta automa
 ## Por que nao usar o Railway CLI para as credenciais do bucket
 
 A spec original avaliou duas opcoes para evitar duplicar segredos localmente: (1) Railway
-CLI autenticado buscando credenciais do bucket sob demanda, ou (2) Windows Credential
-Manager. O Railway CLI nao esta instalado neste ambiente (`railway --version` falha) e
+CLI autenticado buscando credenciais do bucket sob demanda, ou (2) um backend local de
+segredos. O Railway CLI nao esta instalado neste ambiente (`railway --version` falha) e
 adotar essa dependencia exigiria login interativo adicional e manter um token amplo de
 projeto Railway localmente — uma superficie de segredo maior do que as quatro credenciais
-pontuais hoje necessarias. Por isso a automacao usa o Windows Credential Manager
-diretamente, sem dependencia de CLI externo.
+pontuais hoje necessarias. Por isso a automacao usa um backend local de segredos, sem
+dependencia de CLI externo.
+
+## Por que DPAPI e nao o Windows Credential Manager
+
+A primeira versao desta automacao gravava os quatro segredos no Windows Credential Manager
+via P/Invoke de `CredWriteW`. Isso quebrou na pratica: `CredWriteW` falha
+deterministicamente com `ERROR_NOT_ENOUGH_MEMORY` (Win32 8) para blobs acima de
+~120 caracteres neste ambiente — bem abaixo do limite documentado de 2560 bytes para
+`CRED_TYPE_GENERIC`. O diagnostico (`scripts/android/windows-credentials.selftest.ps1`)
+reproduziu a falha de forma isolada (targets novos, sem reuso) e confirmou que o limite e
+por tamanho do blob, nao por target ou por numero de gravacoes; testar duas tecnicas de
+marshaling diferentes (`AllocHGlobal`+`Marshal.Copy` e `byte[]` pinado via `GCHandle`)
+reproduziu exatamente o mesmo limite, descartando um bug no nosso P/Invoke. Como uma
+Railway access key/secret key realista fica bem acima de 120 caracteres, `CredWriteW` nao e
+confiavel para este caso de uso.
+
+A automacao agora usa **DPAPI** (`System.Security.Cryptography.ProtectedData`,
+`DataProtectionScope.CurrentUser`) diretamente, sem essa limitacao — validado ate 300+
+caracteres no self-test. Qualquer segredo que ja tivesse sido gravado com sucesso no
+Credential Manager pela versao anterior (tipicamente as senhas de assinatura, mais curtas)
+e migrado em silencio na primeira leitura: `Get-PlannerFinCredential` le do Credential
+Manager legado, grava em `secrets.dat` e remove a entrada legada — sem nunca exibir o
+valor. Nao ha necessidade de redigitar segredos que ja funcionavam.
 
 ## Onde cada coisa mora
 
 | Dado | Local | Versionado? |
 |---|---|---|
 | Logica pura (semver, versionCode, descoberta de build-tools, config nao secreta) | `scripts/android/release-helpers.mjs` (+ `.test.mjs`) | Sim |
-| Wrapper do Credential Manager (P/Invoke, sem modulo externo) | `scripts/android/windows-credentials.ps1` | Sim |
+| Backend de segredos (DPAPI + migracao legada, sem modulo externo) | `scripts/android/windows-credentials.ps1` (+ `.selftest.ps1`) | Sim |
 | Orquestracao principal (setup/doctor/release/build/publish/commit) | `scripts/android-release.ps1` | Sim |
 | Config nao secreta (URLs, caminhos, bucket/endpoint/region) | `C:\Users\<usuario>\.planner-fin\release-config.json` | Nao (fora do repo) |
 | Keystore de release | `C:\Users\<usuario>\.planner-fin\signing\planner-fin-release.jks` | Nao (fora do repo, `.gitignore` ja cobre `*.jks`) |
-| Senha da keystore / senha da key / credenciais do bucket | Windows Credential Manager (`PlannerFin/*`) | Nao (fora do repo, DPAPI local do usuario) |
+| Senha da keystore / senha da key / credenciais do bucket | `C:\Users\<usuario>\.planner-fin\secrets.dat` (cada valor cifrado individualmente com DPAPI) | Nao (fora do repo; so contem ciphertext base64, nunca texto plano) |
 | `sdk.dir` do Gradle | `apps/web/android/local.properties` (auto-sincronizado com `androidSdkDir`) | Nao (ja no `.gitignore`) |
 
 Nenhum segredo e aceito por argumento de linha de comando nem impresso no console/log —
-senhas usam `Read-Host -AsSecureString` (sem eco) e sao lidas do Credential Manager apenas
-para exportacao como variavel de ambiente do processo filho `pnpm`/`gradlew`, nunca escritas
-em arquivo ou stdout.
+senhas usam `Read-Host -AsSecureString` (sem eco); `secrets.dat` so guarda ciphertext e so
+pode ser decifrado pelo mesmo usuario Windows que gravou (DPAPI `CurrentUser`); a gravacao e
+atomica (arquivo temporario + `Move-Item`, nunca truncamento no meio de uma escrita); os
+valores em texto plano so existem em memoria pelo tempo minimo necessario para exportar como
+variavel de ambiente do processo filho `pnpm`/`gradlew`.
 
-### Entradas no Windows Credential Manager
+### Nomes usados em `secrets.dat`
 
-| Nome (`TargetName`) | Uso |
+| Chave | Uso |
 |---|---|
 | `PlannerFin/KeystorePassword` | `PLANNER_FIN_KEYSTORE_PASSWORD` |
 | `PlannerFin/KeyPassword` | `PLANNER_FIN_KEY_PASSWORD` |
@@ -51,14 +75,26 @@ em arquivo ou stdout.
 ## Comandos
 
 ```powershell
-pnpm android:release:setup    # configura release-config.json + segredos (interativo)
-pnpm android:release:doctor   # valida tudo sem alterar nada (SDK, build-tools, keystore, segredos, versao)
-pnpm android:release          # fluxo completo: bump -> build -> instalar (opcional) -> publish (com confirmacao dupla)
+pnpm android:release:setup             # configura release-config.json + segredos (interativo)
+pnpm android:release:doctor            # valida tudo sem alterar nada (SDK, build-tools, keystore, segredos, versao)
+pnpm android:release                   # fluxo completo: bump -> build -> instalar (opcional) -> publish (com confirmacao dupla)
+pnpm android:release:secrets:selftest  # diagnostico do backend de segredos com valores SINTETICOS (nunca reais)
 ```
 
 `scripts/android-release.ps1` tambem aceita `-Command build`, `-Command publish` e
 `-Command commit` para rodar so uma etapa (uteis depois de um bump manual ou para
 reexecutar so o publish).
+
+### `setup` e reexecucao segura
+
+`setup` pergunta por cada um dos quatro segredos individualmente, com o default da
+pergunta ajustado ao estado atual: se o segredo ja esta configurado, pergunta se deve
+**atualizar** (default nao — reexecutar o setup nao redigita nada sem necessidade); se
+ainda nao esta, pergunta se deve **configurar** (default sim). Cada gravacao e feita uma de
+cada vez e confirmada com um round-trip de presenca (nunca de valor) logo em seguida; se
+uma gravacao falhar, o setup mostra claramente qual segredo nao foi salvo e continua com os
+demais — os outros tres, ja salvos com sucesso, nunca sao apagados ou afetados por essa
+falha (cada segredo e uma chave independente em `secrets.dat`).
 
 ### Descoberta de build-tools
 
@@ -127,17 +163,27 @@ Toda essa logica (parse/gravacao/comparacao) e pura e testada em
 
 ```powershell
 node --test scripts/android/release-helpers.test.mjs
+pnpm android:release:secrets:selftest   # backend de segredos, so valores sinteticos
 pnpm test        # inclui test:dx, que ja cobre scripts/android/*.test.mjs
 pnpm lint
 pnpm typecheck
 git diff --check
 ```
 
+`windows-credentials.selftest.ps1` nao esta no `test:dx` (e PowerShell, nao Node) — rode-o
+manualmente sempre que mexer em `scripts/android/windows-credentials.ps1`. Ele so usa
+targets sinteticos com prefixo `_SelfTest*` mais um round-trip sintetico no target real do
+Railway access key (nunca com valor real), confirma que um segredo de producao
+pre-existente nesse mesmo target nao e afetado, e verifica via transcript que nenhum valor
+sintetico usado aparece na saida impressa.
+
 ## Troubleshooting
 
 | Sintoma | Causa/acao |
 |---|---|
-| `doctor` reporta `FAIL` em segredo do Credential Manager | Rode `pnpm android:release:setup` novamente. |
+| `doctor` reporta `FAIL` em segredo | Rode `pnpm android:release:setup` novamente (so precisa reconfigurar o que falhou). |
+| `doctor` reporta `FAIL` "Backend local de segredos (DPAPI) nao esta funcional" | Rode `pnpm android:release:secrets:selftest` para diagnosticar; provavelmente um problema de permissao em `C:\Users\<usuario>\.planner-fin\`. |
+| `setup` reporta "NAO foi salvo" para um segredo | O erro especifico aparece na linha `[FALHOU]`; os demais segredos ja salvos nao sao afetados — rode `setup` de novo para tentar so o que falhou. |
 | `doctor` reporta `FAIL` em build-tools | Instale uma versao de build-tools que contenha `apksigner.bat` e `aapt.exe` (`sdkmanager --install "build-tools;35.0.0"`). |
 | `doctor` reporta `FAIL` "local.properties aponta para X, mas a config aponta para Y" | Rode `pnpm android:release:build` (ou `android:release`) para sincronizar automaticamente, ou edite `sdk.dir` manualmente. |
 | `release` para em "Repositorio nao esta limpo" | Commite ou descarte alteracoes fora dos dois arquivos de bump antes de rodar de novo. |
@@ -147,5 +193,8 @@ git diff --check
 ## Rollback
 
 Reverta o commit desta unidade com `git revert <commit>`. Nenhum segredo, keystore ou
-release real foi criado por esta automacao; `release-config.json` e as entradas do
-Credential Manager ficam fora do repositorio e nao sao afetados pelo revert do codigo.
+release real foi criado por esta automacao; `release-config.json` e `secrets.dat` ficam
+fora do repositorio e nao sao afetados pelo revert do codigo. Reverter o codigo NAO desfaz
+uma migracao de segredo ja feita (Credential Manager -> `secrets.dat`); isso e esperado, ja
+que a migracao so move um segredo que o usuario ja possuia entre dois locais igualmente
+locais e privados.
