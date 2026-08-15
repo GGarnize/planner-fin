@@ -50,7 +50,8 @@ valor. Nao ha necessidade de redigitar segredos que ja funcionavam.
 |---|---|---|
 | Logica pura (semver, versionCode, descoberta de build-tools, config nao secreta) | `scripts/android/release-helpers.mjs` (+ `.test.mjs`) | Sim |
 | Backend de segredos (DPAPI + migracao legada, sem modulo externo) | `scripts/android/windows-credentials.ps1` (+ `.selftest.ps1`) | Sim |
-| Orquestracao principal (setup/doctor/release/build/publish/commit) | `scripts/android-release.ps1` | Sim |
+| Funcoes da automacao (setup/doctor/release/build/publish/commit) | `scripts/android-release.lib.ps1` (+ `.selftest.ps1`) | Sim |
+| Entrypoint fino (param + dispatch) | `scripts/android-release.ps1` | Sim |
 | Config nao secreta (URLs, caminhos, bucket/endpoint/region) | `C:\Users\<usuario>\.planner-fin\release-config.json` | Nao (fora do repo) |
 | Keystore de release | `C:\Users\<usuario>\.planner-fin\signing\planner-fin-release.jks` | Nao (fora do repo, `.gitignore` ja cobre `*.jks`) |
 | Senha da keystore / senha da key / credenciais do bucket | `C:\Users\<usuario>\.planner-fin\secrets.dat` (cada valor cifrado individualmente com DPAPI) | Nao (fora do repo; so contem ciphertext base64, nunca texto plano) |
@@ -164,18 +165,30 @@ Toda essa logica (parse/gravacao/comparacao) e pura e testada em
 ```powershell
 node --test scripts/android/release-helpers.test.mjs
 pnpm android:release:secrets:selftest   # backend de segredos, so valores sinteticos
+pnpm android:release:lib:selftest       # funcoes de android-release.lib.ps1 sob StrictMode
 pnpm test        # inclui test:dx, que ja cobre scripts/android/*.test.mjs
 pnpm lint
 pnpm typecheck
 git diff --check
 ```
 
-`windows-credentials.selftest.ps1` nao esta no `test:dx` (e PowerShell, nao Node) — rode-o
-manualmente sempre que mexer em `scripts/android/windows-credentials.ps1`. Ele so usa
-targets sinteticos com prefixo `_SelfTest*` mais um round-trip sintetico no target real do
-Railway access key (nunca com valor real), confirma que um segredo de producao
-pre-existente nesse mesmo target nao e afetado, e verifica via transcript que nenhum valor
-sintetico usado aparece na saida impressa.
+Nenhum dos dois `.selftest.ps1` esta no `test:dx` (e PowerShell, nao Node) — rode-os
+manualmente sempre que mexer nos arquivos correspondentes.
+
+`windows-credentials.selftest.ps1` so usa targets sinteticos com prefixo `_SelfTest*` mais
+um round-trip sintetico no target real do Railway access key (nunca com valor real),
+confirma que um segredo de producao pre-existente nesse mesmo target nao e afetado, e
+verifica via transcript que nenhum valor sintetico usado aparece na saida impressa.
+
+`android-release.lib.selftest.ps1` dot-sourceia so `android-release.lib.ps1` (nunca o
+entrypoint `android-release.ps1`, que dispararia um comando real) sob
+`Set-StrictMode -Version Latest` — a mesma configuracao do entrypoint real — e cobre o bug
+ja corrigido uma vez nesta automacao: `Assert-SigningSecretsPresent`/
+`Assert-BucketSecretsPresent`/`Get-ConnectedAdbDeviceCount` derivam de
+`... | Where-Object {...}`, e sob StrictMode um pipeline com zero ou exatamente um
+resultado nao retorna uma colecao (retorna `$null` ou um escalar) — `.Count` nesses casos
+lanca `PropertyNotFoundStrict`. O teste cobre explicitamente 0/1/2 segredos faltando e
+0/1/2 dispositivos ADB conectados (com linhas sinteticas, sem precisar de device real).
 
 ## Troubleshooting
 
@@ -189,6 +202,7 @@ sintetico usado aparece na saida impressa.
 | `release` para em "Repositorio nao esta limpo" | Commite ou descarte alteracoes fora dos dois arquivos de bump antes de rodar de novo. |
 | `release` mostra "Release pendente detectada" | Uma tentativa anterior ja bumpou a versao mas o build/publish nao terminou — responda "sim" para retomar exatamente essa versao (nunca bumpa de novo), ou recuse e confirme o descarte para calcular um bump novo. |
 | `release` para em "Segredo obrigatorio ausente" | Falha fechada intencional — nenhuma variavel de assinatura/bucket e exportada sem o segredo correspondente presente. |
+| `release` falha logo no inicio com `A propriedade 'Count' nao foi encontrada` | Bug ja corrigido nesta automacao (`Assert-SigningSecretsPresent`/`Assert-BucketSecretsPresent` usavam `.Count` sobre um pipeline `Where-Object` que colapsa para `$null`/escalar com 0 ou 1 resultado sob `Set-StrictMode -Version Latest`). Se reaparecer, rode `pnpm android:release:lib:selftest` para localizar o ponto exato. |
 
 ## Rollback
 
