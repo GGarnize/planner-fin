@@ -170,10 +170,18 @@ async function refreshOnce(): Promise<void> {
   return refreshPromise;
 }
 
+const MUTABLE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
 export async function authenticatedFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const method = (init.method ?? 'GET').toUpperCase();
   const retryAllowed = method === 'GET' || method === 'HEAD';
-  const headers = { ...init.headers, Authorization: `Bearer ${authState.token ?? ''}` };
+  const mutating = MUTABLE_METHODS.has(method);
+  if (mutating && !authState.csrfToken) await bootstrapCsrf();
+  const headers = {
+    ...init.headers,
+    Authorization: `Bearer ${authState.token ?? ''}`,
+    ...(mutating ? { 'X-CSRF-Token': authState.csrfToken } : {}),
+  };
   let response = await fetch(`${api}${path}`, {
     ...init,
     headers,

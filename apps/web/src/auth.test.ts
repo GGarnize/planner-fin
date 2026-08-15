@@ -224,12 +224,86 @@ describe('auth client Android/web', () => {
   it('não repete mutações automaticamente após 401', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response('{}', { status: 401 }));
     vi.stubGlobal('fetch', fetch);
-    const { authenticatedFetch } = await loadAuth();
+    const { authenticatedFetch, authState } = await loadAuth();
+    authState.csrfToken = 'csrf-existente';
 
     const response = await authenticatedFetch('/accounts', { method: 'POST' });
 
     expect(response.status).toBe(401);
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('GET autenticado não envia X-CSRF-Token', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    const { authenticatedFetch, authState } = await loadAuth();
+    authState.token = 'access-token';
+    authState.csrfToken = 'csrf-existente';
+
+    await authenticatedFetch('/accounts');
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [, init] = fetch.mock.calls[0]!;
+    expect((init.headers as Record<string, string>)['X-CSRF-Token']).toBeUndefined();
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer access-token');
+  });
+
+  it('POST autenticado envia o X-CSRF-Token já existente sem novo bootstrap', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    const { authenticatedFetch, authState } = await loadAuth();
+    authState.token = 'access-token';
+    authState.csrfToken = 'csrf-existente';
+
+    await authenticatedFetch('/accounts', { method: 'POST', body: JSON.stringify({ name: 'x' }) });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(url).toBe('http://localhost:3000/api/accounts');
+    expect((init.headers as Record<string, string>)['X-CSRF-Token']).toBe('csrf-existente');
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer access-token');
+  });
+
+  it('POST sem CSRF token faz bootstrap antes de enviar a requisição', async () => {
+    const fetch = vi.fn(async (...args: Parameters<typeof globalThis.fetch>) => {
+      const url = args[0];
+      if (String(url).endsWith('/auth/csrf'))
+        return new Response(JSON.stringify({ csrfToken: 'csrf-novo' }), { status: 200 });
+      return new Response('{}', { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetch);
+    const { authenticatedFetch, authState } = await loadAuth();
+    authState.token = 'access-token';
+
+    await authenticatedFetch('/notification-devices/bind', { method: 'POST', body: '{}' });
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[0]![0]).toBe('http://localhost:3000/api/auth/csrf');
+    const [url, init] = fetch.mock.calls[1]!;
+    expect(url).toBe('http://localhost:3000/api/notification-devices/bind');
+    expect((init!.headers as Record<string, string>)['X-CSRF-Token']).toBe('csrf-novo');
+    expect(authState.csrfToken).toBe('csrf-novo');
+  });
+
+  it('preserva headers do caller ao anexar Authorization e X-CSRF-Token', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    const { authenticatedFetch, authState } = await loadAuth();
+    authState.token = 'access-token';
+    authState.csrfToken = 'csrf-existente';
+
+    await authenticatedFetch('/notifications/ingest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'idem-1' },
+      body: '{}',
+    });
+
+    const [, init] = fetch.mock.calls[0]!;
+    const headers = init.headers as Record<string, string>;
+    expect(headers['Content-Type']).toBe('application/json');
+    expect(headers['Idempotency-Key']).toBe('idem-1');
+    expect(headers['X-CSRF-Token']).toBe('csrf-existente');
+    expect(headers.Authorization).toBe('Bearer access-token');
   });
 
   it('limpa a sessão sem repetir o GET quando o refresh após 401 falha', async () => {
