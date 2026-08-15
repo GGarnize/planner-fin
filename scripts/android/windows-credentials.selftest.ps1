@@ -3,8 +3,9 @@
   credenciais reais), nunca imprime nenhum valor de segredo, e sempre limpa os proprios
   targets de teste no final. Cobre: segredo curto, ~60 chars, ~128 chars (o cenario que
   quebrava CredWriteW nesta maquina - ver windows-credentials.ps1), o target real usado
-  pelo Railway access key (com valor sintetico, preservando qualquer segredo de producao
-  ja configurado nele), nao apagar segredo existente ao gravar outro, falha fechada quando
+  pelo Railway access key (com valor sintetico, restaurando pelo ciphertext bruto -- nunca
+  decifrado -- qualquer segredo de producao ja configurado nele), nao apagar segredo
+  existente ao gravar outro, falha fechada quando
   ausente, e uma verificacao real (via transcript) de que nenhum valor sintetico usado
   aparece na saida do proprio script.
 
@@ -62,16 +63,26 @@ function Invoke-SelfTestBody {
   Test-RoundTrip -Target 'PlannerFin/_SelfTest128' -Length 128 -Label 'segredo ~128 chars'
 
   # 2) O target exato usado pelo Railway access key -- valor SINTETICO, nunca real.
-  #    Precisa preservar qualquer segredo de producao ja configurado nesse mesmo target.
+  #    Test-RoundTrip sozinho TERMINA com o target removido (correto para targets
+  #    descartaveis, mas destrutivo se ja houver um segredo real de producao ali). Por
+  #    isso guardamos o CIPHERTEXT bruto de antes (nunca o valor decifrado) e restauramos
+  #    exatamente esse ciphertext depois do round-trip sintetico, em vez de deixar o
+  #    target apagado. Restaurar o ciphertext bruto (em vez de reconstruir via
+  #    Set-PlannerFinCredential) garante que o segredo original nunca precisa ser
+  #    decifrado neste teste.
   $prodTarget = 'PlannerFin/RailwayBucketAccessKey'
-  $hadProdSecretBefore = Test-PlannerFinCredential -Name $prodTarget
-  $prodValueBefore = if ($hadProdSecretBefore) { Get-PlannerFinCredential -Name $prodTarget } else { $null }
+  $prodCiphertextBefore = (Read-PlannerFinSecretsFile)[$prodTarget]
 
   Test-RoundTrip -Target $prodTarget -Length 60 -Label 'target real do Railway access key (valor sintetico)'
 
-  $prodValueAfter = if ($hadProdSecretBefore) { Get-PlannerFinCredential -Name $prodTarget } else { $null }
-  Assert-True (-not $hadProdSecretBefore -or ($prodValueBefore -ceq $prodValueAfter)) `
-    'segredo de producao pre-existente no mesmo target (se houver) nao foi afetado pelo self-test'
+  if ($null -ne $prodCiphertextBefore) {
+    $secretsToRestore = Read-PlannerFinSecretsFile
+    $secretsToRestore[$prodTarget] = $prodCiphertextBefore
+    Save-PlannerFinSecretsFile -Secrets $secretsToRestore
+  }
+  $prodCiphertextAfterRestore = (Read-PlannerFinSecretsFile)[$prodTarget]
+  Assert-True (($prodCiphertextBefore -ceq $prodCiphertextAfterRestore)) `
+    'segredo de producao pre-existente no mesmo target (se houver) foi restaurado byte-a-byte (ciphertext identico) apos o self-test'
 
   # 3) Gravar um segredo novo nao apaga/altera um segredo diferente ja existente
   #    (reexecucao do setup nunca deve perder segredo silenciosamente).

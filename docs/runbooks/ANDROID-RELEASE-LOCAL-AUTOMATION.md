@@ -79,12 +79,12 @@ variavel de ambiente do processo filho `pnpm`/`gradlew`.
 pnpm android:release:setup             # configura release-config.json + segredos (interativo)
 pnpm android:release:doctor            # valida tudo sem alterar nada (SDK, build-tools, keystore, segredos, versao)
 pnpm android:release                   # fluxo completo: bump -> build -> instalar (opcional) -> publish (com confirmacao dupla)
+pnpm android:release:commit            # so cria o commit local do bump ja gravado (chore: release Android X.Y.Z), sem push
 pnpm android:release:secrets:selftest  # diagnostico do backend de segredos com valores SINTETICOS (nunca reais)
 ```
 
-`scripts/android-release.ps1` tambem aceita `-Command build`, `-Command publish` e
-`-Command commit` para rodar so uma etapa (uteis depois de um bump manual ou para
-reexecutar so o publish).
+`scripts/android-release.ps1` tambem aceita `-Command build` e `-Command publish` para
+rodar so uma etapa (uteis depois de um bump manual ou para reexecutar so o publish).
 
 ### `setup` e reexecucao segura
 
@@ -176,9 +176,15 @@ Nenhum dos dois `.selftest.ps1` esta no `test:dx` (e PowerShell, nao Node) — r
 manualmente sempre que mexer nos arquivos correspondentes.
 
 `windows-credentials.selftest.ps1` so usa targets sinteticos com prefixo `_SelfTest*` mais
-um round-trip sintetico no target real do Railway access key (nunca com valor real),
-confirma que um segredo de producao pre-existente nesse mesmo target nao e afetado, e
-verifica via transcript que nenhum valor sintetico usado aparece na saida impressa.
+um round-trip sintetico no target real do Railway access key (nunca com valor real). Se ja
+houver um segredo real nesse target, o self-test guarda o **ciphertext bruto** de antes
+(nunca decifra o valor), faz o round-trip sintetico, e restaura esse ciphertext exato
+depois — nunca deixa o target apagado. (Uma versao anterior deste self-test tinha esse
+comportamento invertido: reaproveitava o helper generico de round-trip, que termina
+removendo o target — o que apagava de fato um segredo real ja configurado ali em vez de
+preserva-lo. Corrigido; se isso acontecer de novo, `pnpm android:release:setup` reconfigura
+so o segredo afetado.) O self-test tambem verifica via transcript que nenhum valor
+sintetico usado aparece na saida impressa.
 
 `android-release.lib.selftest.ps1` dot-sourceia so `android-release.lib.ps1` (nunca o
 entrypoint `android-release.ps1`, que dispararia um comando real) sob
