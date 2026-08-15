@@ -155,6 +155,14 @@ const ALLOWED_RELEASE_BUMP_PATHS = new Set([
   'apps/web/android/version.json',
 ]);
 
+/** Extrai os paths (relativos, `/` normalizado) de uma saída `git status --porcelain`. */
+export function parsePorcelainPaths(porcelainOutput) {
+  return String(porcelainOutput ?? '')
+    .split(/\r?\n/)
+    .filter((line) => line.length > 0)
+    .map((line) => line.slice(3).trim().replaceAll('\\', '/'));
+}
+
 /**
  * Recebe a saída de `git status --porcelain` (já como string) e garante que o repositório
  * está limpo, ou que as únicas alterações pendentes sejam os arquivos de bump de versão
@@ -162,19 +170,119 @@ const ALLOWED_RELEASE_BUMP_PATHS = new Set([
  * a release automatizada.
  */
 export function assertRepoCleanForRelease(porcelainOutput, allowedPaths = ALLOWED_RELEASE_BUMP_PATHS) {
-  const lines = String(porcelainOutput ?? '')
-    .split(/\r?\n/)
-    .filter((line) => line.length > 0);
-  const unexpected = lines.filter((line) => {
-    const path = line.slice(3).trim().replaceAll('\\', '/');
-    return !allowedPaths.has(path);
-  });
+  const paths = parsePorcelainPaths(porcelainOutput);
+  const unexpected = paths.filter((path) => !allowedPaths.has(path));
   if (unexpected.length) {
     throw new Error(
       `Repositório não está limpo para release automatizada. Arquivos inesperados: ${unexpected.join(', ')}`,
     );
   }
-  return lines;
+  return paths;
+}
+
+/**
+ * Diferencia três estados do repositório antes de sugerir um bump, para nunca incrementar
+ * a versão duas vezes numa retomada:
+ *  - "clean": nada modificado — fluxo normal de bump a partir do HEAD.
+ *  - "pending-bump": só os dois arquivos de bump previstos estão modificados E a
+ *    versão/versionCode do working tree já difere do HEAD — uma tentativa anterior já
+ *    bumpou mas não terminou (build/publish falhou). O chamador deve oferecer retomar
+ *    exatamente essa versão pendente, nunca sugerir um novo next-patch em cima dela.
+ *  - "blocked": há arquivo inesperado fora do bump previsto, OU os dois arquivos de bump
+ *    foram tocados sem mudança real de versão/versionCode (estado ambíguo demais para
+ *    decidir automaticamente).
+ */
+export function detectReleaseResumeState({
+  porcelainOutput,
+  headVersion,
+  headVersionCode,
+  workingVersion,
+  workingVersionCode,
+  allowedPaths = ALLOWED_RELEASE_BUMP_PATHS,
+}) {
+  const paths = parsePorcelainPaths(porcelainOutput);
+  if (paths.length === 0) {
+    return { state: 'clean' };
+  }
+
+  const unexpectedFiles = paths.filter((path) => !allowedPaths.has(path));
+  if (unexpectedFiles.length) {
+    return { state: 'blocked', unexpectedFiles };
+  }
+
+  const versionChanged = workingVersion !== headVersion || workingVersionCode !== headVersionCode;
+  if (!versionChanged) {
+    return {
+      state: 'blocked',
+      unexpectedFiles: paths,
+      reason:
+        'Arquivos de bump foram modificados, mas versão/versionCode não mudaram em relação ao HEAD.',
+    };
+  }
+
+  return {
+    state: 'pending-bump',
+    baseVersion: headVersion,
+    baseVersionCode: headVersionCode,
+    pendingVersion: workingVersion,
+    pendingVersionCode: workingVersionCode,
+  };
+}
+
+const SDK_DIR_LINE_PATTERN = /^[ \t]*sdk\.dir[ \t]*=[ \t]*(.*)$/m;
+
+export function normalizeSdkDirForProperties(sdkDir) {
+  return String(sdkDir).replaceAll('\\', '\\\\');
+}
+
+/** Lê o valor de sdk.dir de um conteúdo de local.properties, já des-escapado (`\\` -> `\`). */
+export function parseSdkDirFromLocalProperties(content) {
+  const match = SDK_DIR_LINE_PATTERN.exec(content ?? '');
+  if (!match) return null;
+  return match[1].trim().replaceAll('\\\\', '\\');
+}
+
+function normalizePathForCompare(path) {
+  return String(path ?? '')
+    .trim()
+    .replace(/[\\/]+$/, '')
+    .toLowerCase();
+}
+
+/**
+ * Compara o sdk.dir efetivo de local.properties com o androidSdkDir configurado.
+ * `content` é `null`/`undefined` quando o arquivo não existe (nunca uma string vazia
+ * ambígua) — o chamador decide isso a partir de um Test-Path antes de ler o arquivo.
+ */
+export function checkLocalPropertiesSdkDir(content, desiredSdkDir) {
+  if (content === null || content === undefined) {
+    return { status: 'missing', currentSdkDir: null };
+  }
+  const currentSdkDir = parseSdkDirFromLocalProperties(content);
+  if (!currentSdkDir) {
+    return { status: 'missing_key', currentSdkDir: null };
+  }
+  if (normalizePathForCompare(currentSdkDir) === normalizePathForCompare(desiredSdkDir)) {
+    return { status: 'ok', currentSdkDir };
+  }
+  return { status: 'stale', currentSdkDir };
+}
+
+/**
+ * Constrói o novo conteúdo de local.properties com sdk.dir apontando para desiredSdkDir,
+ * preservando qualquer outra linha já presente (nunca sobrescreve o arquivo inteiro).
+ * `existingContent` null/undefined significa "arquivo ainda não existe".
+ */
+export function buildLocalPropertiesContent(existingContent, desiredSdkDir) {
+  const line = `sdk.dir=${normalizeSdkDirForProperties(desiredSdkDir)}`;
+  if (existingContent === null || existingContent === undefined) {
+    return `${line}\n`;
+  }
+  if (SDK_DIR_LINE_PATTERN.test(existingContent)) {
+    return existingContent.replace(SDK_DIR_LINE_PATTERN, line);
+  }
+  const withTrailingNewline = existingContent.endsWith('\n') ? existingContent : `${existingContent}\n`;
+  return `${withTrailingNewline}${line}\n`;
 }
 
 const command = process.argv[2];
@@ -203,9 +311,23 @@ function main() {
     const output = readFileSync(0, 'utf8');
     assertRepoCleanForRelease(output);
     console.log('clean');
+  } else if (command === 'detect-resume-state') {
+    const payload = JSON.parse(readFileSync(0, 'utf8'));
+    console.log(JSON.stringify(detectReleaseResumeState(payload)));
+  } else if (command === 'check-local-properties') {
+    const desiredSdkDir = process.argv[3];
+    const absent = process.argv.includes('--absent');
+    const content = absent ? null : readFileSync(0, 'utf8');
+    console.log(JSON.stringify(checkLocalPropertiesSdkDir(content, desiredSdkDir)));
+  } else if (command === 'sync-local-properties') {
+    const desiredSdkDir = process.argv[3];
+    const absent = process.argv.includes('--absent');
+    const content = absent ? null : readFileSync(0, 'utf8');
+    const newContent = buildLocalPropertiesContent(content, desiredSdkDir);
+    console.log(JSON.stringify({ content: newContent, changed: newContent !== (content ?? '') }));
   } else {
     throw new Error(
-      'Uso: node scripts/android/release-helpers.mjs next-patch|next-version-code|find-build-tools|init-config|write-config|assert-config-complete|check-clean',
+      'Uso: node scripts/android/release-helpers.mjs next-patch|next-version-code|find-build-tools|init-config|write-config|assert-config-complete|check-clean|detect-resume-state|check-local-properties|sync-local-properties',
     );
   }
 }

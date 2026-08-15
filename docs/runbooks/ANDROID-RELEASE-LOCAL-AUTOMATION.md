@@ -32,7 +32,7 @@ diretamente, sem dependencia de CLI externo.
 | Config nao secreta (URLs, caminhos, bucket/endpoint/region) | `C:\Users\<usuario>\.planner-fin\release-config.json` | Nao (fora do repo) |
 | Keystore de release | `C:\Users\<usuario>\.planner-fin\signing\planner-fin-release.jks` | Nao (fora do repo, `.gitignore` ja cobre `*.jks`) |
 | Senha da keystore / senha da key / credenciais do bucket | Windows Credential Manager (`PlannerFin/*`) | Nao (fora do repo, DPAPI local do usuario) |
-| `sdk.dir` do Gradle | `apps/web/android/local.properties` | Nao (ja no `.gitignore`) |
+| `sdk.dir` do Gradle | `apps/web/android/local.properties` (auto-sincronizado com `androidSdkDir`) | Nao (ja no `.gitignore`) |
 
 Nenhum segredo e aceito por argumento de linha de comando nem impresso no console/log —
 senhas usam `Read-Host -AsSecureString` (sem eco) e sao lidas do Credential Manager apenas
@@ -70,25 +70,57 @@ antiga e usa a primeira que realmente contenha `apksigner.bat` e `aapt.exe` — 
 automaticamente. Essa logica esta coberta por teste em
 `scripts/android/release-helpers.test.mjs`.
 
+### `local.properties` e o `androidSdkDir` configurado
+
+`local.properties` nao e so criado quando falta — a automacao valida ativamente que o
+`sdk.dir` gravado nele **corresponde de fato** ao `androidSdkDir` do `release-config.json`,
+para nunca reproduzir o cenario "config/doctor apontam para um SDK valido, mas o Gradle le
+um `local.properties` antigo/incorreto e o build falha":
+
+- **`doctor`** so le e compara (nunca escreve): reporta `OK` se o `sdk.dir` bate com a
+  config, `FAIL` se o arquivo nao existe, se existe mas nao tem a chave `sdk.dir`, ou se
+  aponta para um SDK diferente (`stale`) — comparacao tolerante a maiuscula/minuscula e
+  barra final, mas exige o mesmo caminho.
+- **`build`/`release`** sincronizam automaticamente: criam o arquivo se faltar, ou
+  atualizam so a linha `sdk.dir` (preservando qualquer outra propriedade ja presente) se
+  ela estiver desatualizada, sempre mostrando uma mensagem clara de que o valor foi
+  sincronizado. O valor e escrito no formato Windows esperado pelo Gradle
+  (`C:\\Users\\...`, com barra dupla escapada).
+
+Toda essa logica (parse/gravacao/comparacao) e pura e testada em
+`scripts/android/release-helpers.test.mjs` (`parseSdkDirFromLocalProperties`,
+`buildLocalPropertiesContent`, `checkLocalPropertiesSdkDir`).
+
 ### Fluxo de `pnpm android:release`
 
-1. Valida que o repo esta limpo (ou que as unicas alteracoes pendentes sao os dois
-   arquivos de bump — permite retomar uma tentativa anterior que bumpou mas nao terminou).
-2. Mostra versao/versionCode atuais e sugere o proximo patch semver e `versionCode + 1`.
-3. Pede confirmacao antes de gravar o bump em `apps/web/package.json` e
-   `apps/web/android/version.json`.
-4. Roda `pnpm android:release:build` com `VITE_API_BASE_URL` e as quatro variaveis
+1. Detecta o estado do repositorio via `git status --porcelain` comparado ao `HEAD`
+   (`detectReleaseResumeState`), para nunca bumpar a versao duas vezes numa retomada:
+   - **limpo**: fluxo normal — sugere o proximo patch semver e `versionCode + 1` a partir
+     da versao do HEAD.
+   - **bump pendente** (somente `apps/web/package.json` e
+     `apps/web/android/version.json` modificados, e a versao do working tree ja difere do
+     HEAD — sinal de uma tentativa anterior que bumpou mas o build/publish falhou):
+     mostra `Release pendente detectada: X.Y.Z (N)` e pergunta se deve **retomar** essa
+     mesma versao (default sim) sem calcular um novo bump em cima dela. Só se o usuario
+     recusar a retomada e confirmar explicitamente o descarte, o script roda
+     `git checkout -- apps/web/package.json apps/web/android/version.json` e sugere um
+     bump novo a partir do HEAD — nunca descarta automaticamente.
+   - **bloqueado**: qualquer arquivo fora desses dois (ou os dois arquivos tocados sem
+     mudanca real de versao/versionCode) interrompe a release com erro explicito.
+2. Mostra o resumo do bump e pede confirmacao antes de gravar
+   `apps/web/package.json`/`apps/web/android/version.json` (pulado quando retomando).
+3. Roda `pnpm android:release:build` com `VITE_API_BASE_URL` e as quatro variaveis
    `PLANNER_FIN_KEY*` exportadas **somente para esse processo filho** (removidas do
    ambiente do PowerShell logo depois, sucesso ou falha).
-5. Se houver device via `adb devices`, pergunta se deve instalar com `adb install -r`.
-6. Pergunta se deve publicar. Se sim: roda o dry-run de
+4. Se houver device via `adb devices`, pergunta se deve instalar com `adb install -r`.
+5. Pergunta se deve publicar. Se sim: roda o dry-run de
    `pnpm android:release:publish` (sem `--yes`), mostra um resumo nao secreto
    (versao, versionCode, bucket, endpoint, apiBaseUrl — nunca as credenciais), exige que o
    usuario digite exatamente `PUBLICAR` (confirmacao mais forte que sim/nao, pois a
    publicacao e imutavel) e so entao roda `pnpm android:release:publish -- --yes`.
-7. Tenta confirmar `GET /api/releases/android/latest` (sem expor credenciais) e mostra o
+6. Tenta confirmar `GET /api/releases/android/latest` (sem expor credenciais) e mostra o
    caminho do APK local e a versao publicada.
-8. Oferece (opcional) criar um commit local `chore: release Android X.Y.Z` — nunca faz
+7. Oferece (opcional) criar um commit local `chore: release Android X.Y.Z` — nunca faz
    push nem merge.
 
 ## Testes
@@ -107,7 +139,9 @@ git diff --check
 |---|---|
 | `doctor` reporta `FAIL` em segredo do Credential Manager | Rode `pnpm android:release:setup` novamente. |
 | `doctor` reporta `FAIL` em build-tools | Instale uma versao de build-tools que contenha `apksigner.bat` e `aapt.exe` (`sdkmanager --install "build-tools;35.0.0"`). |
+| `doctor` reporta `FAIL` "local.properties aponta para X, mas a config aponta para Y" | Rode `pnpm android:release:build` (ou `android:release`) para sincronizar automaticamente, ou edite `sdk.dir` manualmente. |
 | `release` para em "Repositorio nao esta limpo" | Commite ou descarte alteracoes fora dos dois arquivos de bump antes de rodar de novo. |
+| `release` mostra "Release pendente detectada" | Uma tentativa anterior ja bumpou a versao mas o build/publish nao terminou — responda "sim" para retomar exatamente essa versao (nunca bumpa de novo), ou recuse e confirme o descarte para calcular um bump novo. |
 | `release` para em "Segredo obrigatorio ausente" | Falha fechada intencional — nenhuma variavel de assinatura/bucket e exportada sem o segredo correspondente presente. |
 
 ## Rollback

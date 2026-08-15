@@ -183,18 +183,43 @@ function Get-ToolPathAdditions {
   return @($buildTools, $platformTools) | Where-Object { $_ -and (Test-Path $_) }
 }
 
-function Assert-LocalPropertiesConfigured {
+function Get-LocalPropertiesPath {
+  return Join-Path $script:WebDir 'android\local.properties'
+}
+
+function Read-LocalPropertiesContentOrNull {
+  $path = Get-LocalPropertiesPath
+  if (-not (Test-Path $path)) { return $null }
+  return (Get-Content $path -Raw)
+}
+
+function Test-LocalPropertiesSdkDir {
+  <# So le e compara - nunca altera o arquivo. Usado pelo doctor. #>
   param([Parameter(Mandatory = $true)][string] $SdkDir)
-  $path = Join-Path $script:WebDir 'android\local.properties'
-  $escapedSdk = $SdkDir.Replace('\', '\\')
-  if (-not (Test-Path $path)) {
-    [System.IO.File]::WriteAllText($path, "sdk.dir=$escapedSdk`n", (New-Object System.Text.UTF8Encoding($false)))
-    Write-Host "local.properties criado com sdk.dir=$SdkDir"
-    return
+  $content = Read-LocalPropertiesContentOrNull
+  if ($null -eq $content) {
+    return (Invoke-ReleaseHelper @('check-local-properties', $SdkDir, '--absent') | ConvertFrom-Json)
   }
-  $content = Get-Content $path -Raw
-  if ($content -notmatch [regex]::Escape('sdk.dir=')) {
-    throw 'apps/web/android/local.properties existe mas nao contem sdk.dir.'
+  return (Invoke-ReleaseHelper @('check-local-properties', $SdkDir) -StdIn $content | ConvertFrom-Json)
+}
+
+function Sync-LocalPropertiesSdkDir {
+  <# Cria o arquivo se faltar, ou atualiza sdk.dir se estiver desatualizado em relacao a
+     $SdkDir - preservando qualquer outra linha existente. So escreve quando necessario. #>
+  param([Parameter(Mandatory = $true)][string] $SdkDir)
+  $content = Read-LocalPropertiesContentOrNull
+  $result = if ($null -eq $content) {
+    Invoke-ReleaseHelper @('sync-local-properties', $SdkDir, '--absent') | ConvertFrom-Json
+  } else {
+    Invoke-ReleaseHelper @('sync-local-properties', $SdkDir) -StdIn $content | ConvertFrom-Json
+  }
+  if ($result.changed) {
+    [System.IO.File]::WriteAllText((Get-LocalPropertiesPath), $result.content, (New-Object System.Text.UTF8Encoding($false)))
+    if ($null -eq $content) {
+      Write-Host "local.properties criado com sdk.dir=$SdkDir"
+    } else {
+      Write-Host "local.properties estava desatualizado - sdk.dir atualizado para $SdkDir." -ForegroundColor Yellow
+    }
   }
 }
 
@@ -231,14 +256,66 @@ function Set-ReleaseVersionFiles {
   [System.IO.File]::WriteAllText($info.VersionJsonPath, $verContent, $utf8NoBom)
 }
 
-function Assert-RepoCleanForRelease {
+function Get-HeadVersionInfo {
+  <# Le versao/versionCode do ultimo commit (HEAD), nao do working tree - usado para saber
+     se o working tree ja tem um bump pendente de uma tentativa anterior. #>
+  Push-Location $script:RepoRoot
+  try {
+    $pkgJson = (& git show 'HEAD:apps/web/package.json') 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $pkgJson) { throw 'Nao foi possivel ler apps/web/package.json do HEAD git.' }
+    $verJson = (& git show 'HEAD:apps/web/android/version.json') 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $verJson) { throw 'Nao foi possivel ler apps/web/android/version.json do HEAD git.' }
+  } finally {
+    Pop-Location
+  }
+  $pkg = $pkgJson -join "`n" | ConvertFrom-Json
+  $ver = $verJson -join "`n" | ConvertFrom-Json
+  return [pscustomobject]@{ Version = $pkg.version; VersionCode = [int]$ver.versionCode }
+}
+
+function Get-ReleaseResumeState {
+  <# Distingue repo limpo / bump pendente retomavel / bloqueado - nunca deixa o chamador
+     sugerir um novo next-patch em cima de um bump que uma tentativa anterior ja fez. #>
   Push-Location $script:RepoRoot
   try {
     $status = (& git status --porcelain) -join "`n"
   } finally {
     Pop-Location
   }
-  Invoke-ReleaseHelper @('check-clean') -StdIn $status | Out-Null
+  $head = Get-HeadVersionInfo
+  $working = Get-CurrentVersionInfo
+  $payload = [ordered]@{
+    porcelainOutput    = $status
+    headVersion        = $head.Version
+    headVersionCode    = $head.VersionCode
+    workingVersion     = $working.Version
+    workingVersionCode = $working.VersionCode
+  }
+  $json = $payload | ConvertTo-Json -Compress
+  return (Invoke-ReleaseHelper @('detect-resume-state') -StdIn $json | ConvertFrom-Json)
+}
+
+function Invoke-VersionBumpPrompt {
+  <# Sugere next-patch/versionCode+1 a partir de $Current, pede confirmacao e grava os
+     arquivos de bump. Retorna $null se o usuario cancelar (nenhum arquivo e alterado). #>
+  param([Parameter(Mandatory = $true)] $Current)
+  Write-Host "Versao atual: $($Current.Version) (versionCode $($Current.VersionCode))"
+  $suggestedVersion = Invoke-ReleaseHelper @('next-patch', $Current.Version)
+  $suggestedVersionCode = [int](Invoke-ReleaseHelper @('next-version-code', "$($Current.VersionCode)"))
+
+  $newVersion = Read-WithDefault 'Nova versao (SemVer 0.x.y)' $suggestedVersion
+  $newVersionCode = [int](Read-WithDefault 'Novo versionCode' "$suggestedVersionCode")
+
+  Write-Host ''
+  Write-Host "Resumo do bump: $($Current.Version) -> $newVersion | versionCode $($Current.VersionCode) -> $newVersionCode"
+  if (-not (Confirm-YesNo 'Confirma o bump de versao acima?' -DefaultYes)) {
+    Write-Host 'Cancelado pelo usuario. Nenhum arquivo foi alterado.'
+    return $null
+  }
+
+  Set-ReleaseVersionFiles -NewVersion $newVersion -NewVersionCode $newVersionCode
+  Write-Host "apps/web/package.json e apps/web/android/version.json atualizados para $newVersion / $newVersionCode." -ForegroundColor Green
+  return [pscustomobject]@{ Version = $newVersion; VersionCode = $newVersionCode }
 }
 
 # ---------------------------------------------------------------------------
@@ -312,6 +389,14 @@ function Invoke-DoctorCommand {
     } catch {
       Write-DoctorLine 'FAIL' $_.Exception.Message
       $failed = $true
+    }
+
+    $localProps = Test-LocalPropertiesSdkDir -SdkDir $config.androidSdkDir
+    switch ($localProps.status) {
+      'ok' { Write-DoctorLine 'OK' "apps/web/android/local.properties aponta para sdk.dir=$($localProps.currentSdkDir)" }
+      'missing' { Write-DoctorLine 'FAIL' 'apps/web/android/local.properties nao existe (rode "pnpm android:release:build" para gerar).'; $failed = $true }
+      'missing_key' { Write-DoctorLine 'FAIL' 'apps/web/android/local.properties existe mas nao contem sdk.dir.'; $failed = $true }
+      'stale' { Write-DoctorLine 'FAIL' "apps/web/android/local.properties aponta para $($localProps.currentSdkDir), mas a config aponta para $($config.androidSdkDir) - rode 'pnpm android:release:build' para sincronizar."; $failed = $true }
     }
 
     $platformTools = Join-Path $config.androidSdkDir 'platform-tools'
@@ -388,7 +473,7 @@ function Invoke-DoctorCommand {
 function Invoke-BuildCommand {
   param([Parameter(Mandatory = $true)] $Config, [Parameter(Mandatory = $true)] $Secrets)
   Assert-SigningSecretsPresent $Secrets
-  Assert-LocalPropertiesConfigured -SdkDir $Config.androidSdkDir
+  Sync-LocalPropertiesSdkDir -SdkDir $Config.androidSdkDir
   $pathAdditions = Get-ToolPathAdditions -SdkDir $Config.androidSdkDir
 
   $envMap = @{
@@ -453,30 +538,43 @@ function Invoke-CommitCommand {
 }
 
 function Invoke-ReleaseCommand {
-  Assert-RepoCleanForRelease
   $config = Get-ReleaseConfigOrTemplate
   Assert-ReleaseConfigComplete
   $secrets = Get-ResolvedSecrets
   Assert-SigningSecretsPresent $secrets
 
-  $current = Get-CurrentVersionInfo
-  Write-Host "Versao atual: $($current.Version) (versionCode $($current.VersionCode))"
-
-  $suggestedVersion = Invoke-ReleaseHelper @('next-patch', $current.Version)
-  $suggestedVersionCode = [int](Invoke-ReleaseHelper @('next-version-code', "$($current.VersionCode)"))
-
-  $newVersion = Read-WithDefault 'Nova versao (SemVer 0.x.y)' $suggestedVersion
-  $newVersionCode = [int](Read-WithDefault 'Novo versionCode' "$suggestedVersionCode")
-
-  Write-Host ''
-  Write-Host "Resumo do bump: $($current.Version) -> $newVersion | versionCode $($current.VersionCode) -> $newVersionCode"
-  if (-not (Confirm-YesNo 'Confirma o bump de versao acima?' -DefaultYes)) {
-    Write-Host 'Cancelado pelo usuario. Nenhum arquivo foi alterado.'
-    return
+  $resumeState = Get-ReleaseResumeState
+  if ($resumeState.state -eq 'blocked') {
+    $files = if ($resumeState.unexpectedFiles) { $resumeState.unexpectedFiles -join ', ' } else { 'desconhecido' }
+    $reasonSuffix = if ($resumeState.reason) { " ($($resumeState.reason))" } else { '' }
+    throw "Repositorio nao esta limpo para release automatizada$reasonSuffix. Arquivos: $files"
   }
 
-  Set-ReleaseVersionFiles -NewVersion $newVersion -NewVersionCode $newVersionCode
-  Write-Host "apps/web/package.json e apps/web/android/version.json atualizados para $newVersion / $newVersionCode." -ForegroundColor Green
+  $bumped = $null
+  if ($resumeState.state -eq 'pending-bump') {
+    Write-Host "Release pendente detectada: $($resumeState.pendingVersion) (versionCode $($resumeState.pendingVersionCode)), a partir de $($resumeState.baseVersion) (versionCode $($resumeState.baseVersionCode))." -ForegroundColor Yellow
+    if (Confirm-YesNo 'Retomar essa release sem novo bump?' -DefaultYes) {
+      $bumped = [pscustomobject]@{ Version = $resumeState.pendingVersion; VersionCode = $resumeState.pendingVersionCode }
+      Write-Host "Retomando release $($bumped.Version) (versionCode $($bumped.VersionCode)) sem alterar os arquivos de bump."
+    } elseif (Confirm-YesNo "Descartar o bump pendente ($($resumeState.pendingVersion)) e calcular um novo a partir de $($resumeState.baseVersion)?") {
+      Push-Location $script:RepoRoot
+      try {
+        & git checkout -- 'apps/web/package.json' 'apps/web/android/version.json'
+        if ($LASTEXITCODE -ne 0) { throw 'git checkout -- falhou ao descartar o bump pendente.' }
+      } finally {
+        Pop-Location
+      }
+      $bumped = Invoke-VersionBumpPrompt -Current (Get-CurrentVersionInfo)
+    } else {
+      Write-Host 'Cancelado. Nenhuma alteracao foi feita.'
+      return
+    }
+  } else {
+    $bumped = Invoke-VersionBumpPrompt -Current (Get-CurrentVersionInfo)
+  }
+  if ($null -eq $bumped) { return }
+  $newVersion = $bumped.Version
+  $newVersionCode = $bumped.VersionCode
 
   Invoke-BuildCommand -Config $config -Secrets $secrets
 

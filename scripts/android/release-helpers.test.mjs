@@ -6,10 +6,15 @@ import {
   assertNoSecretLikeFields,
   assertRepoCleanForRelease,
   assertRequiredSecrets,
+  buildLocalPropertiesContent,
+  checkLocalPropertiesSdkDir,
   computeNextPatchVersion,
   computeNextVersionCode,
+  detectReleaseResumeState,
   findCompleteBuildTools,
   loadOrInitReleaseConfig,
+  normalizeSdkDirForProperties,
+  parseSdkDirFromLocalProperties,
   redactSecrets,
   saveReleaseConfig,
 } from './release-helpers.mjs';
@@ -162,4 +167,101 @@ test('assertRepoCleanForRelease bloqueia qualquer arquivo fora do bump previsto'
     () => assertRepoCleanForRelease(' M apps/web/package.json\n?? some-other-file.ts\n'),
     /some-other-file\.ts/,
   );
+});
+
+test('detectReleaseResumeState reconhece repo limpo', () => {
+  assert.deepEqual(detectReleaseResumeState({ porcelainOutput: '' }), { state: 'clean' });
+});
+
+test('detectReleaseResumeState reconhece bump pendente (retomada sem incrementar de novo)', () => {
+  const result = detectReleaseResumeState({
+    porcelainOutput: ' M apps/web/package.json\n M apps/web/android/version.json\n',
+    headVersion: '0.1.0',
+    headVersionCode: 1,
+    workingVersion: '0.1.1',
+    workingVersionCode: 2,
+  });
+  assert.deepEqual(result, {
+    state: 'pending-bump',
+    baseVersion: '0.1.0',
+    baseVersionCode: 1,
+    pendingVersion: '0.1.1',
+    pendingVersionCode: 2,
+  });
+  // Retomar deve reusar pendingVersion/pendingVersionCode diretamente — nunca recalcular
+  // um novo next-patch em cima do bump já pendente (isso seria bump duplo).
+  assert.notEqual(computeNextPatchVersion(result.pendingVersion), result.pendingVersion);
+});
+
+test('detectReleaseResumeState bloqueia quando ha arquivo inesperado, mesmo com bump pendente junto', () => {
+  const result = detectReleaseResumeState({
+    porcelainOutput: ' M apps/web/package.json\n M apps/web/android/version.json\n?? scratch.txt\n',
+    headVersion: '0.1.0',
+    headVersionCode: 1,
+    workingVersion: '0.1.1',
+    workingVersionCode: 2,
+  });
+  assert.equal(result.state, 'blocked');
+  assert.deepEqual(result.unexpectedFiles, ['scratch.txt']);
+});
+
+test('detectReleaseResumeState bloqueia quando os arquivos de bump mudaram sem mudar versao/versionCode', () => {
+  const result = detectReleaseResumeState({
+    porcelainOutput: ' M apps/web/package.json\n M apps/web/android/version.json\n',
+    headVersion: '0.1.0',
+    headVersionCode: 1,
+    workingVersion: '0.1.0',
+    workingVersionCode: 1,
+  });
+  assert.equal(result.state, 'blocked');
+  assert.match(result.reason, /não mudaram/);
+});
+
+test('normalizeSdkDirForProperties escapa backslash para o formato .properties', () => {
+  assert.equal(normalizeSdkDirForProperties('C:\\Users\\guilh\\Sdk'), 'C:\\\\Users\\\\guilh\\\\Sdk');
+});
+
+test('parseSdkDirFromLocalProperties le e des-escapa sdk.dir', () => {
+  assert.equal(parseSdkDirFromLocalProperties('sdk.dir=C:\\\\Users\\\\guilh\\\\Sdk\n'), 'C:\\Users\\guilh\\Sdk');
+  assert.equal(parseSdkDirFromLocalProperties('# comentario\nsdk.dir=C:\\\\Sdk\n'), 'C:\\Sdk');
+  assert.equal(parseSdkDirFromLocalProperties('outra.propriedade=1\n'), null);
+  assert.equal(parseSdkDirFromLocalProperties(''), null);
+});
+
+test('checkLocalPropertiesSdkDir detecta ausente, sem a chave, ok e desatualizado', () => {
+  assert.deepEqual(checkLocalPropertiesSdkDir(null, 'C:\\Sdk'), { status: 'missing', currentSdkDir: null });
+  assert.deepEqual(checkLocalPropertiesSdkDir('outra=1\n', 'C:\\Sdk'), {
+    status: 'missing_key',
+    currentSdkDir: null,
+  });
+  assert.deepEqual(checkLocalPropertiesSdkDir('sdk.dir=C:\\\\Sdk\n', 'C:\\Sdk'), {
+    status: 'ok',
+    currentSdkDir: 'C:\\Sdk',
+  });
+  // case-insensitive e tolerante a barra final, como caminhos Windows costumam variar
+  assert.equal(checkLocalPropertiesSdkDir('sdk.dir=C:\\\\sdk\\\\\n', 'C:\\Sdk').status, 'ok');
+  assert.deepEqual(checkLocalPropertiesSdkDir('sdk.dir=C:\\\\Old\\\\Sdk\n', 'C:\\Sdk'), {
+    status: 'stale',
+    currentSdkDir: 'C:\\Old\\Sdk',
+  });
+});
+
+test('buildLocalPropertiesContent cria arquivo quando ausente', () => {
+  assert.equal(buildLocalPropertiesContent(null, 'C:\\Sdk'), 'sdk.dir=C:\\\\Sdk\n');
+  assert.equal(buildLocalPropertiesContent(undefined, 'C:\\Sdk'), 'sdk.dir=C:\\\\Sdk\n');
+});
+
+test('buildLocalPropertiesContent atualiza sdk.dir preservando outras linhas existentes', () => {
+  const existing = 'outra.propriedade=1\nsdk.dir=C:\\\\Old\\\\Sdk\nmais.uma=2\n';
+  const updated = buildLocalPropertiesContent(existing, 'C:\\Novo\\Sdk');
+  assert.ok(updated.includes('outra.propriedade=1'));
+  assert.ok(updated.includes('mais.uma=2'));
+  assert.ok(updated.includes('sdk.dir=C:\\\\Novo\\\\Sdk'));
+  assert.ok(!updated.includes('C:\\\\Old\\\\Sdk'));
+});
+
+test('buildLocalPropertiesContent adiciona sdk.dir quando arquivo existe mas nao tem a chave', () => {
+  const updated = buildLocalPropertiesContent('outra.propriedade=1', 'C:\\Sdk');
+  assert.ok(updated.includes('outra.propriedade=1'));
+  assert.ok(updated.includes('sdk.dir=C:\\\\Sdk'));
 });
