@@ -532,6 +532,22 @@ function Invoke-BuildCommand {
 }
 
 function Invoke-PublishCommand {
+  <#
+    Retorna exatamente UM inteiro (o exit code do pnpm), nunca uma colecao. O stdout do
+    processo filho e roteado explicitamente via Write-Host dentro do scriptblock -- isso
+    o mantem sempre visivel (Write-Host escreve direto no host, nao no pipeline) e, mais
+    importante, impede que ele escape como objetos String misturados com o valor de
+    retorno. Sem isso, "& pnpm @publishArgs" sem redirecionamento emite cada linha de
+    stdout como parte do stream de saida da funcao; ao chamador capturar o retorno numa
+    variavel ($exitCode = Invoke-PublishCommand ...), essas linhas ficam presas junto com
+    o LASTEXITCODE dentro de um array, e "$exitCode -ne 0" filtra elemento a elemento --
+    como texto de stdout normalmente nao e igual a "0", o array resultante quase sempre
+    fica nao-vazio (portanto $true num contexto booleano), disparando falso erro mesmo com
+    exit code real 0. Stderr nao e redirecionado/mesclado aqui de proposito -- 2>&1 sobre
+    processo nativo no Windows PowerShell 5.1 embrulha cada linha de stderr num
+    NativeCommandError, o que sob $ErrorActionPreference='Stop' pode virar excecao so por
+    o pnpm ter escrito um warning no stderr.
+  #>
   param([Parameter(Mandatory = $true)] $Config, [Parameter(Mandatory = $true)] $Secrets, [switch] $Confirmed)
   Assert-BucketSecretsPresent $Secrets
 
@@ -546,16 +562,16 @@ function Invoke-PublishCommand {
   $publishArgs = @('android:release:publish')
   if ($Confirmed) { $publishArgs += @('--', '--yes') }
 
-  Invoke-ScopedEnv $envMap {
+  $exitCode = Invoke-ScopedEnv $envMap {
     Push-Location $script:RepoRoot
     try {
-      & pnpm @publishArgs
-      $script:LastPublishExit = $LASTEXITCODE
+      & pnpm @publishArgs | ForEach-Object { Write-Host $_ }
+      return [int]$LASTEXITCODE
     } finally {
       Pop-Location
     }
   }
-  return $script:LastPublishExit
+  return [int]$exitCode
 }
 
 function Test-ReleaseBumpFilesChanged {
