@@ -1,11 +1,12 @@
 package com.plannerfin.app;
 
 import android.app.Notification;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Log;
-import android.content.pm.ApplicationInfo;
 
 public class PlannerFinNotificationListenerService extends NotificationListenerService {
     private static final String TAG = "PlannerFinNotif";
@@ -28,6 +29,12 @@ public class PlannerFinNotificationListenerService extends NotificationListenerS
     public void onNotificationPosted(StatusBarNotification sbn) {
         String packageName = sbn.getPackageName();
         PlannerFinNotificationPreferences.load(this);
+
+        // Discovery (SPEC-022 §9.2): record only packageName/label/lastSeenAt for every posting
+        // app, monitored or not, before any notification content is read. Non-monitored packages
+        // stop here — no Notification/Bundle is ever touched for them.
+        PlannerFinNotificationPreferences.recordObserved(this, packageName, resolveAppLabel(packageName));
+
         if (!PlannerFinNotificationCaptureState.shouldCapture(packageName)) {
             return;
         }
@@ -83,5 +90,21 @@ public class PlannerFinNotificationListenerService extends NotificationListenerS
 
     private boolean isDebuggableBuild() {
         return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+    }
+
+    /**
+     * Resolves a human label for packageName using only the default (non-QUERY_ALL_PACKAGES)
+     * PackageManager visibility available to this app. Never guesses a label from the package
+     * name itself; returns null when unresolvable so callers fall back to the raw packageName.
+     */
+    private String resolveAppLabel(String packageName) {
+        try {
+            PackageManager packageManager = getPackageManager();
+            ApplicationInfo appInfo = packageManager.getApplicationInfo(packageName, 0);
+            CharSequence label = packageManager.getApplicationLabel(appInfo);
+            return label == null ? null : label.toString();
+        } catch (Exception error) {
+            return null;
+        }
     }
 }
