@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { PublicFinancialAccount, PublicFinancialCategory } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import { safeApiErrorMessage } from '../api-error';
 import { catalogLabelFor } from '../notification-app-catalog';
 import { notificationsApi } from '../notifications-api';
 
@@ -60,6 +61,14 @@ async function loadList() {
   }
 }
 
+async function fetchJson<T>(path: string): Promise<T> {
+  const response = await authenticatedFetch(path);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw new Error(safeApiErrorMessage(body, 'Não foi possível carregar os dados do formulário.'));
+  return body as T;
+}
+
 async function loadDetail(notificationId: string) {
   detailLoading.value = true;
   detailError.value = '';
@@ -67,10 +76,12 @@ async function loadDetail(notificationId: string) {
   try {
     const [notification, accountList, categoryList] = await Promise.all([
       notificationsApi.get(notificationId),
-      accounts.value.length ? Promise.resolve(accounts.value) : authenticatedFetch('/accounts').then((r) => r.json()),
+      accounts.value.length
+        ? Promise.resolve(accounts.value)
+        : fetchJson<PublicFinancialAccount[]>('/accounts'),
       categories.value.length
         ? Promise.resolve(categories.value)
-        : authenticatedFetch('/categories').then((r) => r.json()),
+        : fetchJson<PublicFinancialCategory[]>('/categories'),
     ]);
     detail.value = notification;
     accounts.value = accountList;
@@ -91,13 +102,15 @@ async function loadDetail(notificationId: string) {
 watch(
   id,
   (value) => {
-    if (value) void loadDetail(value);
-    else detail.value = null;
+    if (value) {
+      void loadDetail(value);
+    } else {
+      detail.value = null;
+      void loadList();
+    }
   },
   { immediate: true },
 );
-
-onMounted(loadList);
 
 const activeAccounts = computed(() => accounts.value.filter((account) => !account.archivedAt));
 const compatibleCategories = computed(() =>

@@ -259,6 +259,33 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
     expect(list.data[0]!.classificationReasons.length).toBeGreaterThan(0);
   });
 
+  it('lista "para revisar" exclui estados historicos por padrao, mas aceita filtro explicito', async () => {
+    const svc = service(prisma);
+    await seedAccountAndCategory(prisma, userA);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [
+        item(),
+        { ...item('99999999-2222-4222-8222-999999999922'), notificationKeyHash: 'c'.repeat(64) },
+      ],
+    });
+    const [pending, toDismiss] = (await svc.listCaptured(userA, {})).data;
+    await svc.dismiss(userA, toDismiss!.id);
+
+    const defaultList = await svc.listCaptured(userA, {});
+    expect(defaultList.data.map((row) => row.id)).toEqual([pending!.id]);
+    expect(defaultList.page.filteredCount).toBe(1);
+
+    const dismissedOnly = await svc.listCaptured(userA, { status: 'DISMISSED' });
+    expect(dismissedOnly.data.map((row) => row.id)).toEqual([toDismiss!.id]);
+  });
+
   it('confirma candidato criando exatamente um lancamento, de forma idempotente', async () => {
     const svc = service(prisma);
     await seedAccountAndCategory(prisma, userA);
@@ -284,6 +311,39 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
     expect(confirmed.status).toBe('CONFIRMED');
     expect(confirmed.confirmedTransactionId).toBeTruthy();
     expect(confirmedAgain.confirmedTransactionId).toBe(confirmed.confirmedTransactionId);
+    expect(
+      await prisma.financialTransaction.count({
+        where: { userId: userA, description: 'Padaria exemplo' },
+      }),
+    ).toBe(1);
+  });
+
+  it('confirmacoes concorrentes convergem para exatamente um lancamento', async () => {
+    const svc = service(prisma);
+    await seedAccountAndCategory(prisma, userA);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    const [captured] = (await svc.listCaptured(userA, {})).data;
+
+    const confirmDto = {
+      accountId,
+      categoryId: expenseCategoryId,
+      type: 'EXPENSE' as const,
+      amount: '42.90',
+      description: 'Padaria exemplo',
+      date: '2026-08-13',
+    };
+    const [first, second] = await Promise.all([
+      svc.confirm(userA, captured!.id, confirmDto),
+      svc.confirm(userA, captured!.id, confirmDto),
+    ]);
+
+    expect(first.confirmedTransactionId).toBeTruthy();
+    expect(second.confirmedTransactionId).toBe(first.confirmedTransactionId);
     expect(
       await prisma.financialTransaction.count({
         where: { userId: userA, description: 'Padaria exemplo' },

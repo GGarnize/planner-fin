@@ -8,6 +8,7 @@ import {
   getNotificationAccessStatus,
   isNotificationListenerDiagnosticAvailable,
   openNotificationAccessSettings,
+  purgePendingQueue,
   type NotificationAccessStatus,
   type NotificationCaptureState,
 } from '../notification-listener';
@@ -108,8 +109,9 @@ async function disableAndDeleteHistory() {
       captureEnabled: false,
       monitoredPackages: captureState.value.monitoredPackages,
     });
-    captureState.value = { ...captureState.value, captureEnabled: false };
+    await purgePendingQueue();
     await notificationsApi.deleteAllHistory();
+    captureState.value = { ...captureState.value, captureEnabled: false };
     historyDeleted.value = true;
     showDisableChoice.value = false;
   } catch {

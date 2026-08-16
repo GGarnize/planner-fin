@@ -111,6 +111,12 @@ public class PlannerFinNotificationDebugReceiver extends BroadcastReceiver {
                 setJsonResult(statsJson(context));
                 return;
             }
+            if ("purgePendingQueue".equals(command)) {
+                new PlannerFinNotificationQueue(context).purgeAll();
+                PlannerFinNotificationBuffer.clear();
+                setJsonResult(stateJson(context));
+                return;
+            }
             if ("unbind".equals(command)) {
                 new PlannerFinNotificationQueue(context).purgeAll();
                 PlannerFinNotificationPreferences.unbindOwner(context);

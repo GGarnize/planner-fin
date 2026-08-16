@@ -51,6 +51,7 @@ interface PlannerFinNotificationListenerPlugin {
   getOrCreateDeviceId(): Promise<{ deviceId: string }>;
   bindOwner(options: { deviceId: string; ownerBindingId: string }): Promise<NotificationCaptureState>;
   unbindOwnerAndPurge(): Promise<NotificationCaptureState>;
+  purgePendingQueue(): Promise<NotificationCaptureState>;
   getQueueStats(): Promise<{
     pendingCount: number;
     encryptedBytes: number;
@@ -132,6 +133,15 @@ export async function bindOwnerNative(deviceId: string, ownerBindingId: string) 
 export async function unbindOwnerAndPurge(): Promise<void> {
   if (!isNotificationListenerDiagnosticAvailable()) return;
   await plugin.unbindOwnerAndPurge();
+}
+
+/**
+ * Purga somente a fila nativa pendente, preservando deviceId/ownerBindingId/
+ * monitoredPackages — usado por "Desativar e apagar histórico".
+ */
+export async function purgePendingQueue(): Promise<NotificationCaptureState> {
+  if (!isNotificationListenerDiagnosticAvailable()) return { ...EMPTY_CAPTURE_STATE };
+  return plugin.purgePendingQueue();
 }
 
 export async function peekPendingBatch(limit = 50): Promise<CapturedNotificationDebugEvent[]> {

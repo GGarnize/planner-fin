@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
   getCaptureState: vi.fn(),
   openSettings: vi.fn(),
+  purgePendingQueue: vi.fn(),
   pushPreferences: vi.fn(),
   deleteAllHistory: vi.fn(),
 }));
@@ -28,6 +29,7 @@ vi.mock('./notification-listener', () => ({
   getNotificationAccessStatus: mocks.getStatus,
   getCaptureState: mocks.getCaptureState,
   openNotificationAccessSettings: mocks.openSettings,
+  purgePendingQueue: mocks.purgePendingQueue,
 }));
 
 vi.mock('./notification-sync', () => ({
@@ -58,6 +60,7 @@ beforeEach(() => {
   mocks.getStatus.mockResolvedValue({ supported: true, granted: false });
   mocks.getCaptureState.mockResolvedValue(emptyCaptureState());
   mocks.pushPreferences.mockResolvedValue(undefined);
+  mocks.purgePendingQueue.mockResolvedValue({ pendingCount: 0 });
 });
 
 describe('NotificationsPage — indisponibilidade no navegador', () => {
@@ -172,9 +175,21 @@ describe('NotificationsPage — acesso concedido', () => {
     expect(mocks.deleteAllHistory).not.toHaveBeenCalled();
   });
 
-  it('desliga e apaga histórico quando escolhido explicitamente', async () => {
+  it('desliga e apaga histórico: desliga captura, purga fila nativa e só então apaga backend', async () => {
     mocks.getCaptureState.mockResolvedValue(emptyCaptureState({ captureEnabled: true }));
     mocks.deleteAllHistory.mockResolvedValue({ purgedCount: 3 });
+    const order: string[] = [];
+    mocks.pushPreferences.mockImplementation(async () => {
+      order.push('pushPreferences');
+    });
+    mocks.purgePendingQueue.mockImplementation(async () => {
+      order.push('purgePendingQueue');
+      return { pendingCount: 0 };
+    });
+    mocks.deleteAllHistory.mockImplementation(async () => {
+      order.push('deleteAllHistory');
+      return { purgedCount: 3 };
+    });
     const wrapper = mountPage();
     await flushPromises();
 
@@ -184,7 +199,26 @@ describe('NotificationsPage — acesso concedido', () => {
     await apagar.trigger('click');
     await flushPromises();
 
-    expect(mocks.deleteAllHistory).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['pushPreferences', 'purgePendingQueue', 'deleteAllHistory']);
+    expect(wrapper.text()).toContain('Histórico apagado.');
+  });
+
+  it('desliga e apaga histórico: falha na purga da fila nativa não mostra sucesso e permite repetir', async () => {
+    mocks.getCaptureState.mockResolvedValue(emptyCaptureState({ captureEnabled: true }));
+    mocks.purgePendingQueue.mockRejectedValue(new Error('falha nativa'));
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const desligar = wrapper.findAll('button').find((b) => b.text() === 'Desligar captura')!;
+    await desligar.trigger('click');
+    const apagar = wrapper.findAll('button').find((b) => b.text() === 'Desativar e apagar histórico')!;
+    await apagar.trigger('click');
+    await flushPromises();
+
+    expect(mocks.deleteAllHistory).not.toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain('Histórico apagado.');
+    expect(wrapper.find('[role=alert]').exists()).toBe(true);
+    expect(wrapper.findAll('button').find((b) => b.text() === 'Desativar e apagar histórico')).toBeTruthy();
   });
 
   it('gerencia apps sem textarea técnico e ativa cada app individualmente', async () => {

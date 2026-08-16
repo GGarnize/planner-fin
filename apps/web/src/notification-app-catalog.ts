@@ -12,7 +12,7 @@ export const NOTIFICATION_APP_CATALOG_VERSION = 1;
 export const NOTIFICATION_APP_CATALOG: NotificationAppCatalogEntry[] = [
   { packageName: 'com.nu.production', label: 'Nubank' },
   { packageName: 'com.c6bank.app', label: 'C6 Bank' },
-  { packageName: 'br.com.banrisul.mobile', label: 'Banrisul' },
+  { packageName: 'br.com.banrisul', label: 'Banrisul' },
 ];
 
 export function catalogLabelFor(packageName: string): string | null {

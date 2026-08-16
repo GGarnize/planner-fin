@@ -33,6 +33,8 @@ const CAPTURED_STATUSES = [
   'DISMISSED',
   'CONFIRMED',
 ] as const;
+/** "Para revisar" — o que ainda não teve uma decisão humana. */
+const PENDING_STATUSES = ['UNCLASSIFIED', 'FINANCIAL_CANDIDATE', 'AMBIGUOUS'] as const;
 const isUuid = (value: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const isSerializableConflict = (error: unknown) =>
@@ -317,7 +319,7 @@ export class NotificationsService {
     if (query.status && !CAPTURED_STATUSES.includes(query.status)) throw invalidQuery('status');
     const where: Prisma.CapturedNotificationWhereInput = {
       userId,
-      ...(query.status ? { status: query.status } : {}),
+      status: query.status ? query.status : { in: [...PENDING_STATUSES] },
     };
     const [rows, filteredCount] = await Promise.all([
       this.prisma.capturedNotification.findMany({
@@ -371,66 +373,77 @@ export class NotificationsService {
     dto: ConfirmCapturedNotificationDto,
   ): Promise<PublicCapturedNotification> {
     if (!isUuid(id)) throw notFoundNotification();
-    return this.prisma.$transaction(
-      async (tx) => {
-        const existing = await tx.capturedNotification.findFirst({ where: { id, userId } });
-        if (!existing) throw notFoundNotification();
-        if (existing.status === 'CONFIRMED') return toPublicCapturedNotification(existing);
-        if (existing.status === 'DISMISSED')
-          throw new ConflictException({
-            code: 'NOTIFICATION_ALREADY_DISMISSED',
-            message: 'Notificação já foi descartada.',
-          });
-        const [account, category] = await Promise.all([
-          tx.financialAccount.findFirst({ where: { id: dto.accountId, userId } }),
-          tx.financialCategory.findFirst({ where: { id: dto.categoryId, userId } }),
-        ]);
-        if (!account || !category) throw notFoundNotification();
-        if (account.archivedAt || category.archivedAt)
-          throw new ConflictException({
-            code: 'RELATED_RESOURCE_ARCHIVED',
-            message: 'Selecione uma conta e categoria ativas.',
-          });
-        if (category.type !== dto.type)
-          throw new ConflictException({
-            code: 'CATEGORY_TYPE_MISMATCH',
-            message: 'A categoria não corresponde à natureza do lançamento.',
-          });
-        const amount = new Prisma.Decimal(dto.amount);
-        const transaction = await tx.financialTransaction.create({
-          data: {
-            userId,
-            accountId: dto.accountId,
-            categoryId: dto.categoryId,
-            type: dto.type,
-            status: 'PAID',
-            description: dto.description,
-            plannedAmount: amount,
-            actualAmount: amount,
-            dueDate: civilDate(dto.date),
-            paidAt: civilDate(dto.date),
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => {
+            const existing = await tx.capturedNotification.findFirst({ where: { id, userId } });
+            if (!existing) throw notFoundNotification();
+            if (existing.status === 'CONFIRMED') return toPublicCapturedNotification(existing);
+            if (existing.status === 'DISMISSED')
+              throw new ConflictException({
+                code: 'NOTIFICATION_ALREADY_DISMISSED',
+                message: 'Notificação já foi descartada.',
+              });
+            const [account, category] = await Promise.all([
+              tx.financialAccount.findFirst({ where: { id: dto.accountId, userId } }),
+              tx.financialCategory.findFirst({ where: { id: dto.categoryId, userId } }),
+            ]);
+            if (!account || !category) throw notFoundNotification();
+            if (account.archivedAt || category.archivedAt)
+              throw new ConflictException({
+                code: 'RELATED_RESOURCE_ARCHIVED',
+                message: 'Selecione uma conta e categoria ativas.',
+              });
+            if (category.type !== dto.type)
+              throw new ConflictException({
+                code: 'CATEGORY_TYPE_MISMATCH',
+                message: 'A categoria não corresponde à natureza do lançamento.',
+              });
+            const amount = new Prisma.Decimal(dto.amount);
+            const transaction = await tx.financialTransaction.create({
+              data: {
+                userId,
+                accountId: dto.accountId,
+                categoryId: dto.categoryId,
+                type: dto.type,
+                status: 'PAID',
+                description: dto.description,
+                plannedAmount: amount,
+                actualAmount: amount,
+                dueDate: civilDate(dto.date),
+                paidAt: civilDate(dto.date),
+              },
+            });
+            const changed = await tx.capturedNotification.updateMany({
+              where: { id, userId, status: { notIn: ['CONFIRMED', 'DISMISSED'] } },
+              data: {
+                status: 'CONFIRMED',
+                confirmedTransactionId: transaction.id,
+                confirmedAt: new Date(),
+                accountId: dto.accountId,
+                categoryId: dto.categoryId,
+              },
+            });
+            if (!changed.count)
+              throw new ConflictException({
+                code: 'NOTIFICATION_ALREADY_CONFIRMED',
+                message: 'Notificação já confirmada em um lançamento.',
+              });
+            const updated = await tx.capturedNotification.findFirst({ where: { id, userId } });
+            return toPublicCapturedNotification(updated!);
           },
-        });
-        const changed = await tx.capturedNotification.updateMany({
-          where: { id, userId, status: { notIn: ['CONFIRMED', 'DISMISSED'] } },
-          data: {
-            status: 'CONFIRMED',
-            confirmedTransactionId: transaction.id,
-            confirmedAt: new Date(),
-            accountId: dto.accountId,
-            categoryId: dto.categoryId,
-          },
-        });
-        if (!changed.count)
-          throw new ConflictException({
-            code: 'NOTIFICATION_ALREADY_CONFIRMED',
-            message: 'Notificação já confirmada em um lançamento.',
-          });
-        const updated = await tx.capturedNotification.findFirst({ where: { id, userId } });
-        return toPublicCapturedNotification(updated!);
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+        );
+      } catch (error) {
+        if (attempt < 2 && isSerializableConflict(error)) continue;
+        throw error;
+      }
+    }
+    throw new ConflictException({
+      code: 'NOTIFICATION_CONFIRM_CONFLICT',
+      message: 'A confirmação não pôde ser serializada.',
+    });
   }
 
   private async findOwnCaptured(userId: string, id: string): Promise<CapturedNotification> {
