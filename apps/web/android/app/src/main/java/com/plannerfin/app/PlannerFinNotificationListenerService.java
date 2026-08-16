@@ -30,12 +30,17 @@ public class PlannerFinNotificationListenerService extends NotificationListenerS
         String packageName = sbn.getPackageName();
         PlannerFinNotificationPreferences.load(this);
 
-        // Discovery (SPEC-022 §9.2): record only packageName/label/lastSeenAt for every posting
-        // app, monitored or not, before any notification content is read. Non-monitored packages
-        // stop here — no Notification/Bundle is ever touched for them.
-        PlannerFinNotificationPreferences.recordObserved(this, packageName, resolveAppLabel(packageName));
-
-        if (!PlannerFinNotificationCaptureState.shouldCapture(packageName)) {
+        // Discovery (SPEC-022 §9.2): "capture desligada" means zero new discovery, so nothing is
+        // recorded while captureEnabled=false. With capture on, a non-monitored package only ever
+        // gets packageName/label/lastSeenAt recorded — no Notification/Bundle is touched for it.
+        // A monitored package skips observed-app storage entirely (it's already known) and goes
+        // straight to the capture pipeline below.
+        PlannerFinNotificationRouting.Decision decision = PlannerFinNotificationRouting.decide(packageName);
+        if (decision == PlannerFinNotificationRouting.Decision.IGNORE) {
+            return;
+        }
+        if (decision == PlannerFinNotificationRouting.Decision.RECORD_OBSERVED) {
+            PlannerFinNotificationPreferences.recordObserved(this, packageName, resolveAppLabel(packageName));
             return;
         }
 

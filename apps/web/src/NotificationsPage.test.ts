@@ -322,6 +322,39 @@ describe('NotificationsPage — apps observados neste dispositivo', () => {
     expect(wrapper.findAll('.observed-choice').some((el) => el.text().includes('Nubank'))).toBe(false);
   });
 
+  it('app monitorado que também é conhecido aparece uma única vez (sem duplicar)', async () => {
+    mocks.getCaptureState.mockResolvedValue(
+      emptyCaptureState({ captureEnabled: true, monitoredPackages: ['com.nu.production'] }),
+    );
+    const wrapper = mountPage();
+    await flushPromises();
+    await openManager(wrapper);
+
+    const nubankEntries = wrapper
+      .findAll('.choice, .observed-choice')
+      .filter((el) => el.text().includes('Nubank'));
+    expect(nubankEntries).toHaveLength(1);
+    expect(nubankEntries[0]!.attributes('aria-pressed')).toBe('true');
+  });
+
+  it('app monitorado que também está observado aparece uma única vez (sem duplicar)', async () => {
+    mocks.getCaptureState.mockResolvedValue(
+      emptyCaptureState({ captureEnabled: true, monitoredPackages: ['com.example.caju'] }),
+    );
+    mocks.getObservedPackages.mockResolvedValue([
+      { packageName: 'com.example.caju', label: 'Caju', lastSeenAt: Date.now() },
+    ]);
+    const wrapper = mountPage();
+    await flushPromises();
+    await openManager(wrapper);
+
+    const cajuEntries = wrapper
+      .findAll('.choice, .observed-choice')
+      .filter((el) => el.text().includes('Caju'));
+    expect(cajuEntries).toHaveLength(1);
+    expect(wrapper.findAll('.observed-choice').some((el) => el.text().includes('Caju'))).toBe(false);
+  });
+
   it('busca filtra apps observados e conhecidos por nome ou package', async () => {
     mocks.getObservedPackages.mockResolvedValue([
       { packageName: 'com.example.caju', label: 'Caju', lastSeenAt: Date.now() },

@@ -83,9 +83,11 @@ final class PlannerFinNotificationPreferences {
     }
 
     /**
-     * Records that packageName emitted a notification while the listener had access. Only
-     * packageName/label/lastSeenAt are ever touched here — never notification content — and this
-     * runs identically for monitored and non-monitored packages (see PlannerFinNotificationListenerService).
+     * Records that a non-monitored packageName emitted a notification while capture was enabled.
+     * Only packageName/label/lastSeenAt are ever touched here — never notification content. The
+     * caller (PlannerFinNotificationListenerService, via PlannerFinNotificationRouting) only
+     * invokes this for RECORD_OBSERVED decisions: capture disabled or already-monitored packages
+     * never reach this method.
      */
     static void recordObserved(Context context, String packageName, String label) {
         PlannerFinNotificationObservedApps.recordObserved(packageName, label, System.currentTimeMillis());

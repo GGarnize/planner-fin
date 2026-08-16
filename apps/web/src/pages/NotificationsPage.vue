@@ -79,8 +79,11 @@ const visibleObserved = computed(() =>
     .filter((entry) => matchesSearch(entry.label ?? entry.packageName, entry.packageName)),
 );
 
+// Apps conhecidos exclui pacotes já monitorados, para que um app monitorado+conhecido
+// (ex.: Nubank) apareça uma única vez, na seção Monitorados.
 const visibleCatalog = computed(() =>
-  NOTIFICATION_APP_CATALOG.filter((entry) => matchesSearch(entry.label, entry.packageName)),
+  NOTIFICATION_APP_CATALOG.filter((entry) => !captureState.value.monitoredPackages.includes(entry.packageName))
+    .filter((entry) => matchesSearch(entry.label, entry.packageName)),
 );
 
 async function refresh() {
@@ -238,11 +241,13 @@ async function addToMonitored(packageName: string) {
           Se você ativar esta função, o PlannerFin poderá ler o título e o texto das notificações
           dos aplicativos que você escolher para identificar possíveis compras, recebimentos,
           pagamentos e outras movimentações. O conteúdo selecionado poderá ser enviado por conexão
-          segura ao servidor do PlannerFin para classificação e revisão. Notificações de apps não
-          escolhidos não são armazenadas nem enviadas. Nada vira lançamento automaticamente: você
-          sempre revisa e confirma. Você pode desligar a captura, remover um app e apagar o
-          histórico aqui a qualquer momento. Consulte a Política de Privacidade do PlannerFin para
-          saber quais dados são tratados, por quanto tempo e como solicitar exclusão.
+          segura ao servidor do PlannerFin para classificação e revisão. De apps não escolhidos, o
+          PlannerFin guarda localmente apenas o identificador/nome do app e quando ele foi visto,
+          para você poder selecioná-lo depois; o conteúdo da notificação não é armazenado nem
+          enviado. Nada vira lançamento automaticamente: você sempre revisa e confirma. Você pode
+          desligar a captura, remover um app e apagar o histórico aqui a qualquer momento. Consulte
+          a Política de Privacidade do PlannerFin para saber quais dados são tratados, por quanto
+          tempo e como solicitar exclusão.
         </p>
         <div class="actions">
           <button type="button" class="primary" @click="activate">Ativar acesso</button>
@@ -321,7 +326,10 @@ async function addToMonitored(packageName: string) {
 
         <section v-if="showAppManager" class="panel app-manager" aria-label="Gerenciar apps">
           <h2>Gerenciar apps</h2>
-          <p>Escolha quais aplicativos o PlannerFin pode observar. Nenhum app é ativado por padrão.</p>
+          <p>
+            Escolha quais aplicativos o PlannerFin pode monitorar para capturar conteúdo
+            financeiro. Nenhum app é ativado por padrão.
+          </p>
 
           <label class="search-field">
             <span class="material-icons" aria-hidden="true">search</span>
@@ -357,6 +365,11 @@ async function addToMonitored(packageName: string) {
 
           <div class="app-group">
             <h3>Observados neste dispositivo</h3>
+            <p class="fine-print">
+              Somente nome do app/pacote e a última vez visto são guardados localmente aqui, até
+              você escolher monitorar. O título e o texto da notificação só passam a ser capturados
+              depois que você tocar em Monitorar.
+            </p>
             <ul v-if="visibleObserved.length" class="app-list">
               <li v-for="entry in visibleObserved" :key="entry.packageName">
                 <div class="choice observed-choice">
@@ -389,7 +402,7 @@ async function addToMonitored(packageName: string) {
                 <button
                   type="button"
                   class="choice"
-                  :aria-pressed="captureState.monitoredPackages.includes(entry.packageName)"
+                  aria-pressed="false"
                   :disabled="savingApp === entry.packageName"
                   @click="toggleApp(entry.packageName)"
                 >
@@ -397,11 +410,7 @@ async function addToMonitored(packageName: string) {
                     <strong>{{ entry.label }}</strong>
                     <small>{{ entry.packageName }}</small>
                   </span>
-                  <span class="material-icons" aria-hidden="true">{{
-                    captureState.monitoredPackages.includes(entry.packageName)
-                      ? 'check_circle'
-                      : 'radio_button_unchecked'
-                  }}</span>
+                  <span class="material-icons" aria-hidden="true">radio_button_unchecked</span>
                 </button>
               </li>
             </ul>
