@@ -42,6 +42,12 @@ export interface CapturedNotificationsDebug {
   secretDropped: number;
 }
 
+export interface ObservedNotificationPackage {
+  packageName: string;
+  label: string | null;
+  lastSeenAt: number;
+}
+
 interface PlannerFinNotificationListenerPlugin {
   getNotificationAccessStatus(): Promise<NotificationAccessStatus>;
   openNotificationAccessSettings(): Promise<void>;
@@ -64,6 +70,8 @@ interface PlannerFinNotificationListenerPlugin {
   purgeExpired(): Promise<NotificationCaptureState & { purgedCount: number }>;
   getRecentCapturedNotifications(): Promise<CapturedNotificationsDebug>;
   clearRecentCapturedNotifications(): Promise<CapturedNotificationsDebug>;
+  getObservedPackages(): Promise<{ packages: ObservedNotificationPackage[] }>;
+  clearObservedPackages(): Promise<{ packages: ObservedNotificationPackage[] }>;
 }
 
 const plugin = registerPlugin<PlannerFinNotificationListenerPlugin>('PlannerFinNotificationListener');
@@ -157,4 +165,14 @@ export async function ackPending(localIds: string[]): Promise<void> {
 export async function purgeExpired(): Promise<void> {
   if (!isNotificationListenerDiagnosticAvailable()) return;
   await plugin.purgeExpired();
+}
+
+export async function getObservedPackages(): Promise<ObservedNotificationPackage[]> {
+  if (!isNotificationListenerDiagnosticAvailable()) return [];
+  return (await plugin.getObservedPackages()).packages;
+}
+
+export async function clearObservedPackages(): Promise<void> {
+  if (!isNotificationListenerDiagnosticAvailable()) return;
+  await plugin.clearObservedPackages();
 }

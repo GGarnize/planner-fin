@@ -33,6 +33,10 @@ final class PlannerFinNotificationCaptureState {
         return captureEnabled && monitoredPackages.contains(packageName);
     }
 
+    static synchronized boolean isMonitored(String packageName) {
+        return monitoredPackages.contains(packageName);
+    }
+
     static boolean isValidPackageName(String packageName) {
         return packageName != null && packageName.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+");
     }

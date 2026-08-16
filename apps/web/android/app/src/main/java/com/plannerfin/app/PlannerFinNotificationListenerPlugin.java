@@ -16,6 +16,8 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import org.json.JSONObject;
+
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -176,6 +178,35 @@ public class PlannerFinNotificationListenerPlugin extends Plugin {
         result.put("capturedCount", 0);
         result.put("secretDropped", 0);
         call.resolve(result);
+    }
+
+    @PluginMethod
+    public void getObservedPackages(PluginCall call) {
+        PlannerFinNotificationPreferences.load(getContext());
+        JSObject result = new JSObject();
+        result.put("packages", observedPackagesArray());
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void clearObservedPackages(PluginCall call) {
+        PlannerFinNotificationPreferences.clearObservedPackages(getContext());
+        JSObject result = new JSObject();
+        result.put("packages", new JSArray());
+        call.resolve(result);
+    }
+
+    private JSArray observedPackagesArray() {
+        JSArray packages = new JSArray();
+        for (PlannerFinNotificationObservedApps.Entry entry :
+                PlannerFinNotificationPreferences.getObservedPackages(getContext())) {
+            JSObject item = new JSObject();
+            item.put("packageName", entry.packageName);
+            item.put("label", entry.label == null ? JSONObject.NULL : entry.label);
+            item.put("lastSeenAt", entry.lastSeenAt);
+            packages.put(item);
+        }
+        return packages;
     }
 
     private JSObject getCaptureStateResult() {

@@ -1,11 +1,12 @@
 package com.plannerfin.app;
 
 import android.app.Notification;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 import android.util.Log;
-import android.content.pm.ApplicationInfo;
 
 public class PlannerFinNotificationListenerService extends NotificationListenerService {
     private static final String TAG = "PlannerFinNotif";
@@ -28,7 +29,18 @@ public class PlannerFinNotificationListenerService extends NotificationListenerS
     public void onNotificationPosted(StatusBarNotification sbn) {
         String packageName = sbn.getPackageName();
         PlannerFinNotificationPreferences.load(this);
-        if (!PlannerFinNotificationCaptureState.shouldCapture(packageName)) {
+
+        // Discovery (SPEC-022 §9.2): "capture desligada" means zero new discovery, so nothing is
+        // recorded while captureEnabled=false. With capture on, a non-monitored package only ever
+        // gets packageName/label/lastSeenAt recorded — no Notification/Bundle is touched for it.
+        // A monitored package skips observed-app storage entirely (it's already known) and goes
+        // straight to the capture pipeline below.
+        PlannerFinNotificationRouting.Decision decision = PlannerFinNotificationRouting.decide(packageName);
+        if (decision == PlannerFinNotificationRouting.Decision.IGNORE) {
+            return;
+        }
+        if (decision == PlannerFinNotificationRouting.Decision.RECORD_OBSERVED) {
+            PlannerFinNotificationPreferences.recordObserved(this, packageName, resolveAppLabel(packageName));
             return;
         }
 
@@ -83,5 +95,21 @@ public class PlannerFinNotificationListenerService extends NotificationListenerS
 
     private boolean isDebuggableBuild() {
         return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+    }
+
+    /**
+     * Resolves a human label for packageName using only the default (non-QUERY_ALL_PACKAGES)
+     * PackageManager visibility available to this app. Never guesses a label from the package
+     * name itself; returns null when unresolvable so callers fall back to the raw packageName.
+     */
+    private String resolveAppLabel(String packageName) {
+        try {
+            PackageManager packageManager = getPackageManager();
+            ApplicationInfo appInfo = packageManager.getApplicationInfo(packageName, 0);
+            CharSequence label = packageManager.getApplicationLabel(appInfo);
+            return label == null ? null : label.toString();
+        } catch (Exception error) {
+            return null;
+        }
     }
 }

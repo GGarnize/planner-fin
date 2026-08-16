@@ -12,6 +12,8 @@ const mocked = vi.hoisted(() => ({
     getRecentCapturedNotifications: vi.fn(),
     clearRecentCapturedNotifications: vi.fn(),
     purgePendingQueue: vi.fn(),
+    getObservedPackages: vi.fn(),
+    clearObservedPackages: vi.fn(),
   },
 }));
 
@@ -97,5 +99,44 @@ describe('notification-listener bridge', () => {
       monitoredPackages: ['com.nu.production'],
       pendingCount: 0,
     });
+  });
+
+  it('getObservedPackages retorna vazio fora do Android e nao chama o plugin', async () => {
+    const bridge = await import('./notification-listener');
+
+    await expect(bridge.getObservedPackages()).resolves.toEqual([]);
+    expect(mocked.plugin.getObservedPackages).not.toHaveBeenCalled();
+  });
+
+  it('getObservedPackages encaminha ao plugin no Android', async () => {
+    mocked.native = true;
+    mocked.platform = 'android';
+    mocked.plugin.getObservedPackages.mockResolvedValue({
+      packages: [{ packageName: 'com.example.caju', label: 'Caju', lastSeenAt: 1_700_000_000_000 }],
+    });
+    const bridge = await import('./notification-listener');
+
+    const result = await bridge.getObservedPackages();
+
+    expect(mocked.plugin.getObservedPackages).toHaveBeenCalledTimes(1);
+    expect(result).toEqual([{ packageName: 'com.example.caju', label: 'Caju', lastSeenAt: 1_700_000_000_000 }]);
+  });
+
+  it('clearObservedPackages e seguro fora do Android e nao chama o plugin', async () => {
+    const bridge = await import('./notification-listener');
+
+    await expect(bridge.clearObservedPackages()).resolves.toBeUndefined();
+    expect(mocked.plugin.clearObservedPackages).not.toHaveBeenCalled();
+  });
+
+  it('clearObservedPackages encaminha ao plugin no Android', async () => {
+    mocked.native = true;
+    mocked.platform = 'android';
+    mocked.plugin.clearObservedPackages.mockResolvedValue({ packages: [] });
+    const bridge = await import('./notification-listener');
+
+    await bridge.clearObservedPackages();
+
+    expect(mocked.plugin.clearObservedPackages).toHaveBeenCalledTimes(1);
   });
 });
