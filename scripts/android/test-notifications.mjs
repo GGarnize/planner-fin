@@ -451,6 +451,31 @@ async function testSecureQueueControls() {
   pass('Limite 10 MiB');
 
   clearBuffer();
+  const beforePurge = seedQueue(['--ei', 'count', '1', '--es', 'marker', 'PURGE_PENDING_QUEUE']);
+  assertEqual(beforePurge.pendingCount, 1, 'pendingCount antes da purga de fila');
+  const deviceIdBefore = beforePurge.deviceId;
+  const ownerBindingIdBefore = beforePurge.ownerBindingId;
+  const monitoredBefore = [...beforePurge.monitoredPackages];
+  const captureEnabledBefore = beforePurge.captureEnabled;
+  const staleLocalId = beforePurge.events[0].localId;
+
+  debugCommand('purgePendingQueue');
+  state = debugState();
+  assertEqual(state.pendingCount, 0, 'purgePendingQueue deve esvaziar a fila nativa');
+  assertEqual(state.deviceId, deviceIdBefore, 'purgePendingQueue preserva deviceId');
+  assertEqual(state.ownerBindingId, ownerBindingIdBefore, 'purgePendingQueue preserva ownerBindingId');
+  assertEqual(state.captureEnabled, captureEnabledBefore, 'purgePendingQueue preserva captureEnabled');
+  assert(
+    monitoredBefore.every((packageName) => state.monitoredPackages.includes(packageName)),
+    'purgePendingQueue preserva monitoredPackages',
+  );
+  pass('purgePendingQueue esvazia fila preservando binding');
+
+  const ackResult = ackQueue([staleLocalId]);
+  assertEqual(ackResult.pendingCount, 0, 'item purgado nao deve voltar/sincronizar apos ack tardio');
+  pass('Item purgado nao volta a sincronizar');
+
+  clearBuffer();
   seedQueue(['--ei', 'count', '1', '--es', 'marker', 'PURGE_LOGOUT']);
   debugCommand('unbind');
   state = debugState();

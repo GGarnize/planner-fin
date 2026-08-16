@@ -11,6 +11,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -20,8 +21,10 @@ import { CsrfGuard } from '../auth/csrf.guard';
 import { CurrentAuth } from '../auth/current-auth.decorator';
 import { RateLimitService } from '../auth/rate-limit.service';
 import type { AuthenticatedContext } from '../auth/auth.types';
+import type { CapturedNotificationListQuery } from '@planner-fin/shared';
 import {
   BindNotificationDeviceDto,
+  ConfirmCapturedNotificationDto,
   IngestCapturedNotificationsDto,
   UpdateNotificationDevicePreferencesDto,
 } from './dto';
@@ -90,5 +93,52 @@ export class NotificationsController {
   @UseGuards(CsrfGuard)
   purgeExpired(@CurrentAuth() auth: AuthenticatedContext) {
     return this.notifications.purgeExpired(auth.userId);
+  }
+
+  @Delete('notifications')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(CsrfGuard)
+  deleteAllHistory(@CurrentAuth() auth: AuthenticatedContext) {
+    return this.notifications.purgeAllHistory(auth.userId);
+  }
+
+  @Get('notifications')
+  @Header('Cache-Control', 'no-store')
+  listCaptured(
+    @CurrentAuth() auth: AuthenticatedContext,
+    @Query() query: Record<string, unknown>,
+  ) {
+    return this.notifications.listCaptured(auth.userId, query as CapturedNotificationListQuery);
+  }
+
+  @Get('notifications/:id')
+  @Header('Cache-Control', 'no-store')
+  getCaptured(@CurrentAuth() auth: AuthenticatedContext, @Param('id') id: string) {
+    return this.notifications.getCaptured(auth.userId, id);
+  }
+
+  @Post('notifications/:id/confirm')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(CsrfGuard)
+  confirm(
+    @CurrentAuth() auth: AuthenticatedContext,
+    @Param('id') id: string,
+    @Body() dto: ConfirmCapturedNotificationDto,
+  ) {
+    return this.notifications.confirm(auth.userId, id, dto);
+  }
+
+  @Post('notifications/:id/dismiss')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(CsrfGuard)
+  dismiss(@CurrentAuth() auth: AuthenticatedContext, @Param('id') id: string) {
+    return this.notifications.dismiss(auth.userId, id);
+  }
+
+  @Post('notifications/:id/mark-non-financial')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(CsrfGuard)
+  markNonFinancial(@CurrentAuth() auth: AuthenticatedContext, @Param('id') id: string) {
+    return this.notifications.markNonFinancial(auth.userId, id);
   }
 }

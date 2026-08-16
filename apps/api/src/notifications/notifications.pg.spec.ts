@@ -15,6 +15,9 @@ const packageName = 'com.plannerfin.notificationtest';
 const otherPackageName = 'com.plannerfin.notificationother';
 const keyA = '33333333-3333-4333-8333-333333333322';
 const keyB = '44444444-4444-4444-8444-444444444422';
+const accountId = '66666666-6666-4666-8666-666666666622';
+const expenseCategoryId = '77777777-7777-4777-8777-777777777722';
+const incomeCategoryId = '88888888-8888-4888-8888-888888888822';
 
 function db() {
   if (!databaseUrl) throw new Error('SPEC022_DATABASE_URL ausente');
@@ -46,6 +49,9 @@ async function seed(prisma: PrismaClient) {
   await prisma.notificationIngestConfirmation.deleteMany({ where: { userId: { in: [userA, userB] } } });
   await prisma.capturedNotification.deleteMany({ where: { userId: { in: [userA, userB] } } });
   await prisma.notificationDevice.deleteMany({ where: { userId: { in: [userA, userB] } } });
+  await prisma.financialTransaction.deleteMany({ where: { userId: { in: [userA, userB] } } });
+  await prisma.financialCategory.deleteMany({ where: { userId: { in: [userA, userB] } } });
+  await prisma.financialAccount.deleteMany({ where: { userId: { in: [userA, userB] } } });
   await prisma.userPreferences.deleteMany({ where: { userId: { in: [userA, userB] } } });
   await prisma.user.deleteMany({ where: { id: { in: [userA, userB] } } });
   await prisma.user.createMany({
@@ -83,6 +89,38 @@ function item(localId = '55555555-5555-4555-8555-555555555522') {
     bigText: null,
     fingerprintVersion: 1 as const,
   };
+}
+
+async function seedAccountAndCategory(prisma: PrismaClient, userId: string) {
+  await prisma.financialAccount.create({
+    data: {
+      id: accountId,
+      userId,
+      name: 'Conta Corrente Teste',
+      type: 'CHECKING',
+      currency: 'BRL',
+      openingBalance: '0.00',
+      openingBalanceDate: new Date('2026-01-01T00:00:00.000Z'),
+    },
+  });
+  await prisma.financialCategory.createMany({
+    data: [
+      {
+        id: expenseCategoryId,
+        userId,
+        name: 'Alimentacao',
+        normalizedName: 'alimentacao',
+        type: 'EXPENSE',
+      },
+      {
+        id: incomeCategoryId,
+        userId,
+        name: 'Salario',
+        normalizedName: 'salario',
+        type: 'INCOME',
+      },
+    ],
+  });
 }
 
 describePg('captura de notificacoes com PostgreSQL real', () => {
@@ -199,6 +237,248 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
     });
     expect(await svc.purgeExpired(userA, new Date('2026-08-13T19:40:00.000Z'))).toEqual({
       purgedCount: 1,
+    });
+  });
+
+  it('classifica deterministicamente no momento da ingestao', async () => {
+    const svc = service(prisma);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+
+    const list = await svc.listCaptured(userA, {});
+    expect(list.data).toHaveLength(1);
+    expect(list.data[0]).toMatchObject({
+      status: 'FINANCIAL_CANDIDATE',
+      parsedType: 'EXPENSE',
+      parsedAmount: '42.90',
+    });
+    expect(list.data[0]!.classificationReasons.length).toBeGreaterThan(0);
+  });
+
+  it('lista "para revisar" exclui estados historicos por padrao, mas aceita filtro explicito', async () => {
+    const svc = service(prisma);
+    await seedAccountAndCategory(prisma, userA);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [
+        item(),
+        { ...item('99999999-2222-4222-8222-999999999922'), notificationKeyHash: 'c'.repeat(64) },
+      ],
+    });
+    const [pending, toDismiss] = (await svc.listCaptured(userA, {})).data;
+    await svc.dismiss(userA, toDismiss!.id);
+
+    const defaultList = await svc.listCaptured(userA, {});
+    expect(defaultList.data.map((row) => row.id)).toEqual([pending!.id]);
+    expect(defaultList.page.filteredCount).toBe(1);
+
+    const dismissedOnly = await svc.listCaptured(userA, { status: 'DISMISSED' });
+    expect(dismissedOnly.data.map((row) => row.id)).toEqual([toDismiss!.id]);
+  });
+
+  it('confirma candidato criando exatamente um lancamento, de forma idempotente', async () => {
+    const svc = service(prisma);
+    await seedAccountAndCategory(prisma, userA);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    const [captured] = (await svc.listCaptured(userA, {})).data;
+
+    const confirmDto = {
+      accountId,
+      categoryId: expenseCategoryId,
+      type: 'EXPENSE' as const,
+      amount: '42.90',
+      description: 'Padaria exemplo',
+      date: '2026-08-13',
+    };
+    const confirmed = await svc.confirm(userA, captured!.id, confirmDto);
+    const confirmedAgain = await svc.confirm(userA, captured!.id, confirmDto);
+
+    expect(confirmed.status).toBe('CONFIRMED');
+    expect(confirmed.confirmedTransactionId).toBeTruthy();
+    expect(confirmedAgain.confirmedTransactionId).toBe(confirmed.confirmedTransactionId);
+    expect(
+      await prisma.financialTransaction.count({
+        where: { userId: userA, description: 'Padaria exemplo' },
+      }),
+    ).toBe(1);
+  });
+
+  it('confirmacoes concorrentes convergem para exatamente um lancamento', async () => {
+    const svc = service(prisma);
+    await seedAccountAndCategory(prisma, userA);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    const [captured] = (await svc.listCaptured(userA, {})).data;
+
+    const confirmDto = {
+      accountId,
+      categoryId: expenseCategoryId,
+      type: 'EXPENSE' as const,
+      amount: '42.90',
+      description: 'Padaria exemplo',
+      date: '2026-08-13',
+    };
+    const [first, second] = await Promise.all([
+      svc.confirm(userA, captured!.id, confirmDto),
+      svc.confirm(userA, captured!.id, confirmDto),
+    ]);
+
+    expect(first.confirmedTransactionId).toBeTruthy();
+    expect(second.confirmedTransactionId).toBe(first.confirmedTransactionId);
+    expect(
+      await prisma.financialTransaction.count({
+        where: { userId: userA, description: 'Padaria exemplo' },
+      }),
+    ).toBe(1);
+  });
+
+  it('bloqueia confirmacao sem conta/categoria propria ou compativel', async () => {
+    const svc = service(prisma);
+    await seedAccountAndCategory(prisma, userA);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    const [captured] = (await svc.listCaptured(userA, {})).data;
+
+    await expect(
+      svc.confirm(userA, captured!.id, {
+        accountId: '99999999-9999-4999-8999-999999999999',
+        categoryId: expenseCategoryId,
+        type: 'EXPENSE',
+        amount: '42.90',
+        description: 'Padaria exemplo',
+        date: '2026-08-13',
+      }),
+    ).rejects.toMatchObject({ response: { code: 'NOT_FOUND' } });
+
+    await expect(
+      svc.confirm(userA, captured!.id, {
+        accountId,
+        categoryId: incomeCategoryId,
+        type: 'EXPENSE',
+        amount: '42.90',
+        description: 'Padaria exemplo',
+        date: '2026-08-13',
+      }),
+    ).rejects.toMatchObject({ response: { code: 'CATEGORY_TYPE_MISMATCH' } });
+  });
+
+  it('descarte nao cria lancamento e bloqueia confirmacao posterior', async () => {
+    const svc = service(prisma);
+    await seedAccountAndCategory(prisma, userA);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    const [captured] = (await svc.listCaptured(userA, {})).data;
+
+    const dismissed = await svc.dismiss(userA, captured!.id);
+    expect(dismissed.status).toBe('DISMISSED');
+    expect(await prisma.financialTransaction.count({ where: { userId: userA } })).toBe(0);
+
+    await expect(
+      svc.confirm(userA, captured!.id, {
+        accountId,
+        categoryId: expenseCategoryId,
+        type: 'EXPENSE',
+        amount: '42.90',
+        description: 'Padaria exemplo',
+        date: '2026-08-13',
+      }),
+    ).rejects.toMatchObject({ response: { code: 'NOTIFICATION_ALREADY_DISMISSED' } });
+  });
+
+  it('marca como nao financeira sem efeito financeiro', async () => {
+    const svc = service(prisma);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    const [captured] = (await svc.listCaptured(userA, {})).data;
+
+    const marked = await svc.markNonFinancial(userA, captured!.id);
+    expect(marked.status).toBe('NON_FINANCIAL');
+    expect(await prisma.financialTransaction.count({ where: { userId: userA } })).toBe(0);
+  });
+
+  it('apaga historico nao confirmado preservando notificacoes confirmadas', async () => {
+    const svc = service(prisma);
+    await seedAccountAndCategory(prisma, userA);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [
+        item(),
+        {
+          ...item('99999999-1111-4111-8111-999999999911'),
+          notificationKeyHash: 'b'.repeat(64),
+        },
+      ],
+    });
+    const [confirmable, other] = (await svc.listCaptured(userA, {})).data;
+    await svc.confirm(userA, confirmable!.id, {
+      accountId,
+      categoryId: expenseCategoryId,
+      type: 'EXPENSE',
+      amount: '42.90',
+      description: 'Padaria exemplo',
+      date: '2026-08-13',
+    });
+
+    const result = await svc.purgeAllHistory(userA);
+
+    expect(result).toEqual({ purgedCount: 1 });
+    expect(await prisma.capturedNotification.findUnique({ where: { id: confirmable!.id } })).not.toBeNull();
+    expect(await prisma.capturedNotification.findUnique({ where: { id: other!.id } })).toBeNull();
+  });
+
+  it('isola por owner nas novas rotas de revisao', async () => {
+    const svc = service(prisma);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    const [captured] = (await svc.listCaptured(userA, {})).data;
+
+    expect((await svc.listCaptured(userB, {})).data).toEqual([]);
+    await expect(svc.getCaptured(userB, captured!.id)).rejects.toMatchObject({
+      response: { code: 'NOT_FOUND' },
+    });
+    await expect(svc.dismiss(userB, captured!.id)).rejects.toMatchObject({
+      response: { code: 'NOT_FOUND' },
     });
   });
 });

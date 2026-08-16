@@ -11,6 +11,7 @@ const mocked = vi.hoisted(() => ({
     getCaptureState: vi.fn(),
     getRecentCapturedNotifications: vi.fn(),
     clearRecentCapturedNotifications: vi.fn(),
+    purgePendingQueue: vi.fn(),
   },
 }));
 
@@ -63,6 +64,38 @@ describe('notification-listener bridge', () => {
     expect(mocked.plugin.setCaptureEnabled).toHaveBeenCalledWith({ enabled: true });
     expect(mocked.plugin.setMonitoredPackages).toHaveBeenCalledWith({
       packages: ['com.example.bank'],
+    });
+  });
+
+  it('purgePendingQueue e seguro fora do Android e nao chama o plugin', async () => {
+    const bridge = await import('./notification-listener');
+
+    await expect(bridge.purgePendingQueue()).resolves.toEqual({
+      captureEnabled: false,
+      monitoredPackages: [],
+      capturedCount: 0,
+      secretDropped: 0,
+    });
+    expect(mocked.plugin.purgePendingQueue).not.toHaveBeenCalled();
+  });
+
+  it('purgePendingQueue encaminha ao plugin no Android preservando o restante do estado', async () => {
+    mocked.native = true;
+    mocked.platform = 'android';
+    mocked.plugin.purgePendingQueue.mockResolvedValue({
+      captureEnabled: true,
+      monitoredPackages: ['com.nu.production'],
+      pendingCount: 0,
+    });
+    const bridge = await import('./notification-listener');
+
+    const result = await bridge.purgePendingQueue();
+
+    expect(mocked.plugin.purgePendingQueue).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      captureEnabled: true,
+      monitoredPackages: ['com.nu.production'],
+      pendingCount: 0,
     });
   });
 });

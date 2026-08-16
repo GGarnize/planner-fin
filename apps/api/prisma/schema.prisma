@@ -48,6 +48,7 @@ enum NotificationDeviceStatus {
 
 enum CapturedNotificationStatus {
   UNCLASSIFIED
+  FINANCIAL_CANDIDATE
   NON_FINANCIAL
   AMBIGUOUS
   IGNORED
@@ -94,11 +95,25 @@ model CapturedNotification {
   subText             String?                    @db.VarChar(300)
   bigText             String?                    @db.VarChar(4000)
   status              CapturedNotificationStatus @default(UNCLASSIFIED)
+  classifierVersion   Int                        @default(0)
+  parsedType          FinancialTransactionType?
+  parsedAmount        Decimal?                   @db.Decimal(19, 2)
+  parsedDescription   String?                    @db.VarChar(300)
+  classificationReasons Json                     @default("[]")
+  classifiedAt        DateTime?                  @db.Timestamptz(3)
+  accountId           String?                    @db.Uuid
+  categoryId          String?                    @db.Uuid
+  confirmedTransactionId String?                 @unique @db.Uuid
+  confirmedAt         DateTime?                  @db.Timestamptz(3)
+  dismissedAt         DateTime?                  @db.Timestamptz(3)
   expiresAt           DateTime                   @db.Timestamptz(3)
   createdAt           DateTime                   @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime                   @updatedAt @db.Timestamptz(3)
   user                User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
   device              NotificationDevice         @relation(fields: [deviceRecordId], references: [id], onDelete: Restrict)
+  account             FinancialAccount?          @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category            FinancialCategory?         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  confirmedTransaction FinancialTransaction?      @relation(fields: [confirmedTransactionId], references: [id], onDelete: Restrict)
 
   @@unique([userId, deviceId, packageName, notificationKeyHash, postedAt, fingerprintVersion])
   @@index([userId, status, receivedAt(sort: Desc)])
@@ -212,6 +227,7 @@ model FinancialCategory {
   monthlyBudgetCategories MonthlyBudgetCategory[]
   transactionTemplates    TransactionTemplate[]
   importRows              ImportRow[]
+  capturedNotifications   CapturedNotification[]
 
   @@unique([userId, type, normalizedName])
   @@index([userId])
@@ -278,6 +294,7 @@ model FinancialAccount {
   importSessions             ImportSession[]
   debtPayments               DebtPayment[]
   transactionTemplates       TransactionTemplate[]  @relation("TemplateDefaultAccount")
+  capturedNotifications      CapturedNotification[]
 
   @@index([userId])
 }
@@ -536,6 +553,7 @@ model FinancialTransaction {
   category         FinancialCategory          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   recurrenceRule   RecurrenceRule?            @relation(fields: [recurrenceRuleId], references: [id], onDelete: Restrict)
   importRow        ImportRow?
+  capturedNotification CapturedNotification?
 
   @@unique([recurrenceRuleId, occurrenceDate])
   @@index([userId, deletedAt, dueDate(sort: Desc), createdAt(sort: Desc), id])

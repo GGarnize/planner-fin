@@ -96,6 +96,18 @@ public class PlannerFinNotificationListenerPlugin extends Plugin {
         call.resolve(getCaptureStateResult());
     }
 
+    /**
+     * Purga somente a fila nativa pendente (producao, nao debug-only).
+     * Preserva deviceId, ownerBindingId, monitoredPackages e captureEnabled —
+     * usado por "Desativar e apagar historico", que já desliga a captura à parte.
+     */
+    @PluginMethod
+    public void purgePendingQueue(PluginCall call) {
+        new PlannerFinNotificationQueue(getContext()).purgeAll();
+        PlannerFinNotificationBuffer.clear();
+        call.resolve(new PlannerFinNotificationQueue(getContext()).stats());
+    }
+
     @PluginMethod
     public void getQueueStats(PluginCall call) {
         PlannerFinNotificationPreferences.load(getContext());

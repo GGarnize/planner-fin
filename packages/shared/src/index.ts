@@ -184,6 +184,63 @@ export interface IngestCapturedNotificationsResponse {
   createdCount: number;
   duplicateCount: number;
 }
+export type CapturedNotificationStatus =
+  | 'UNCLASSIFIED'
+  | 'FINANCIAL_CANDIDATE'
+  | 'NON_FINANCIAL'
+  | 'AMBIGUOUS'
+  | 'IGNORED'
+  | 'DISMISSED'
+  | 'CONFIRMED';
+export interface PublicCapturedNotification {
+  id: string;
+  deviceId: string;
+  packageName: string;
+  status: CapturedNotificationStatus;
+  postedAt: string;
+  receivedAt: string;
+  title: string | null;
+  text: string | null;
+  subText: string | null;
+  bigText: string | null;
+  parsedType: 'INCOME' | 'EXPENSE' | null;
+  parsedAmount: string | null;
+  parsedDescription: string | null;
+  classificationReasons: string[];
+  classifiedAt: string | null;
+  accountId: string | null;
+  categoryId: string | null;
+  confirmedTransactionId: string | null;
+  confirmedAt: string | null;
+  dismissedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface CapturedNotificationListQuery {
+  status?: CapturedNotificationStatus;
+  limit?: string;
+  offset?: string;
+}
+export interface ListCapturedNotificationsResponse {
+  data: PublicCapturedNotification[];
+  page: { limit: number; offset: number; filteredCount: number };
+}
+export interface ConfirmCapturedNotificationRequest {
+  accountId: string;
+  categoryId: string;
+  type: 'INCOME' | 'EXPENSE';
+  amount: string;
+  description: string;
+  date: string;
+}
+export type NotificationReviewErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'NOT_FOUND'
+  | 'CATEGORY_TYPE_MISMATCH'
+  | 'RELATED_RESOURCE_ARCHIVED'
+  | 'NOTIFICATION_ALREADY_DISMISSED'
+  | 'NOTIFICATION_ALREADY_CONFIRMED'
+  | 'INTERNAL_ERROR';
 
 export type FinancialAccountType = 'CHECKING' | 'SAVINGS' | 'CASH' | 'PAYMENT' | 'OTHER';
 export interface PublicFinancialAccount {

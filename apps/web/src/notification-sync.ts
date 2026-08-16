@@ -74,6 +74,24 @@ export async function syncCapturedNotifications(): Promise<void> {
   }
 }
 
+/**
+ * Pushes local capture preferences (captureEnabled/monitoredPackages) to the server
+ * immediately, so consent-screen toggles don't wait for the next focus/visibility sync tick.
+ */
+export async function pushNotificationPreferences(preferences: {
+  captureEnabled: boolean;
+  monitoredPackages: string[];
+}): Promise<NotificationDeviceResponse | null> {
+  if (!isNotificationListenerDiagnosticAvailable() || !authState.token || !authState.user) return null;
+  const deviceId = await getOrCreateDeviceId();
+  if (!deviceId) return null;
+  const device = await bindDevice(deviceId, preferences);
+  await bindOwnerNative(device.deviceId, device.ownerBindingId);
+  await setCaptureEnabled(device.captureEnabled);
+  await setMonitoredPackages(device.monitoredPackages);
+  return device;
+}
+
 export async function purgeNotificationBindingOnLogout(): Promise<void> {
   try {
     await unbindOwnerAndPurge();

@@ -28,4 +28,12 @@ describe('redirecionamentos de autenticação', () => {
       '/login?redirect=/dev/notification-listener',
     );
   });
+
+  it('protege a rota de captura por notificacoes e o inbox por auth', async () => {
+    mocked.authState.token = null;
+    await router.push('/notifications');
+    expect(router.currentRoute.value.fullPath).toBe('/login?redirect=/notifications');
+    await router.push('/notifications/inbox');
+    expect(router.currentRoute.value.fullPath).toBe('/login?redirect=/notifications/inbox');
+  });
 });
