@@ -8,6 +8,7 @@ import type {
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 import { setModalScrollLock } from '../modal-scroll-lock';
+import { normalizeMoney } from '../transaction-template';
 type Page = { data: PublicFinancialTransfer[]; page: { limit: number; nextCursor: string | null } };
 const items = ref<PublicFinancialTransfer[]>([]),
   accounts = ref<PublicFinancialAccount[]>([]);
@@ -71,12 +72,6 @@ async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error?.message || 'Não foi possível concluir a operação.');
   return body as T;
-}
-function normalizeMoney(value: string): string | null {
-  const normalized = value.trim().replace(',', '.');
-  const match = /^(?:0|[1-9][0-9]{0,16})(?:\.([0-9]{1,2}))?$/.exec(normalized);
-  if (!match || /^0(?:\.0{1,2})?$/.test(normalized)) return null;
-  return `${normalized.split('.')[0]}.${(match[1] ?? '').padEnd(2, '0')}`;
 }
 function validateForm(): { plannedAmount: string; actualAmount: string | null } | string {
   const plannedAmount = normalizeMoney(form.plannedAmount);

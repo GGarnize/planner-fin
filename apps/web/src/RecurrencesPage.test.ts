@@ -61,11 +61,11 @@ describe('RecurrencesPage', () => {
     expect(wrapper.find('form').exists()).toBe(true);
   });
 
-  it('nÃ£o mostra aÃ§Ã£o nem aviso de modelos em recorrÃªncia de transferÃªncia', async () => {
+  it('não mostra ação nem aviso de modelos em recorrência de transferência', async () => {
     vi.mocked(authenticatedFetch).mockImplementation((path) => {
       if (path === '/transaction-templates') return Promise.reject(new Error('offline'));
       if (path === '/accounts?includeArchived=true')
-        return response([account, { id: 'b', name: 'Conta sintÃ©tica B', archivedAt: null }]);
+        return response([account, { id: 'b', name: 'Conta sintética B', archivedAt: null }]);
       if (path === '/categories?includeArchived=true') return response(categories);
       return response([]);
     });
@@ -73,7 +73,7 @@ describe('RecurrencesPage', () => {
     await flushPromises();
     await wrapper.get('form select').setValue('TRANSFER');
     expect(wrapper.text()).not.toContain('Usar modelo');
-    expect(wrapper.text()).not.toContain('VocÃª ainda pode preencher a recorrÃªncia manualmente');
+    expect(wrapper.text()).not.toContain('Você ainda pode preencher a recorrência manualmente');
   });
 
   it('oculta busca com 7 modelos, mostra com 8 e filtra com trim sem diferenciar caixa', async () => {
@@ -201,7 +201,7 @@ describe('RecurrencesPage', () => {
     wrapper.unmount();
   });
 
-  it('Back da WebView fecha confirmaÃ§Ã£o e seletor pelo histÃ³rico modal', async () => {
+  it('Back da WebView fecha confirmação e seletor pelo histórico modal', async () => {
     mockApi();
     const wrapper = mount(RecurrencesPage, { attachTo: document.body });
     await flushPromises();

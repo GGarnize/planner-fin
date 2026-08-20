@@ -247,7 +247,7 @@ onMounted(async () => {
             </select></label
           ><label>Credor<input v-model="form.creditorName" required maxlength="120" /></label
           ><label
-            >Principal<input
+            >Valor principal<input
               v-model="form.originalPrincipal"
               inputmode="decimal"
               required
@@ -283,13 +283,13 @@ onMounted(async () => {
             ><label>Data<input v-model="form.funding.fundingDate" type="date" required /></label>
           </div>
         </fieldset>
-        <h3>Cronograma explícito</h3>
+        <h3>Parcelas</h3>
         <div v-for="x in form.installments" :key="x.installmentNumber" class="installment">
-          <b>#{{ x.installmentNumber }}</b
+          <b>Parcela {{ x.installmentNumber }}</b
           ><input v-model="x.dueDate" type="date" aria-label="Vencimento" required /><input
             v-model="x.principalAmount"
             inputmode="decimal"
-            placeholder="Principal"
+            placeholder="Amortização"
             required
           /><input
             v-model="x.interestAmount"
@@ -428,7 +428,7 @@ onMounted(async () => {
                   <option value="OTHER">Outra</option>
                 </select></label
               >
-              <label>Principal<input v-model="form.originalPrincipal" required /></label>
+              <label>Valor principal<input v-model="form.originalPrincipal" required /></label>
               <label>Data inicial<input v-model="form.startDate" type="date" required /></label>
               <label
                 >Quantidade<input
@@ -455,12 +455,25 @@ onMounted(async () => {
               />
             </fieldset>
             <div v-for="x in form.installments" :key="x.installmentNumber" class="installment">
-              <b>#{{ x.installmentNumber }}</b
-              ><input v-model="x.dueDate" type="date" required /><input
+              <b>Parcela {{ x.installmentNumber }}</b
+              ><input
+                v-model="x.dueDate"
+                type="date"
+                aria-label="Vencimento"
+                required /><input
                 v-model="x.principalAmount"
+                aria-label="Amortização"
+                placeholder="Amortização"
                 required
-              /><input v-model="x.interestAmount" required /><input
+              /><input
+                v-model="x.interestAmount"
+                aria-label="Juros"
+                placeholder="Juros"
+                required
+              /><input
                 v-model="x.feeAmount"
+                aria-label="Tarifa"
+                placeholder="Tarifa"
                 required
               />
             </div>
@@ -479,10 +492,10 @@ onMounted(async () => {
         </p>
       </div>
       <div class="panel">
-        <h2>Cronograma</h2>
+        <h2>Parcelas</h2>
         <div v-for="x in detail.installments" :key="x.id" class="schedule">
           <span
-            >#{{ x.installmentNumber }} · {{ x.dueDate }}
+            >Parcela {{ x.installmentNumber }} · {{ x.dueDate }}
             <b>{{
               x.projectedStatus === 'OVERDUE'
                 ? 'Em atraso'
