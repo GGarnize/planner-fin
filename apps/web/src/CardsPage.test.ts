@@ -171,6 +171,20 @@ describe('CardsPage', () => {
     expect(wrapper.text()).toContain('Tentar novamente');
   });
 
+  it('oferece Editar e Arquivar do cartão pelo menu de ações', async () => {
+    mockLoadedData();
+    const wrapper = mount(CardsPage);
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Cartão atual'));
+    await wrapper.get('.kebab-trigger').trigger('click');
+    const panelButtons = wrapper.findAll('.kebab-panel button').map((button) => button.text());
+    expect(panelButtons).toEqual(['Editar', 'Arquivar']);
+    await wrapper
+      .findAll('.kebab-panel button')
+      .find((button) => button.text() === 'Editar')!
+      .trigger('click');
+    expect(wrapper.text()).toContain('Salvar edição');
+  });
+
   it('envia somente description quando apenas a descrição muda', async () => {
     const wrapper = await openPurchaseEdit();
     await field(wrapper, 'Descrição').setValue('Feira');

@@ -11,6 +11,8 @@ import type {
   UpdateCardPurchaseRequest,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import { normalizeMoney } from '../transaction-template';
+import KebabMenu, { type KebabMenuAction } from '../components/KebabMenu.vue';
 const cards = ref<PublicFinancialCreditCard[]>([]),
   purchases = ref<PaginatedCardPurchasesResponse['items']>([]),
   invoices = ref<PublicCardInvoice[]>([]),
@@ -132,11 +134,15 @@ async function loadMore(kind: 'purchases' | 'invoices') {
   }
 }
 async function createCard() {
+  if (card.creditLimit && !normalizeMoney(card.creditLimit)) {
+    error.value = 'Informe um limite válido, ex.: 5000 ou 5000,00.';
+    return;
+  }
   await mutate('/cards', {
     ...card,
     issuer: card.issuer || null,
     last4: card.last4 || null,
-    creditLimit: card.creditLimit || null,
+    creditLimit: card.creditLimit ? normalizeMoney(card.creditLimit) : null,
   });
   Object.assign(card, {
     name: '',
@@ -148,8 +154,14 @@ async function createCard() {
   });
 }
 async function createPurchase() {
+  const totalAmount = normalizeMoney(purchase.totalAmount);
+  if (!totalAmount) {
+    error.value = 'Informe um valor total válido, ex.: 150 ou 150,00.';
+    return;
+  }
   await mutate('/card-purchases', {
     ...purchase,
+    totalAmount,
     notes: purchase.notes || null,
     installmentCount: Number(purchase.installmentCount),
   });
@@ -189,6 +201,16 @@ async function patch(path: string, body: object) {
     saving.value = false;
   }
 }
+function cardActionsFor(item: PublicFinancialCreditCard): KebabMenuAction[] {
+  return [
+    { label: 'Editar', onSelect: () => startCardEdit(item) },
+    {
+      label: item.archivedAt ? 'Restaurar' : 'Arquivar',
+      danger: !item.archivedAt,
+      onSelect: () => toggle(item),
+    },
+  ];
+}
 function startCardEdit(item: PublicFinancialCreditCard) {
   editingCardId.value = item.id;
   Object.assign(editCard, {
@@ -201,11 +223,15 @@ function startCardEdit(item: PublicFinancialCreditCard) {
   });
 }
 function saveCardEdit() {
+  if (editCard.creditLimit && !normalizeMoney(editCard.creditLimit)) {
+    error.value = 'Informe um limite válido, ex.: 5000 ou 5000,00.';
+    return;
+  }
   return patch(`/cards/${editingCardId.value}`, {
     ...editCard,
     issuer: editCard.issuer || null,
     last4: editCard.last4 || null,
-    creditLimit: editCard.creditLimit || null,
+    creditLimit: editCard.creditLimit ? normalizeMoney(editCard.creditLimit) : null,
   });
 }
 function startPurchaseEdit(item: (typeof purchases.value)[number]) {
@@ -221,20 +247,18 @@ function startPurchaseEdit(item: (typeof purchases.value)[number]) {
     installmentCount: item.installmentCount,
   });
 }
-function canonicalMoney(value: string) {
-  const match = /^(\d+)(?:\.(\d{0,2}))?$/.exec(value);
-  if (!match) return value;
-  const integer = match[1]!.replace(/^0+(?=\d)/, '');
-  return `${integer}.${(match[2] ?? '').padEnd(2, '0')}`;
-}
 function savePurchaseEdit() {
   const original = originalPurchase.value;
   if (!original) return;
 
+  const totalAmount = normalizeMoney(editPurchase.totalAmount);
+  if (!totalAmount) {
+    error.value = 'Informe um valor total válido, ex.: 150 ou 150,00.';
+    return;
+  }
   const delta: UpdateCardPurchaseRequest = {};
   const notes = editPurchase.notes || null;
   const installmentCount = Number(editPurchase.installmentCount);
-  const totalAmount = canonicalMoney(editPurchase.totalAmount);
   if (editPurchase.cardId !== original.cardId) delta.cardId = editPurchase.cardId;
   if (editPurchase.categoryId !== original.categoryId) delta.categoryId = editPurchase.categoryId;
   if (editPurchase.description !== original.description)
@@ -242,7 +266,7 @@ function savePurchaseEdit() {
   if (notes !== original.notes) delta.notes = notes;
   if (editPurchase.purchaseDate !== original.purchaseDate)
     delta.purchaseDate = editPurchase.purchaseDate;
-  if (totalAmount !== canonicalMoney(original.totalAmount)) delta.totalAmount = totalAmount;
+  if (totalAmount !== normalizeMoney(original.totalAmount)) delta.totalAmount = totalAmount;
   if (installmentCount !== original.installmentCount) delta.installmentCount = installmentCount;
 
   if (!Object.keys(delta).length) {
@@ -288,12 +312,16 @@ onMounted(load);
             <label>Nome<input v-model="card.name" maxlength="120" required /></label
             ><label>Emissor<input v-model="card.issuer" maxlength="120" /></label
             ><label
-              >Últimos 4 dígitos<input
+              >Últimos 4 dígitos (opcional)<input
                 v-model="card.last4"
                 inputmode="numeric"
                 maxlength="4"
                 pattern="[0-9]{4}" /></label
-            ><label>Limite informativo<input v-model="card.creditLimit" placeholder="0.00" /></label
+            ><label
+              >Limite informativo (opcional)<input
+                v-model="card.creditLimit"
+                inputmode="decimal"
+                placeholder="5000 ou 5000,00" /></label
             ><label
               >Dia de fechamento<input
                 v-model.number="card.closingDay"
@@ -320,28 +348,33 @@ onMounted(load);
         </p>
         <div class="tiles">
           <article v-for="item in cards" :key="item.id" :class="{ archived: item.archivedAt }">
-            <h3>{{ item.name }}</h3>
-            <p>
-              {{ item.issuer || 'Emissor não informado' }} ·
-              {{ item.last4 ? `•••• ${item.last4}` : 'Final não informado' }}
-            </p>
-            <p>Limite informativo: {{ money(item.creditLimit) }}</p>
-            <p>Fecha dia {{ item.closingDay }} · vence dia {{ item.dueDay }}</p>
-            <button class="secondary" @click="startCardEdit(item)">Editar</button>
-            <button class="secondary" @click="toggle(item)">
-              {{ item.archivedAt ? 'Restaurar' : 'Arquivar' }}
-            </button>
+            <div class="tile-row">
+              <div class="tile-info">
+                <h3>{{ item.name }}</h3>
+                <p>
+                  {{ item.issuer || 'Emissor não informado' }} ·
+                  {{ item.last4 ? `•••• ${item.last4}` : 'Final não informado' }}
+                </p>
+                <p>Limite informativo: {{ money(item.creditLimit) }}</p>
+                <p>Fecha dia {{ item.closingDay }} · vence dia {{ item.dueDay }}</p>
+              </div>
+              <KebabMenu :label="`Ações de ${item.name}`" :actions="cardActionsFor(item)" />
+            </div>
             <form v-if="editingCardId === item.id" @submit.prevent="saveCardEdit">
               <div class="grid">
                 <label>Nome<input v-model="editCard.name" maxlength="120" required /></label>
                 <label>Emissor<input v-model="editCard.issuer" maxlength="120" /></label>
                 <label
-                  >Últimos 4<input v-model="editCard.last4" pattern="[0-9]{4}" maxlength="4"
+                  >Últimos 4 (opcional)<input
+                    v-model="editCard.last4"
+                    pattern="[0-9]{4}"
+                    maxlength="4"
                 /></label>
                 <label
-                  >Limite<input
+                  >Limite (opcional)<input
                     v-model="editCard.creditLimit"
-                    pattern="(?:0\.(?:0[1-9]|[1-9][0-9])|[1-9][0-9]*\.[0-9]{2})"
+                    inputmode="decimal"
+                    placeholder="5000 ou 5000,00"
                 /></label>
                 <label
                   >Fechamento<input
@@ -392,7 +425,8 @@ onMounted(load);
             ><label
               >Valor total<input
                 v-model="purchase.totalAmount"
-                placeholder="100.00"
+                inputmode="decimal"
+                placeholder="150 ou 150,00"
                 required /></label
             ><label
               >Parcelas<input
@@ -439,7 +473,9 @@ onMounted(load);
                 >Descrição<input v-model="editPurchase.description" maxlength="200" required
               /></label>
               <label>Data<input v-model="editPurchase.purchaseDate" type="date" required /></label>
-              <label>Valor<input v-model="editPurchase.totalAmount" required /></label>
+              <label
+                >Valor<input v-model="editPurchase.totalAmount" inputmode="decimal" required
+              /></label>
               <label
                 >Parcelas<input
                   v-model.number="editPurchase.installmentCount"
@@ -525,11 +561,11 @@ onMounted(load);
 .panel,
 article,
 .empty {
-  background: #fff;
+  background: var(--color-surface);
   border-radius: 1rem;
   padding: 1.25rem;
   margin: 1rem 0;
-  box-shadow: 0 0.3rem 1rem #0f172a12;
+  box-shadow: var(--shadow-surface);
 }
 .grid,
 .tiles {
@@ -543,17 +579,31 @@ article,
 .archived {
   opacity: 0.65;
 }
+.tile-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.tile-info p {
+  margin: 0.15rem 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+.tile-info h3 {
+  margin: 0;
+}
 .badge {
   font-weight: 700;
-  color: #155eef;
+  color: var(--color-accent);
 }
 .secondary,
 .link {
-  background: #e8efff;
-  color: #174ea6;
+  background: var(--color-accent-container);
+  color: var(--color-on-accent-container);
 }
 .pay {
-  border-top: 1px solid #cbd5e1;
+  border-top: 1px solid var(--color-border);
   margin-top: 1rem;
   padding-top: 1rem;
 }
@@ -561,9 +611,11 @@ select,
 textarea {
   font: inherit;
   padding: 0.75rem;
-  border: 1px solid #94a3b8;
+  border: 1px solid var(--color-border);
   border-radius: 0.5rem;
   width: 100%;
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 @media (max-width: 600px) {
   .cards-page {

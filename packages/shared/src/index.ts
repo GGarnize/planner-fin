@@ -484,6 +484,67 @@ export type FinancialTransactionErrorCode =
   | 'PAID_TRANSACTION_REQUIRES_REOPEN'
   | 'INTERNAL_ERROR';
 
+/**
+ * Feed somente-leitura que une FinancialTransaction (lançamentos de conta) e
+ * CardPurchase (compras no cartão) numa única lista ordenada por data, para a
+ * tela de Lançamentos. Cada fonte mantém seu modelo de escrita próprio
+ * (POST /transactions, POST /card-purchases) — este feed não cria uma terceira
+ * entidade, só combina leitura.
+ *
+ * Lançamentos: o que foi registrado/comprado.
+ * Agregados mensais: quanto da despesa pertence a cada período.
+ */
+export type FinancialEntrySource = 'TRANSACTION' | 'CARD_PURCHASE';
+export interface PublicFinancialEntry {
+  /** Chave estável para a UI: `${source}:${sourceId}`. */
+  id: string;
+  source: FinancialEntrySource;
+  /** id do FinancialTransaction ou do CardPurchase de origem. */
+  sourceId: string;
+  type: FinancialTransactionType;
+  description: string;
+  notes: string | null;
+  /**
+   * Data usada para ordenar/agrupar (Hoje/Futuros/Anteriores): dueDate do
+   * lançamento, ou purchaseDate da compra no cartão.
+   */
+  date: string;
+  /** Valor já resolvido: realizado quando pago, previsto quando pendente; totalAmount da compra no cartão. */
+  amount: string;
+  categoryId: string;
+  /** null para CARD_PURCHASE — compra de cartão não tem estado pago/pendente próprio. */
+  status: FinancialTransactionStatus | null;
+  /** null para CARD_PURCHASE — compra de cartão não está ligada a uma conta. */
+  accountId: string | null;
+  cardId: string | null;
+  cardName: string | null;
+  /** id do CardPurchase, para editar/excluir a compra de origem. null para TRANSACTION. */
+  purchaseId: string | null;
+  /** null no feed principal; numeração de parcelas pertence à fatura/detalhe. */
+  installmentNumber: number | null;
+  installmentCount: number | null;
+  overdue: boolean;
+  /** true só para TRANSACTION gerado por recorrência; sempre false para CARD_PURCHASE. */
+  isRecurringOccurrence: boolean;
+  createdAt: string;
+}
+export interface FinancialEntryListQuery {
+  accountId?: string;
+  categoryId?: string;
+  type?: FinancialTransactionType;
+  status?: FinancialTransactionStatus;
+  dueDateFrom?: string;
+  dueDateTo?: string;
+  paidAtFrom?: string;
+  paidAtTo?: string;
+  limit?: string;
+  cursor?: string;
+}
+export interface PaginatedFinancialEntriesResponse {
+  data: PublicFinancialEntry[];
+  page: { limit: number; nextCursor: string | null };
+}
+
 export type FinancialTransferStatus = 'PENDING' | 'COMPLETED';
 export interface PublicFinancialTransfer {
   id: string;

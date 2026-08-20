@@ -7,6 +7,8 @@ import { ConfigModule } from './config/config.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { DebtsModule } from './debts/debts.module';
 import { DebtsService } from './debts/debts.service';
+import { FinancialEntriesModule } from './financial-entries/financial-entries.module';
+import { FinancialEntriesService } from './financial-entries/financial-entries.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { PrismaService } from './prisma/prisma.service';
 import { TransactionsModule } from './transactions/transactions.module';
@@ -44,6 +46,7 @@ describe('módulos protegidos', () => {
     ['budgets', BudgetsModule, BudgetsService],
     ['debts', DebtsModule, DebtsService],
     ['transactions', TransactionsModule, TransactionsService],
+    ['financial-entries', FinancialEntriesModule, FinancialEntriesService],
     ['transfers', TransfersModule, TransfersService],
   ])(
     'compila %s com AuthGuard e TokenService resolvidos pelo AuthModule',

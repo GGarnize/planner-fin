@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import type { CardPurchaseListQuery } from '@planner-fin/shared';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentAuth } from '../auth/current-auth.decorator';
@@ -24,5 +35,10 @@ export class CardPurchasesController {
     @Body() d: UpdateCardPurchaseDto,
   ) {
     return this.purchases.update(a.userId, id, d);
+  }
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@CurrentAuth() a: AuthenticatedContext, @Param('id') id: string) {
+    return this.purchases.remove(a.userId, id);
   }
 }

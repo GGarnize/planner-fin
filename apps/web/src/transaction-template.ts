@@ -1,9 +1,30 @@
 import type { PublicTransactionTemplate } from '@planner-fin/shared';
 
-export function normalizeMoney(value: string): string | null {
-  const normalized = value.trim().replace(',', '.');
-  const match = /^(0|[1-9]\d{0,16})(?:\.(\d{1,2}))?$/.exec(normalized);
-  if (!match || /^0(?:\.0{1,2})?$/.test(normalized)) return null;
+/**
+ * Aceita entrada monetária no formato pt-BR (5000, 5000,50, 5.000,50, R$ 5.000,50)
+ * ou já canônico (5000.50), e normaliza para "X.YY". Quando o ponto aparece antes
+ * da vírgula, ele é tratado como separador de milhar; quando a vírgula aparece
+ * antes do ponto (convenção en-US, ex.: "1,234.50"), a entrada é rejeitada em vez
+ * de reinterpretada, para não misturar convenções de forma ambígua.
+ */
+export function normalizeMoney(
+  value: string,
+  options: { allowNegative?: boolean; allowZero?: boolean } = {},
+): string | null {
+  let normalized = value.trim().replace(/^r\$\s*/i, '').trim();
+  const hasComma = normalized.includes(','),
+    hasDot = normalized.includes('.');
+  if (hasComma && hasDot) {
+    if (normalized.lastIndexOf('.') < normalized.lastIndexOf(','))
+      normalized = normalized.replace(/\./g, '').replace(',', '.');
+  } else if (hasComma) {
+    normalized = normalized.replace(',', '.');
+  }
+  const sign = options.allowNegative ? '-?' : '';
+  const pattern = new RegExp(`^(${sign}(?:0|[1-9]\\d{0,16}))(?:\\.(\\d{1,2}))?$`);
+  const match = pattern.exec(normalized);
+  const isZero = /^-?0(?:\.0{1,2})?$/.test(normalized);
+  if (!match || (isZero && !options.allowZero)) return null;
   return `${match[1]}.${(match[2] ?? '').padEnd(2, '0')}`;
 }
 

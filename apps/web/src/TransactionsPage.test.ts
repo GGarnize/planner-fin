@@ -2,6 +2,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { reactive } from 'vue';
 import { routeLocationKey, routerKey } from 'vue-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PublicFinancialEntry, PublicFinancialTransaction } from '@planner-fin/shared';
 import TransactionsPage from './pages/TransactionsPage.vue';
 
 vi.mock('./auth', () => ({ authenticatedFetch: vi.fn() }));
@@ -9,6 +10,10 @@ import { authenticatedFetch } from './auth';
 
 const accountId = '11111111-1111-4111-8111-111111111111';
 const categoryId = '22222222-2222-4222-8222-222222222222';
+const txId = '44444444-4444-4444-8444-444444444444';
+const cardId = '77777777-7777-4777-8777-777777777777';
+const purchaseId = '88888888-8888-4888-8888-888888888888';
+
 const response = (data: unknown, ok = true, status = ok ? 200 : 400) =>
   Promise.resolve({ ok, status, json: () => Promise.resolve(data) } as Response);
 const empty = { data: [], page: { limit: 20, nextCursor: null } };
@@ -20,29 +25,120 @@ const incomeCategory = {
   type: 'INCOME',
   archivedAt: null,
 };
-const item = {
-  id: '44444444-4444-4444-8444-444444444444',
-  accountId,
-  categoryId,
-  type: 'EXPENSE',
-  status: 'PENDING',
-  description: 'Conta',
-  notes: null,
-  plannedAmount: '10.00',
-  actualAmount: null,
-  dueDate: '2026-08-01',
-  paidAt: null,
-  isOverdue: true,
-  isRecurringOccurrence: false,
-  createdAt: '2026-08-01T00:00:00Z',
-  updatedAt: '2026-08-01T00:00:00Z',
-};
 
-function mockPage(transactions: unknown = empty) {
-  vi.mocked(authenticatedFetch).mockImplementation((path) => {
-    if (String(path).startsWith('/transactions?')) return response(transactions);
-    if (path === '/accounts') return response([account]);
-    if (path === '/categories') return response([expenseCategory, incomeCategory]);
+function makeTx(
+  overrides: Partial<{
+    id: string;
+    status: 'PENDING' | 'PAID';
+    description: string;
+    dueDate: string;
+    plannedAmount: string;
+    actualAmount: string | null;
+    paidAt: string | null;
+    isOverdue: boolean;
+    isRecurringOccurrence: boolean;
+    notes: string | null;
+  }> = {},
+) {
+  const base = {
+    id: txId,
+    status: 'PENDING' as const,
+    description: 'Conta',
+    dueDate: '2026-08-01',
+    plannedAmount: '10.00',
+    actualAmount: null as string | null,
+    paidAt: null as string | null,
+    isOverdue: true,
+    isRecurringOccurrence: false,
+    notes: null as string | null,
+    ...overrides,
+  };
+  const full: PublicFinancialTransaction = {
+    id: base.id,
+    accountId,
+    categoryId,
+    type: 'EXPENSE',
+    status: base.status,
+    description: base.description,
+    notes: base.notes,
+    plannedAmount: base.plannedAmount,
+    actualAmount: base.actualAmount,
+    dueDate: base.dueDate,
+    paidAt: base.paidAt,
+    isOverdue: base.isOverdue,
+    isRecurringOccurrence: base.isRecurringOccurrence,
+    createdAt: '2026-08-01T00:00:00Z',
+    updatedAt: '2026-08-01T00:00:00Z',
+  };
+  const entry: PublicFinancialEntry = {
+    id: `TRANSACTION:${base.id}`,
+    source: 'TRANSACTION',
+    sourceId: base.id,
+    type: 'EXPENSE',
+    description: base.description,
+    notes: base.notes,
+    date: base.dueDate,
+    amount: base.status === 'PAID' ? base.actualAmount! : base.plannedAmount,
+    categoryId,
+    status: base.status,
+    accountId,
+    cardId: null,
+    cardName: null,
+    purchaseId: null,
+    installmentNumber: null,
+    installmentCount: null,
+    overdue: base.isOverdue,
+    isRecurringOccurrence: base.isRecurringOccurrence,
+    createdAt: '2026-08-01T00:00:00Z',
+  };
+  return { entry, full };
+}
+
+function makeCardEntry(
+  overrides: Partial<{
+    installmentCount: number;
+    date: string;
+    amount: string;
+  }> = {},
+): PublicFinancialEntry {
+  const installmentCount = overrides.installmentCount ?? 1;
+  return {
+    id: `CARD_PURCHASE:${purchaseId}`,
+    source: 'CARD_PURCHASE',
+    sourceId: purchaseId,
+    type: 'EXPENSE',
+    description: 'Abastecimento',
+    notes: null,
+    date: overrides.date ?? '2026-08-05',
+    amount: overrides.amount ?? '150.00',
+    categoryId,
+    status: null,
+    accountId: null,
+    cardId,
+    cardName: 'Nubank',
+    purchaseId,
+    installmentNumber: null,
+    installmentCount,
+    overdue: false,
+    isRecurringOccurrence: false,
+    createdAt: '2026-08-05T00:00:00Z',
+  };
+}
+
+function mockPage(
+  entriesResponse: unknown = empty,
+  fulls: PublicFinancialTransaction[] = [],
+  extra: (path: string, init?: RequestInit) => Promise<Response> | undefined = () => undefined,
+) {
+  vi.mocked(authenticatedFetch).mockImplementation((path, init) => {
+    const p = String(path);
+    const extraResult = extra(p, init);
+    if (extraResult) return extraResult;
+    if (p.startsWith('/financial-entries?')) return response(entriesResponse);
+    if (p === '/accounts') return response([account]);
+    if (p === '/categories') return response([expenseCategory, incomeCategory]);
+    const full = fulls.find((f) => p === `/transactions/${f.id}`);
+    if (full) return response(full);
     return response({});
   });
 }
@@ -66,11 +162,28 @@ async function mountPageWithRoute(query: Record<string, unknown>) {
   await flushPromises();
   return { wrapper, route, router };
 }
+async function mountPageWithFullRouter(query: Record<string, unknown> = {}) {
+  const route = reactive({ query });
+  const router = { push: vi.fn(), replace: vi.fn() };
+  const wrapper = mount(TransactionsPage, {
+    global: {
+      provide: {
+        [routeLocationKey as symbol]: route,
+        [routerKey as symbol]: router,
+      },
+      stubs: ['router-link'],
+    },
+  });
+  await flushPromises();
+  return { wrapper, route, router };
+}
+async function openAction(wrapper: VueWrapper, label: string, cardIndex = 0) {
+  const triggers = wrapper.findAll('.kebab-trigger');
+  await triggers[cardIndex]!.trigger('click');
+  const buttons = wrapper.findAll('.kebab-panel button');
+  await buttons.find((button) => button.text() === label)!.trigger('click');
+}
 async function openExpenseForm(wrapper: VueWrapper) {
-  await wrapper
-    .findAll('button')
-    .find((button) => button.text() === 'Nova despesa')!
-    .trigger('click');
   const form = wrapper.get('.modal form');
   await form.find('select').setValue('EXPENSE');
   const selects = form.findAll('select');
@@ -104,29 +217,27 @@ describe('tela de lançamentos (API mockada)', () => {
     await mountPage();
     const firstListCall = vi
       .mocked(authenticatedFetch)
-      .mock.calls.find(([path]) => String(path).startsWith('/transactions?'))!;
+      .mock.calls.find(([path]) => String(path).startsWith('/financial-entries?'))!;
     expect(String(firstListCall[0])).toContain('dueDateFrom=2026-08-01');
     expect(String(firstListCall[0])).toContain('dueDateTo=2026-08-31');
   });
 
   it('agrupa visualmente por hoje, futuros e anteriores sem considerar status', async () => {
-    const todayPaid = {
-      ...item,
+    const { entry: todayPaid } = makeTx({
       id: '55555555-5555-4555-8555-555555555555',
       status: 'PAID',
       actualAmount: '10.00',
       dueDate: '2026-08-12',
       paidAt: '2026-08-12',
       isOverdue: false,
-    };
-    const future = {
-      ...item,
+    });
+    const { entry: future } = makeTx({
       id: '66666666-6666-4666-8666-666666666666',
       description: 'Futuro',
       dueDate: '2026-08-20',
       isOverdue: false,
-    };
-    const past = { ...item, description: 'Anterior', dueDate: '2026-08-01' };
+    });
+    const { entry: past } = makeTx({ description: 'Anterior', dueDate: '2026-08-01' });
     mockPage({ data: [future, past, todayPaid], page: { limit: 20, nextCursor: null } });
     const wrapper = await mountPage();
     expect(wrapper.findAll('.date-group > h2').map((heading) => heading.text())).toEqual([
@@ -139,27 +250,21 @@ describe('tela de lançamentos (API mockada)', () => {
   });
 
   it('diferencia pago e pendente e prioriza realizado quando pago', async () => {
-    const paid = {
-      ...item,
-      status: 'PAID',
-      actualAmount: '12.00',
-      paidAt: '2026-08-01',
-      isOverdue: false,
-    };
-    mockPage({ data: [paid, item], page: { limit: 20, nextCursor: null } });
+    const { entry: paid } = makeTx({ status: 'PAID', actualAmount: '12.00', paidAt: '2026-08-01' });
+    const { entry: pending } = makeTx({ id: '99999999-9999-4999-8999-999999999999' });
+    mockPage({ data: [paid, pending], page: { limit: 20, nextCursor: null } });
     const wrapper = await mountPage();
     const paidCard = wrapper.get('.transaction-card--paid');
     const pendingCard = wrapper.get('.transaction-card--pending');
     expect(paidCard.get('.status-badge').text()).toBe('Pago');
-    expect(paidCard.get('.amount-main').text()).toContain('Realizado R$ 12,00');
-    expect(paidCard.get('.amount-secondary').text()).toContain('Previsto R$ 10,00');
+    expect(paidCard.get('.entry-amount').text()).toBe('- R$ 12,00');
     expect(pendingCard.get('.status-badge').text()).toBe('Pendente');
-    expect(pendingCard.get('.amount-main').text()).toContain('Previsto R$ 10,00');
+    expect(pendingCard.get('.entry-amount').text()).toBe('- R$ 10,00');
   });
 
   it('cria PENDING com payload exatamente aderente ao contrato e recarrega a lista', async () => {
     mockPage();
-    const wrapper = await mountPage();
+    const { wrapper } = await mountPageWithRoute({ create: 'EXPENSE' });
     const form = await openExpenseForm(wrapper);
     await form.find('textarea').setValue('Valor com IPTU');
     await form.trigger('submit');
@@ -179,13 +284,13 @@ describe('tela de lançamentos (API mockada)', () => {
     expect(
       vi
         .mocked(authenticatedFetch)
-        .mock.calls.filter(([path]) => String(path).startsWith('/transactions?')),
+        .mock.calls.filter(([path]) => String(path).startsWith('/financial-entries?')),
     ).toHaveLength(2);
   });
 
   it('cria PAID normalizando valores inteiros para strings decimais canônicas', async () => {
     mockPage();
-    const wrapper = await mountPage();
+    const { wrapper } = await mountPageWithRoute({ create: 'EXPENSE' });
     const form = await openExpenseForm(wrapper);
     await form.findAll('select')[3]!.setValue('PAID');
     const inputs = form.findAll('input');
@@ -211,7 +316,7 @@ describe('tela de lançamentos (API mockada)', () => {
     ['data do pagamento', 'Informe a data do pagamento', 'paidAt'],
   ])('mantém o modal aberto e mostra erro quando PAID não tem %s', async (_, message, missing) => {
     mockPage();
-    const wrapper = await mountPage();
+    const { wrapper } = await mountPageWithRoute({ create: 'EXPENSE' });
     const form = await openExpenseForm(wrapper);
     await form.findAll('select')[3]!.setValue('PAID');
     const inputs = form.findAll('input');
@@ -235,7 +340,6 @@ describe('tela de lançamentos (API mockada)', () => {
   it.each([400, 422])(
     'preserva valores e mostra dentro do modal o detalhe seguro da API %s',
     async (status) => {
-      mockPage();
       vi.mocked(authenticatedFetch).mockImplementation((path, init) =>
         init?.method === 'POST'
           ? response(
@@ -257,7 +361,7 @@ describe('tela de lançamentos (API mockada)', () => {
               ? response([expenseCategory, incomeCategory])
               : response(empty),
       );
-      const wrapper = await mountPage();
+      const { wrapper } = await mountPageWithRoute({ create: 'EXPENSE' });
       const form = await openExpenseForm(wrapper);
       await form.trigger('submit');
       await flushPromises();
@@ -275,7 +379,7 @@ describe('tela de lançamentos (API mockada)', () => {
 
   it('limpa categoria incompatível ao trocar a natureza', async () => {
     mockPage();
-    const wrapper = await mountPage();
+    const { wrapper } = await mountPageWithRoute({ create: 'EXPENSE' });
     const form = await openExpenseForm(wrapper);
     await form.findAll('select')[0]!.setValue('INCOME');
     expect(form.findAll('select')[2]!.element.value).toBe(incomeCategory.id);
@@ -287,13 +391,15 @@ describe('tela de lançamentos (API mockada)', () => {
     ).toEqual(['Salário']);
   });
 
-  it('edita PENDING com PATCH contratual e normaliza o valor', async () => {
-    mockPage({ data: [item], page: { limit: 20, nextCursor: null } });
+  it('edita PENDING buscando o registro completo e envia PATCH contratual normalizado', async () => {
+    const { entry, full } = makeTx();
+    mockPage({ data: [entry], page: { limit: 20, nextCursor: null } }, [full]);
     const wrapper = await mountPage();
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'Editar')!
-      .trigger('click');
+    await wrapper.get('.entry-tap').trigger('click');
+    await flushPromises();
+    expect(
+      vi.mocked(authenticatedFetch).mock.calls.some(([path]) => path === `/transactions/${txId}`),
+    ).toBe(true);
     const form = wrapper.get('.modal form');
     await form.find('input[maxlength="200"]').setValue('Conta editada');
     await form
@@ -314,13 +420,11 @@ describe('tela de lançamentos (API mockada)', () => {
   });
 
   it('edita PAID somente nos campos textuais', async () => {
-    const paid = { ...item, status: 'PAID', actualAmount: '10.00', paidAt: '2026-08-01' };
-    mockPage({ data: [paid], page: { limit: 20, nextCursor: null } });
+    const { entry, full } = makeTx({ status: 'PAID', actualAmount: '10.00', paidAt: '2026-08-01' });
+    mockPage({ data: [entry], page: { limit: 20, nextCursor: null } }, [full]);
     const wrapper = await mountPage();
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'Editar')!
-      .trigger('click');
+    await wrapper.get('.entry-tap').trigger('click');
+    await flushPromises();
     const form = wrapper.get('.modal form');
     await form.find('textarea').setValue('Quitada');
     await form.trigger('submit');
@@ -328,13 +432,11 @@ describe('tela de lançamentos (API mockada)', () => {
     expect(submittedBody('PATCH')).toEqual({ description: 'Conta', notes: 'Quitada' });
   });
 
-  it('marca pendente como pago com payload canônico', async () => {
-    mockPage({ data: [item], page: { limit: 20, nextCursor: null } });
+  it('marca pendente como pago com payload canônico usando data e valor do feed', async () => {
+    const { entry } = makeTx();
+    mockPage({ data: [entry], page: { limit: 20, nextCursor: null } });
     const wrapper = await mountPage();
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'Marcar como pago')!
-      .trigger('click');
+    await openAction(wrapper, 'Marcar como pago');
     const form = wrapper.get('.modal form');
     await form.find('input[inputmode="decimal"]').setValue('12');
     await form.trigger('submit');
@@ -347,12 +449,10 @@ describe('tela de lançamentos (API mockada)', () => {
   });
 
   it('cancela exclusao sem chamar API', async () => {
-    mockPage({ data: [item], page: { limit: 20, nextCursor: null } });
+    const { entry } = makeTx();
+    mockPage({ data: [entry], page: { limit: 20, nextCursor: null } });
     const wrapper = await mountPage();
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'Excluir')!
-      .trigger('click');
+    await openAction(wrapper, 'Excluir');
     expect(wrapper.get('.modal').text()).toContain('Excluir este lançamento?');
     await wrapper
       .findAll('.modal button')
@@ -365,15 +465,10 @@ describe('tela de lançamentos (API mockada)', () => {
   });
 
   it('usa texto especifico para ocorrencia recorrente', async () => {
-    mockPage({
-      data: [{ ...item, isRecurringOccurrence: true }],
-      page: { limit: 20, nextCursor: null },
-    });
+    const { entry } = makeTx({ isRecurringOccurrence: true });
+    mockPage({ data: [entry], page: { limit: 20, nextCursor: null } });
     const wrapper = await mountPage();
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'Excluir')!
-      .trigger('click');
+    await openAction(wrapper, 'Excluir');
     expect(wrapper.get('.modal').text()).toContain('Excluir somente este lançamento?');
     expect(wrapper.get('.modal').text()).toContain('A recorrência continuará ativa');
     await wrapper
@@ -383,24 +478,20 @@ describe('tela de lançamentos (API mockada)', () => {
   });
 
   it('remove card somente apos 204 e recarrega grupos', async () => {
+    const { entry } = makeTx();
     let deleted = false;
-    vi.mocked(authenticatedFetch).mockImplementation((path, init) => {
+    mockPage(undefined, [], (path, init) => {
       if (init?.method === 'DELETE') {
         deleted = true;
         return Promise.resolve({ ok: true, status: 204 } as Response);
       }
-      if (String(path).startsWith('/transactions?'))
-        return response({ data: deleted ? [] : [item], page: { limit: 20, nextCursor: null } });
-      if (path === '/accounts') return response([account]);
-      if (path === '/categories') return response([expenseCategory, incomeCategory]);
-      return response({});
+      if (path.startsWith('/financial-entries?'))
+        return response({ data: deleted ? [] : [entry], page: { limit: 20, nextCursor: null } });
+      return undefined;
     });
     const wrapper = await mountPage();
     expect(wrapper.find('.transaction-card').exists()).toBe(true);
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'Excluir')!
-      .trigger('click');
+    await openAction(wrapper, 'Excluir');
     await wrapper.get('.modal form').trigger('submit');
     await flushPromises();
     expect(deleted).toBe(true);
@@ -408,25 +499,18 @@ describe('tela de lançamentos (API mockada)', () => {
   });
 
   it('falha de API mantem card e mostra erro seguro', async () => {
-    mockPage({ data: [item], page: { limit: 20, nextCursor: null } });
-    vi.mocked(authenticatedFetch).mockImplementation((path, init) => {
+    const { entry } = makeTx();
+    mockPage({ data: [entry], page: { limit: 20, nextCursor: null } }, [], (path, init) => {
       if (init?.method === 'DELETE')
         return response(
           { error: { code: 'INTERNAL_ERROR', message: 'Falha temporária.' } },
           false,
           500,
         );
-      if (String(path).startsWith('/transactions?'))
-        return response({ data: [item], page: { limit: 20, nextCursor: null } });
-      if (path === '/accounts') return response([account]);
-      if (path === '/categories') return response([expenseCategory, incomeCategory]);
-      return response({});
+      return undefined;
     });
     const wrapper = await mountPage();
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'Excluir')!
-      .trigger('click');
+    await openAction(wrapper, 'Excluir');
     await wrapper.get('.modal form').trigger('submit');
     await flushPromises();
     expect(wrapper.find('.transaction-card').exists()).toBe(true);
@@ -437,26 +521,22 @@ describe('tela de lançamentos (API mockada)', () => {
       .trigger('click');
   });
   it('limpa erro antigo ao abrir nova confirmação de exclusão', async () => {
-    const another = { ...item, id: '55555555-5555-4555-8555-555555555555', description: 'Luz' };
-    mockPage({ data: [item, another], page: { limit: 20, nextCursor: null } });
-    vi.mocked(authenticatedFetch).mockImplementation((path, init) => {
+    const { entry } = makeTx();
+    const { entry: another } = makeTx({
+      id: '55555555-5555-4555-8555-555555555555',
+      description: 'Luz',
+    });
+    mockPage({ data: [entry, another], page: { limit: 20, nextCursor: null } }, [], (path, init) => {
       if (init?.method === 'DELETE')
         return response(
           { error: { code: 'INTERNAL_ERROR', message: 'Falha temporária.' } },
           false,
           500,
         );
-      if (String(path).startsWith('/transactions?'))
-        return response({ data: [item, another], page: { limit: 20, nextCursor: null } });
-      if (path === '/accounts') return response([account]);
-      if (path === '/categories') return response([expenseCategory, incomeCategory]);
-      return response({});
+      return undefined;
     });
     const wrapper = await mountPage();
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'Excluir')!
-      .trigger('click');
+    await openAction(wrapper, 'Excluir');
     await wrapper.get('.modal form').trigger('submit');
     await flushPromises();
     expect(wrapper.get('.modal [role=alert]').text()).toContain('Falha temporária.');
@@ -465,10 +545,7 @@ describe('tela de lançamentos (API mockada)', () => {
       .find((button) => button.text() === 'Cancelar')!
       .trigger('click');
 
-    await wrapper
-      .findAll('button')
-      .filter((button) => button.text() === 'Excluir')[1]!
-      .trigger('click');
+    await openAction(wrapper, 'Excluir', 1);
     expect(wrapper.find('.modal [role=alert]').exists()).toBe(false);
     expect(wrapper.get('.modal').text()).toContain('Excluir este lançamento?');
     await wrapper
@@ -478,13 +555,11 @@ describe('tela de lançamentos (API mockada)', () => {
   });
 
   it('mantem acoes acessiveis e bloqueia scroll de fundo nos modais', async () => {
-    mockPage({ data: [item], page: { limit: 20, nextCursor: null } });
+    const { entry, full } = makeTx();
+    mockPage({ data: [entry], page: { limit: 20, nextCursor: null } }, [full]);
     document.body.style.overflow = '';
     const wrapper = await mountPage();
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'Editar')!
-      .trigger('click');
+    await wrapper.get('.entry-tap').trigger('click');
     await flushPromises();
     expect(document.body.style.overflow).toBe('hidden');
     expect(wrapper.find('.modal .modal-body').exists()).toBe(true);
@@ -496,10 +571,7 @@ describe('tela de lançamentos (API mockada)', () => {
     expect(document.body.style.overflow).toBe('');
     expect(wrapper.find('.modal').exists()).toBe(false);
 
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'Marcar como pago')!
-      .trigger('click');
+    await openAction(wrapper, 'Marcar como pago');
     expect(document.body.style.overflow).toBe('hidden');
     const payBack = new Event('plannerfin:android-back', { cancelable: true });
     window.dispatchEvent(payBack);
@@ -534,5 +606,130 @@ describe('tela de lançamentos (API mockada)', () => {
     route.query = {};
     await flushPromises();
     expect(wrapper.find('.modal').exists()).toBe(false);
+  });
+});
+
+describe('feed único inclui compras de cartão (CARD_PURCHASE)', () => {
+  beforeEach(() => {
+    vi.mocked(authenticatedFetch).mockReset();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-12T15:00:00-03:00'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('mostra a compra do cartão na listagem com o rótulo do cartão', async () => {
+    mockPage({ data: [makeCardEntry()], page: { limit: 20, nextCursor: null } });
+    const wrapper = await mountPage();
+    const entry = wrapper.get('.transaction-card--purchase');
+    expect(entry.get('.entry-amount').text()).toBe('- R$ 150,00');
+    expect(entry.get('.status-badge--card').text()).toBe('Nubank');
+  });
+
+  it('mostra quantidade de parcelas no rótulo quando a compra é parcelada', async () => {
+    mockPage({
+      data: [makeCardEntry({ installmentCount: 3 })],
+      page: { limit: 20, nextCursor: null },
+    });
+    const wrapper = await mountPage();
+    expect(wrapper.get('.status-badge--card').text()).toBe('Nubank · 3x');
+    expect(wrapper.text()).not.toContain('1/3');
+    expect(wrapper.text()).not.toContain('2/3');
+    expect(wrapper.text()).not.toContain('3/3');
+  });
+
+  it('toque na compra do cartão navega para a tela do cartão', async () => {
+    mockPage({ data: [makeCardEntry()], page: { limit: 20, nextCursor: null } });
+    const { wrapper, router } = await mountPageWithFullRouter();
+    await wrapper.get('.entry-tap').trigger('click');
+    expect(router.push).toHaveBeenCalledWith(`/cards/${cardId}`);
+  });
+
+  it('menu oferece Ver no cartão e Excluir; excluir chama DELETE na compra de origem', async () => {
+    const cardEntry = makeCardEntry();
+    let deleted = false;
+    mockPage(undefined, [], (path, init) => {
+      if (init?.method === 'DELETE') {
+        deleted = true;
+        return Promise.resolve({ ok: true, status: 204 } as Response);
+      }
+      if (path.startsWith('/financial-entries?'))
+        return response({
+          data: deleted ? [] : [cardEntry],
+          page: { limit: 20, nextCursor: null },
+        });
+      return undefined;
+    });
+    const wrapper = await mountPage();
+    await openAction(wrapper, 'Excluir');
+    expect(wrapper.get('.modal').text()).toContain('Excluir esta compra do cartão?');
+    await wrapper.get('.modal form').trigger('submit');
+    await flushPromises();
+    expect(deleted).toBe(true);
+    const deleteCall = vi
+      .mocked(authenticatedFetch)
+      .mock.calls.find(([, init]) => init?.method === 'DELETE');
+    expect(deleteCall?.[0]).toBe(`/card-purchases/${purchaseId}`);
+    expect(wrapper.find('.transaction-card--purchase').exists()).toBe(false);
+  });
+
+  it('excluir compra parcelada avisa que remove a compra e parcelas abertas', async () => {
+    mockPage({
+      data: [makeCardEntry({ installmentCount: 3 })],
+      page: { limit: 20, nextCursor: null },
+    });
+    const wrapper = await mountPage();
+    await openAction(wrapper, 'Excluir');
+    expect(wrapper.get('.modal').text()).toContain(
+      'Isso remove a compra e todas as suas parcelas das faturas abertas.',
+    );
+  });
+
+  it('oculta compras de cartão quando um filtro de conta está ativo', async () => {
+    mockPage(undefined, [], (path) => {
+      if (path.startsWith('/financial-entries?')) {
+        const hasAccountFilter = path.includes('accountId=');
+        return response({
+          data: hasAccountFilter ? [] : [makeCardEntry()],
+          page: { limit: 20, nextCursor: null },
+        });
+      }
+      return undefined;
+    });
+    const wrapper = await mountPage();
+    expect(wrapper.find('.transaction-card--purchase').exists()).toBe(true);
+    await wrapper.get('.filter-summary button').trigger('click');
+    await wrapper.get('select').setValue(accountId);
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Aplicar')!
+      .trigger('click');
+    await flushPromises();
+    expect(wrapper.find('.transaction-card--purchase').exists()).toBe(false);
+  });
+
+  it('carrega mais usando o cursor único do feed combinado', async () => {
+    const { entry: first } = makeTx({ id: '55555555-5555-4555-8555-555555555555' });
+    const second = makeCardEntry();
+    mockPage(undefined, [], (path) => {
+      if (path.startsWith('/financial-entries?')) {
+        if (path.includes('cursor='))
+          return response({ data: [second], page: { limit: 1, nextCursor: null } });
+        return response({ data: [first], page: { limit: 1, nextCursor: 'next-token' } });
+      }
+      return undefined;
+    });
+    const wrapper = await mountPage();
+    expect(wrapper.findAll('.transaction-card')).toHaveLength(1);
+    const loadMore = wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Carregar mais');
+    await loadMore!.trigger('click');
+    await flushPromises();
+    expect(wrapper.findAll('.transaction-card')).toHaveLength(2);
+    expect(
+      vi.mocked(authenticatedFetch).mock.calls.some(([path]) => String(path).includes('cursor=next-token')),
+    ).toBe(true);
   });
 });

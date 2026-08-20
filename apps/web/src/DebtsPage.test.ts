@@ -30,6 +30,19 @@ describe('página de dívidas', () => {
     expect(w.text()).toContain('Nenhuma dívida encontrada');
     expect(w.text()).toContain('Nova dívida');
   });
+  it('usa nomenclatura orientada ao usuário no cronograma da dívida', async () => {
+    vi.mocked(authenticatedFetch)
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response({ items: [], nextCursor: null }));
+    const w = await render();
+    await w.get('button').trigger('click');
+    expect(w.text()).toContain('Parcelas');
+    expect(w.text()).not.toContain('Cronograma explícito');
+    expect(w.text()).toContain('Parcela 1');
+    expect(w.text()).not.toContain('#1');
+    expect(w.find('input[placeholder="Amortização"]').exists()).toBe(true);
+    expect(w.text()).toContain('Valor principal');
+  });
   it('distingue indisponibilidade de vazio e permite tentar novamente', async () => {
     vi.mocked(authenticatedFetch).mockRejectedValue(new Error('offline'));
     const w = await render();

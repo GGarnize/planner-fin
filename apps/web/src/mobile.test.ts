@@ -78,7 +78,7 @@ describe('runtime Android', () => {
     expect(mocked.exitApp).not.toHaveBeenCalled();
   });
 
-  it('nÃ£o navega quando uma tela consome o Back Android', async () => {
+  it('não navega quando uma tela consome o Back Android', async () => {
     mocked.native = true;
     mocked.platform = 'android';
     const router = {
@@ -98,7 +98,7 @@ describe('runtime Android', () => {
     window.removeEventListener('plannerfin:android-back', listener);
   });
 
-  it('trata fechamento de diÃ¡logo como Back consumido no WebView Android', async () => {
+  it('trata fechamento de diálogo como Back consumido no WebView Android', async () => {
     mocked.native = true;
     mocked.platform = 'android';
     document.body.innerHTML = '<div class="backdrop"><section role="dialog"></section></div>';
