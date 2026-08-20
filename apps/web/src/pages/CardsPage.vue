@@ -68,6 +68,7 @@ const editPurchase = reactive({
   installmentCount: 1,
 });
 const activeCards = computed(() => cards.value.filter((x) => !x.archivedAt)),
+  cardNameById = computed(() => new Map(cards.value.map((item) => [item.id, item.name]))),
   editablePurchaseCards = computed(() =>
     cards.value.filter((x) => !x.archivedAt || x.id === originalPurchase.value?.cardId),
   ),
@@ -211,6 +212,9 @@ function cardActionsFor(item: PublicFinancialCreditCard): KebabMenuAction[] {
     },
   ];
 }
+function purchaseActionsFor(item: (typeof purchases.value)[number]): KebabMenuAction[] {
+  return [{ label: 'Editar compra', onSelect: () => startPurchaseEdit(item) }];
+}
 function startCardEdit(item: PublicFinancialCreditCard) {
   editingCardId.value = item.id;
   Object.assign(editCard, {
@@ -291,6 +295,20 @@ const money = (v: string | null) =>
   v
     ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(v))
     : '—';
+function purchaseInstallmentSummary(item: (typeof purchases.value)[number]) {
+  if (item.installmentCount <= 1) return 'À vista';
+  const firstAmount = item.installments[0]?.amount;
+  return firstAmount
+    ? `${item.installmentCount}x de ${money(firstAmount)}`
+    : `${item.installmentCount}x`;
+}
+function purchaseMeta(item: (typeof purchases.value)[number]) {
+  return [
+    item.purchaseDate,
+    purchaseInstallmentSummary(item),
+    cardNameById.value.get(item.cardId) ?? 'Cartão não encontrado',
+  ].join(' · ');
+}
 onMounted(load);
 </script>
 <template>
@@ -443,16 +461,28 @@ onMounted(load);
       <section>
         <h2>Compras e parcelas futuras</h2>
         <p v-if="!purchases.length" class="empty">Nenhuma compra no cartão.</p>
-        <article v-for="x in purchases" :key="x.id">
-          <h3>{{ x.description }} · {{ money(x.totalAmount) }}</h3>
-          <p>{{ x.installmentCount }}x · compra em {{ x.purchaseDate }}</p>
-          <ul>
-            <li v-for="i in x.installments" :key="i.id">
-              {{ i.installmentNumber }}/{{ i.installmentCount }} — {{ money(i.amount) }} — fatura
-              {{ i.referenceMonth }}
-            </li>
-          </ul>
-          <button class="secondary" @click="startPurchaseEdit(x)">Editar compra</button>
+        <article
+          v-for="x in purchases"
+          :key="x.id"
+          class="purchase-card"
+          tabindex="0"
+          @click="editingPurchaseId === x.id ? undefined : startPurchaseEdit(x)"
+          @keydown.enter.prevent="startPurchaseEdit(x)"
+          @keydown.space.prevent="startPurchaseEdit(x)"
+        >
+          <div class="purchase-card__summary">
+            <div class="purchase-card__main">
+              <h3>{{ x.description }}</h3>
+              <strong>{{ money(x.totalAmount) }}</strong>
+            </div>
+            <p>{{ purchaseMeta(x) }}</p>
+            <small v-if="x.installmentCount > 1">{{ purchaseInstallmentSummary(x) }}</small>
+          </div>
+          <KebabMenu
+            :label="`Ações da compra ${x.description}`"
+            :actions="purchaseActionsFor(x)"
+            @click.stop
+          />
           <form v-if="editingPurchaseId === x.id" @submit.prevent="savePurchaseEdit">
             <div class="grid">
               <label
@@ -593,6 +623,51 @@ article,
 .tile-info h3 {
   margin: 0;
 }
+.purchase-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+}
+.purchase-card form {
+  flex-basis: 100%;
+  cursor: auto;
+}
+.purchase-card__summary {
+  min-width: 0;
+  flex: 1;
+}
+.purchase-card__main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.purchase-card__main h3,
+.purchase-card__summary p {
+  margin: 0;
+}
+.purchase-card__main h3 {
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.purchase-card__main strong {
+  white-space: nowrap;
+}
+.purchase-card__summary p,
+.purchase-card__summary small {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+.purchase-card__summary small {
+  display: block;
+  margin-top: 0.15rem;
+}
 .badge {
   font-weight: 700;
   color: var(--color-accent);
@@ -623,6 +698,17 @@ textarea {
   }
   .grid {
     grid-template-columns: 1fr;
+  }
+  .purchase-card {
+    padding: 0.75rem;
+  }
+  .purchase-card,
+  .purchase-card__main {
+    align-items: stretch;
+  }
+  .purchase-card__main {
+    flex-direction: column;
+    gap: 0.15rem;
   }
 }
 </style>

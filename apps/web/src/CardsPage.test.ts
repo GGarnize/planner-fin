@@ -17,7 +17,22 @@ const purchase = {
   purchaseDate: '2026-08-07',
   totalAmount: '100.00',
   installmentCount: 2,
-  installments: [],
+  installments: [
+    {
+      id: 'installment-1',
+      installmentNumber: 1,
+      installmentCount: 2,
+      amount: '50.00',
+      referenceMonth: '2026-08',
+    },
+    {
+      id: 'installment-2',
+      installmentNumber: 2,
+      installmentCount: 2,
+      amount: '50.00',
+      referenceMonth: '2026-09',
+    },
+  ],
   createdAt: '2026-08-07T10:00:00.000Z',
   updatedAt: '2026-08-07T10:00:00.000Z',
 };
@@ -69,7 +84,12 @@ async function openPurchaseEdit(currentCards = cards) {
   mockLoadedData(currentCards);
   const wrapper = mount(CardsPage);
   await vi.waitFor(() => expect(wrapper.text()).toContain('Mercado'));
-  const editButton = wrapper.findAll('button').find((button) => button.text() === 'Editar compra');
+  const purchaseMenu = wrapper.findAll('.purchase-card .kebab-trigger')[0];
+  if (!purchaseMenu) throw new Error('Menu de compra não encontrado');
+  await purchaseMenu.trigger('click');
+  const editButton = wrapper
+    .findAll('.kebab-panel button')
+    .find((button) => button.text() === 'Editar compra');
   if (!editButton) throw new Error('Botão de edição da compra não encontrado');
   await editButton.trigger('click');
   return wrapper;
@@ -266,5 +286,67 @@ describe('CardsPage', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Conflito temporário'));
     expect(wrapper.text()).toContain('Tentar novamente');
     expect(field(wrapper, 'Descrição').element).toHaveProperty('value', 'Feira');
+  });
+
+  it('renderiza compra parcelada em card compacto com resumo e editar no KebabMenu', async () => {
+    mockLoadedData();
+    const wrapper = mount(CardsPage);
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Mercado'));
+    const card = wrapper.get('.purchase-card');
+    expect(card.text()).toContain('Mercado');
+    expect(card.text()).toContain('100,00');
+    expect(card.text()).toContain('2x de');
+    expect(card.text()).toContain('50,00');
+    expect(card.text()).toContain('atual');
+    expect(card.findAll('li')).toHaveLength(0);
+    await card.get('.kebab-trigger').trigger('click');
+    expect(wrapper.text()).toContain('Editar compra');
+  });
+
+  it('renderiza compra a vista como a vista sem lista de parcelas', async () => {
+    vi.mocked(authenticatedFetch).mockImplementation((path) => {
+      const url = String(path);
+      if (url.startsWith('/card-purchases'))
+        return response({
+          items: [{ ...purchase, id: 'purchase-cash', installmentCount: 1, installments: [] }],
+          nextCursor: null,
+        });
+      if (url.startsWith('/card-invoices')) return response({ items: [], nextCursor: null });
+      if (url.startsWith('/cards')) return response({ items: cards });
+      if (url.startsWith('/categories')) return response(categories);
+      return response([]);
+    });
+    const wrapper = mount(CardsPage);
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Mercado'));
+    const card = wrapper.get('.purchase-card');
+    expect(card.text()).toContain('vista');
+    expect(card.findAll('li')).toHaveLength(0);
+  });
+
+  it('resume muitas parcelas sem explodir verticalmente', async () => {
+    const installments = Array.from({ length: 24 }, (_, index) => ({
+      id: `installment-${index + 1}`,
+      installmentNumber: index + 1,
+      installmentCount: 24,
+      amount: '25.00',
+      referenceMonth: `2026-${String((index % 12) + 1).padStart(2, '0')}`,
+    }));
+    vi.mocked(authenticatedFetch).mockImplementation((path) => {
+      const url = String(path);
+      if (url.startsWith('/card-purchases'))
+        return response({
+          items: [{ ...purchase, totalAmount: '600.00', installmentCount: 24, installments }],
+          nextCursor: null,
+        });
+      if (url.startsWith('/card-invoices')) return response({ items: [], nextCursor: null });
+      if (url.startsWith('/cards')) return response({ items: cards });
+      if (url.startsWith('/categories')) return response(categories);
+      return response([]);
+    });
+    const wrapper = mount(CardsPage);
+    await vi.waitFor(() => expect(wrapper.text()).toContain('24x de'));
+    expect(wrapper.text()).toContain('25,00');
+    expect(wrapper.get('.purchase-card').findAll('li')).toHaveLength(0);
+    expect(wrapper.text()).not.toContain('24/24');
   });
 });
