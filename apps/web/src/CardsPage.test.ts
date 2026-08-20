@@ -298,6 +298,7 @@ describe('CardsPage', () => {
     expect(card.text()).toContain('2x de');
     expect(card.text()).toContain('50,00');
     expect(card.text()).toContain('atual');
+    expect(card.text().match(/2x de/g) ?? []).toHaveLength(1);
     expect(card.findAll('li')).toHaveLength(0);
     await card.get('.kebab-trigger').trigger('click');
     expect(wrapper.text()).toContain('Editar compra');
@@ -346,6 +347,12 @@ describe('CardsPage', () => {
     const wrapper = mount(CardsPage);
     await vi.waitFor(() => expect(wrapper.text()).toContain('24x de'));
     expect(wrapper.text()).toContain('25,00');
+    expect(
+      wrapper
+        .get('.purchase-card')
+        .text()
+        .match(/24x de/g) ?? [],
+    ).toHaveLength(1);
     expect(wrapper.get('.purchase-card').findAll('li')).toHaveLength(0);
     expect(wrapper.text()).not.toContain('24/24');
   });

@@ -330,17 +330,23 @@ onMounted(async () => {
         </fieldset>
         <h3>Parcelas</h3>
         <div v-for="x in form.installments" :key="x.installmentNumber" class="installment">
-          <b>Parcela {{ x.installmentNumber }}</b
-          ><input v-model="x.dueDate" type="date" aria-label="Vencimento" required /><input
-            v-model="x.principalAmount"
-            inputmode="decimal"
-            placeholder="Amortização"
-            required
-          /><input v-model="x.interestAmount" inputmode="decimal" placeholder="0,00" /><input
-            v-model="x.feeAmount"
-            inputmode="decimal"
-            placeholder="0,00"
-          />
+          <b>Parcela {{ x.installmentNumber }}</b>
+          <label class="installment-field"
+            >Vencimento<input v-model="x.dueDate" type="date" required
+          /></label>
+          <label class="installment-field"
+            >Amortização<input
+              v-model="x.principalAmount"
+              inputmode="decimal"
+              placeholder="0,00"
+              required
+          /></label>
+          <label class="installment-field"
+            >Juros<input v-model="x.interestAmount" inputmode="decimal" placeholder="0,00"
+          /></label>
+          <label class="installment-field"
+            >Tarifa<input v-model="x.feeAmount" inputmode="decimal" placeholder="0,00"
+          /></label>
         </div>
         <p v-if="form.type === 'FINANCING'" class="notice">
           O ativo ou bem financiado e sua despesa não são reconhecidos automaticamente.
@@ -511,24 +517,23 @@ onMounted(async () => {
               />
             </fieldset>
             <div v-for="x in form.installments" :key="x.installmentNumber" class="installment">
-              <b>Parcela {{ x.installmentNumber }}</b
-              ><input v-model="x.dueDate" type="date" aria-label="Vencimento" required /><input
-                v-model="x.principalAmount"
-                aria-label="Amortização"
-                placeholder="Amortização"
-                inputmode="decimal"
-                required
-              /><input
-                v-model="x.interestAmount"
-                aria-label="Juros"
-                placeholder="0,00"
-                inputmode="decimal"
-              /><input
-                v-model="x.feeAmount"
-                aria-label="Tarifa"
-                placeholder="0,00"
-                inputmode="decimal"
-              />
+              <b>Parcela {{ x.installmentNumber }}</b>
+              <label class="installment-field"
+                >Vencimento<input v-model="x.dueDate" type="date" required
+              /></label>
+              <label class="installment-field"
+                >Amortização<input
+                  v-model="x.principalAmount"
+                  inputmode="decimal"
+                  placeholder="0,00"
+                  required
+              /></label>
+              <label class="installment-field"
+                >Juros<input v-model="x.interestAmount" inputmode="decimal" placeholder="0,00"
+              /></label>
+              <label class="installment-field"
+                >Tarifa<input v-model="x.feeAmount" inputmode="decimal" placeholder="0,00"
+              /></label>
             </div>
           </template>
           <p v-else class="notice">
@@ -625,9 +630,18 @@ header,
 }
 .installment {
   display: grid;
-  grid-template-columns: 45px repeat(4, 1fr);
+  grid-template-columns: 5rem repeat(4, minmax(0, 1fr));
+  align-items: end;
   gap: 0.5rem;
   margin: 0.5rem 0;
+}
+.installment-field {
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+.installment-field input {
+  width: 100%;
 }
 .filters {
   display: flex;

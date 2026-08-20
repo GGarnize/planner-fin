@@ -302,11 +302,22 @@ function purchaseInstallmentSummary(item: (typeof purchases.value)[number]) {
     ? `${item.installmentCount}x de ${money(firstAmount)}`
     : `${item.installmentCount}x`;
 }
+function shortDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return value;
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  })
+    .format(new Date(Date.UTC(year, month - 1, day)))
+    .replace('.', '');
+}
 function purchaseMeta(item: (typeof purchases.value)[number]) {
   return [
-    item.purchaseDate,
-    purchaseInstallmentSummary(item),
+    shortDate(item.purchaseDate),
     cardNameById.value.get(item.cardId) ?? 'Cartão não encontrado',
+    purchaseInstallmentSummary(item),
   ].join(' · ');
 }
 onMounted(load);
@@ -476,7 +487,6 @@ onMounted(load);
               <strong>{{ money(x.totalAmount) }}</strong>
             </div>
             <p>{{ purchaseMeta(x) }}</p>
-            <small v-if="x.installmentCount > 1">{{ purchaseInstallmentSummary(x) }}</small>
           </div>
           <KebabMenu
             :label="`Ações da compra ${x.description}`"
@@ -659,14 +669,9 @@ article,
 .purchase-card__main strong {
   white-space: nowrap;
 }
-.purchase-card__summary p,
-.purchase-card__summary small {
+.purchase-card__summary p {
   color: var(--color-text-muted);
   font-size: 0.82rem;
-}
-.purchase-card__summary small {
-  display: block;
-  margin-top: 0.15rem;
 }
 .badge {
   font-weight: 700;
