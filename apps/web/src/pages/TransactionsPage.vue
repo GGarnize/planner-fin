@@ -5,42 +5,25 @@ import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded } from 
 import type {
   FinancialTransactionStatus,
   FinancialTransactionType,
-  PublicCardPurchase,
   PublicFinancialAccount,
   PublicFinancialCategory,
-  PublicFinancialCreditCard,
+  PublicFinancialEntry,
   PublicFinancialTransaction,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 import { safeApiErrorMessage } from '../api-error';
 import { setModalScrollLock } from '../modal-scroll-lock';
 import KebabMenu, { type KebabMenuAction } from '../components/KebabMenu.vue';
+import { normalizeMoney } from '../transaction-template';
 const route = inject(routeLocationKey, { query: {} } as RouteLocationNormalizedLoaded);
 const router = inject(routerKey, null);
 type Page = {
-  data: PublicFinancialTransaction[];
+  data: PublicFinancialEntry[];
   page: { limit: number; nextCursor: string | null };
 };
-interface Entry {
-  id: string;
-  kind: 'transaction' | 'card';
-  date: string;
-  createdAt: string;
-  description: string;
-  type: FinancialTransactionType;
-  amount: string;
-  categoryId: string;
-  overdue: boolean;
-  cardLabel?: string;
-  transaction?: PublicFinancialTransaction;
-  purchase?: PublicCardPurchase;
-}
-const items = ref<PublicFinancialTransaction[]>([]),
-  cardPurchases = ref<PublicCardPurchase[]>([]),
-  cardPurchasesTruncated = ref(false),
+const entries = ref<PublicFinancialEntry[]>([]),
   accounts = ref<PublicFinancialAccount[]>([]),
-  categories = ref<PublicFinancialCategory[]>([]),
-  cards = ref<PublicFinancialCreditCard[]>([]);
+  categories = ref<PublicFinancialCategory[]>([]);
 const loading = ref(false),
   error = ref(''),
   formError = ref(''),
@@ -48,8 +31,8 @@ const loading = ref(false),
   nextCursor = ref<string | null>(null),
   showForm = ref(false),
   editing = ref<PublicFinancialTransaction | null>(null),
-  paying = ref<PublicFinancialTransaction | null>(null),
-  deleting = ref<Entry | null>(null),
+  paying = ref<PublicFinancialEntry | null>(null),
+  deleting = ref<PublicFinancialEntry | null>(null),
   deletingBusy = ref(false),
   deleteError = ref('');
 const filtersOpen = ref(false);
@@ -108,9 +91,11 @@ const money = (value: string | null) => {
 function categoryName(categoryId: string) {
   return categories.value.find((c) => c.id === categoryId)?.name ?? '';
 }
-function cardLabelFor(purchase: PublicCardPurchase) {
-  const name = cards.value.find((c) => c.id === purchase.cardId)?.name ?? 'Cartão';
-  return purchase.installmentCount > 1 ? `${name} · ${purchase.installmentCount}x` : name;
+function cardLabel(entry: PublicFinancialEntry) {
+  if (!entry.cardName) return '';
+  return entry.installmentCount && entry.installmentCount > 1
+    ? `${entry.cardName} · ${entry.installmentNumber}/${entry.installmentCount}`
+    : entry.cardName;
 }
 const MONTH_ABBR = [
   'jan',
@@ -130,38 +115,7 @@ function shortDate(date: string) {
   const [, month, day] = date.split('-');
   return `${Number(day)} ${MONTH_ABBR[Number(month) - 1]}`;
 }
-const entries = computed<Entry[]>(() => [
-  ...items.value.map(
-    (t): Entry => ({
-      id: `t:${t.id}`,
-      kind: 'transaction',
-      date: t.dueDate,
-      createdAt: t.createdAt,
-      description: t.description,
-      type: t.type,
-      amount: (t.status === 'PAID' ? t.actualAmount : null) ?? t.plannedAmount,
-      categoryId: t.categoryId,
-      overdue: t.isOverdue,
-      transaction: t,
-    }),
-  ),
-  ...cardPurchases.value.map(
-    (p): Entry => ({
-      id: `c:${p.id}`,
-      kind: 'card',
-      date: p.purchaseDate,
-      createdAt: p.createdAt,
-      description: p.description,
-      type: 'EXPENSE',
-      amount: p.totalAmount,
-      categoryId: p.categoryId,
-      overdue: false,
-      cardLabel: cardLabelFor(p),
-      purchase: p,
-    }),
-  ),
-]);
-type EntryGroup = { key: 'today' | 'future' | 'past'; title: string; items: Entry[] };
+type EntryGroup = { key: 'today' | 'future' | 'past'; title: string; items: PublicFinancialEntry[] };
 const groupedItems = computed<EntryGroup[]>(() => {
   const today = civilDateString();
   const groups: EntryGroup[] = [
@@ -174,45 +128,37 @@ const groupedItems = computed<EntryGroup[]>(() => {
     else if (entry.date > today) groups[1]!.items.push(entry);
     else groups[2]!.items.push(entry);
   }
-  const byNewest = (a: Entry, b: Entry) =>
-    b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt);
-  groups[0]!.items.sort(byNewest);
   groups[1]!.items.sort(
     (a, b) => a.date.localeCompare(b.date) || b.createdAt.localeCompare(a.createdAt),
   );
-  groups[2]!.items.sort(byNewest);
   return groups.filter((group) => group.items.length);
 });
-function actionsFor(entry: Entry): KebabMenuAction[] {
-  if (entry.kind === 'card') {
-    const purchase = entry.purchase!;
+function actionsFor(entry: PublicFinancialEntry): KebabMenuAction[] {
+  if (entry.source === 'CARD_INSTALLMENT') {
     return [
-      { label: 'Ver no cartão', onSelect: () => goToCard(purchase.cardId) },
+      { label: 'Ver no cartão', onSelect: () => goToCard(entry.cardId!) },
       { label: 'Excluir', danger: true, onSelect: () => openDelete(entry) },
     ];
   }
-  const t = entry.transaction!;
   return [
-    t.status === 'PENDING'
-      ? {
-          label: 'Marcar como pago',
-          onSelect: () => {
-            paying.value = t;
-            payFormError.value = '';
-            payForm.actualAmount = t.plannedAmount;
-            payForm.paidAt = t.dueDate;
-          },
-        }
-      : { label: 'Reabrir para pendente', onSelect: () => reopen(t) },
+    entry.status === 'PENDING'
+      ? { label: 'Marcar como pago', onSelect: () => openPay(entry) }
+      : { label: 'Reabrir para pendente', onSelect: () => reopen(entry) },
     { label: 'Excluir', danger: true, onSelect: () => openDelete(entry) },
   ];
+}
+function openPay(entry: PublicFinancialEntry) {
+  paying.value = entry;
+  payFormError.value = '';
+  payForm.actualAmount = entry.amount;
+  payForm.paidAt = entry.date;
 }
 function goToCard(cardId: string) {
   void router?.push(`/cards/${cardId}`);
 }
-function activateEntry(entry: Entry) {
-  if (entry.kind === 'card') goToCard(entry.purchase!.cardId);
-  else openEdit(entry.transaction!);
+function activateEntry(entry: PublicFinancialEntry) {
+  if (entry.source === 'CARD_INSTALLMENT') goToCard(entry.cardId!);
+  else void openEdit(entry);
 }
 async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>[1]): Promise<T> {
   const response = await authenticatedFetch(path, init);
@@ -221,27 +167,6 @@ async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>
     throw new Error(safeApiErrorMessage(body, 'Não foi possível concluir a operação.'));
   }
   return response.json() as Promise<T>;
-}
-async function loadCardPurchases() {
-  if (filters.type === 'INCOME' || filters.accountId || filters.status || filters.paidAtFrom || filters.paidAtTo) {
-    cardPurchases.value = [];
-    cardPurchasesTruncated.value = false;
-    return;
-  }
-  const params = new globalThis.URLSearchParams({ limit: '100' });
-  if (filters.categoryId) params.set('categoryId', filters.categoryId);
-  if (filters.dueDateFrom) params.set('dateFrom', filters.dueDateFrom);
-  if (filters.dueDateTo) params.set('dateTo', filters.dueDateTo);
-  try {
-    const page = await api<{ items?: PublicCardPurchase[]; nextCursor?: string | null }>(
-      `/card-purchases?${params}`,
-    );
-    cardPurchases.value = page.items ?? [];
-    cardPurchasesTruncated.value = Boolean(page.nextCursor);
-  } catch {
-    cardPurchases.value = [];
-    cardPurchasesTruncated.value = false;
-  }
 }
 async function load(append = false) {
   loading.value = true;
@@ -252,11 +177,8 @@ async function load(append = false) {
       if (v) params.set(k, v);
     });
     if (append && nextCursor.value) params.set('cursor', nextCursor.value);
-    const [page] = await Promise.all([
-      api<Page>(`/transactions?${params}`),
-      append ? Promise.resolve() : loadCardPurchases(),
-    ]);
-    items.value = append ? [...items.value, ...page.data] : page.data;
+    const page = await api<Page>(`/financial-entries?${params}`);
+    entries.value = append ? [...entries.value, ...page.data] : page.data;
     nextCursor.value = page.page.nextCursor;
   } catch {
     error.value = 'API indisponível. Tente novamente.';
@@ -266,10 +188,9 @@ async function load(append = false) {
 }
 async function loadRelations() {
   try {
-    [accounts.value, categories.value, cards.value] = await Promise.all([
+    [accounts.value, categories.value] = await Promise.all([
       api<PublicFinancialAccount[]>('/accounts'),
       api<PublicFinancialCategory[]>('/categories'),
-      api<{ items?: PublicFinancialCreditCard[] }>('/cards').then((r) => r.items ?? []),
     ]);
   } catch {
     error.value = 'API indisponível. Tente novamente.';
@@ -305,22 +226,21 @@ function openCreateFromRoute() {
   if (type === 'INCOME' || type === 'EXPENSE') openCreate(type);
   else if (showForm.value && !editing.value) showForm.value = false;
 }
-function openEdit(item: PublicFinancialTransaction) {
-  editing.value = item;
+async function openEdit(entry: PublicFinancialEntry) {
   formError.value = '';
-  Object.assign(form, {
-    ...item,
-    notes: item.notes ?? '',
-    actualAmount: item.actualAmount ?? '',
-    paidAt: item.paidAt ?? '',
-  });
-  showForm.value = true;
-}
-function normalizeMoney(value: string): string | null {
-  const normalized = value.trim().replace(',', '.');
-  const match = /^(?:0|[1-9][0-9]{0,16})(?:\.([0-9]{1,2}))?$/.exec(normalized);
-  if (!match || /^0(?:\.0{1,2})?$/.test(normalized)) return null;
-  return `${normalized.split('.')[0]}.${(match[1] ?? '').padEnd(2, '0')}`;
+  try {
+    const item = await api<PublicFinancialTransaction>(`/transactions/${entry.sourceId}`);
+    editing.value = item;
+    Object.assign(form, {
+      ...item,
+      notes: item.notes ?? '',
+      actualAmount: item.actualAmount ?? '',
+      paidAt: item.paidAt ?? '',
+    });
+    showForm.value = true;
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Não foi possível abrir o lançamento.';
+  }
 }
 function validateForm(): { plannedAmount: string; actualAmount?: string } | null {
   if (!form.accountId) formError.value = 'Selecione uma conta.';
@@ -397,7 +317,7 @@ async function pay() {
     return;
   }
   try {
-    await api(`/transactions/${paying.value.id}/pay`, {
+    await api(`/transactions/${paying.value.sourceId}/pay`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ actualAmount, paidAt: payForm.paidAt }),
@@ -414,9 +334,13 @@ async function removeTransaction() {
   deleteError.value = '';
   deletingBusy.value = true;
   const path =
-    entry.kind === 'card' ? `/card-purchases/${entry.purchase!.id}` : `/transactions/${entry.transaction!.id}`;
+    entry.source === 'CARD_INSTALLMENT'
+      ? `/card-purchases/${entry.purchaseId}`
+      : `/transactions/${entry.sourceId}`;
   const fallbackMessage =
-    entry.kind === 'card' ? 'Não foi possível excluir a compra.' : 'Não foi possível excluir o lançamento.';
+    entry.source === 'CARD_INSTALLMENT'
+      ? 'Não foi possível excluir a compra.'
+      : 'Não foi possível excluir o lançamento.';
   try {
     const response = await authenticatedFetch(path, { method: 'DELETE' });
     if (!response.ok) {
@@ -431,7 +355,7 @@ async function removeTransaction() {
     deletingBusy.value = false;
   }
 }
-function openDelete(entry: Entry) {
+function openDelete(entry: PublicFinancialEntry) {
   deleteError.value = '';
   deletingBusy.value = false;
   deleting.value = entry;
@@ -457,9 +381,9 @@ watch(
     else releaseModalHistory();
   },
 );
-async function reopen(item: PublicFinancialTransaction) {
+async function reopen(entry: PublicFinancialEntry) {
   try {
-    await api(`/transactions/${item.id}/reopen`, {
+    await api(`/transactions/${entry.sourceId}/reopen`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
@@ -589,10 +513,6 @@ function onPopState() {
     <p v-if="filters.accountId || filters.status || filters.paidAtFrom || filters.paidAtTo" class="hint">
       Compras no cartão ficam ocultas quando filtros de conta, status ou data de pagamento estão ativos.
     </p>
-    <p v-if="cardPurchasesTruncated" class="hint">
-      Há mais compras no cartão neste período do que o exibido — restrinja o intervalo de datas para
-      ver todas.
-    </p>
     <p v-if="loading" aria-live="polite">Carregando…</p>
     <section v-else-if="!entries.length" class="empty">
       <h2>
@@ -614,9 +534,9 @@ function onPopState() {
           :key="entry.id"
           class="transaction-card"
           :class="{
-            'transaction-card--paid': entry.transaction?.status === 'PAID',
-            'transaction-card--pending': entry.transaction?.status === 'PENDING',
-            'transaction-card--purchase': entry.kind === 'card',
+            'transaction-card--paid': entry.status === 'PAID',
+            'transaction-card--pending': entry.status === 'PENDING',
+            'transaction-card--purchase': entry.source === 'CARD_INSTALLMENT',
           }"
         >
           <button type="button" class="entry-tap" @click="activateEntry(entry)">
@@ -626,10 +546,10 @@ function onPopState() {
             </span>
             <span class="entry-meta">
               {{ shortDate(entry.date) }} ·
-              <span v-if="entry.kind === 'transaction'" class="status-badge">{{
-                entry.transaction!.status === 'PAID' ? 'Pago' : 'Pendente'
+              <span v-if="entry.source === 'TRANSACTION'" class="status-badge">{{
+                entry.status === 'PAID' ? 'Pago' : 'Pendente'
               }}</span>
-              <span v-else class="status-badge status-badge--card">{{ entry.cardLabel }}</span>
+              <span v-else class="status-badge status-badge--card">{{ cardLabel(entry) }}</span>
               <strong v-if="entry.overdue"> · Vencido</strong>
             </span>
             <span v-if="categoryName(entry.categoryId)" class="entry-category">{{
@@ -736,9 +656,9 @@ function onPopState() {
       <form class="confirm-delete" novalidate @submit.prevent="removeTransaction">
         <h2 id="delete-title">
           {{
-            deleting.kind === 'card'
+            deleting.source === 'CARD_INSTALLMENT'
               ? 'Excluir esta compra do cartão?'
-              : deleting.transaction!.isRecurringOccurrence
+              : deleting.isRecurringOccurrence
                 ? 'Excluir somente este lançamento?'
                 : 'Excluir este lançamento?'
           }}
@@ -747,9 +667,11 @@ function onPopState() {
           <p v-if="deleteError" role="alert">{{ deleteError }}</p>
           <p>
             {{
-              deleting.kind === 'card'
-                ? 'As parcelas dessa compra serão removidas e a fatura será recalculada.'
-                : deleting.transaction!.isRecurringOccurrence
+              deleting.source === 'CARD_INSTALLMENT'
+                ? deleting.installmentCount && deleting.installmentCount > 1
+                  ? `Isso remove as ${deleting.installmentCount} parcelas dessa compra, não só esta, e recalcula as faturas.`
+                  : 'Isso remove essa compra do cartão e recalcula a fatura.'
+                : deleting.isRecurringOccurrence
                   ? 'A recorrência continuará ativa e as próximas ocorrências serão mantidas.'
                   : 'Esta ação remove o lançamento dos seus cálculos e listas.'
             }}
