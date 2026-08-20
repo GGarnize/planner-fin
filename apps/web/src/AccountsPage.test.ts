@@ -44,6 +44,22 @@ describe('tela de contas (API mockada)', () => {
     const init = vi.mocked(authenticatedFetch).mock.calls[1]![1]!;
     expect(JSON.parse(init.body as string).openingBalance).toBe('-10.25');
   });
+  it('aceita entrada natural (vírgula, sem casas decimais) e normaliza antes de enviar', async () => {
+    vi.mocked(authenticatedFetch)
+      .mockReturnValueOnce(response([]))
+      .mockReturnValueOnce(response({}))
+      .mockReturnValueOnce(response([]));
+    const wrapper = mount(AccountsPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    await wrapper.get('button').trigger('click');
+    const inputs = wrapper.get('form').findAll('input');
+    await inputs[0]!.setValue('Carteira');
+    await inputs[3]!.setValue('5000,50');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+    const init = vi.mocked(authenticatedFetch).mock.calls[1]![1]!;
+    expect(JSON.parse(init.body as string).openingBalance).toBe('5000.50');
+  });
   it('informa API indisponível e permite tentar novamente', async () => {
     vi.mocked(authenticatedFetch)
       .mockRejectedValueOnce(new Error('offline'))
@@ -52,6 +68,26 @@ describe('tela de contas (API mockada)', () => {
     await flushPromises();
     expect(wrapper.get('[role=alert]').text()).toContain('API indisponível');
     expect(wrapper.text()).toContain('Tentar novamente');
+  });
+  it('arquiva somente após confirmar no diálogo padronizado, sem window.confirm', async () => {
+    vi.mocked(authenticatedFetch).mockReturnValue(response([account('1500.00')]));
+    const wrapper = mount(AccountsPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    await wrapper.get('.kebab-trigger').trigger('click');
+    await wrapper
+      .findAll('.kebab-panel button')
+      .find((button) => button.text() === 'Arquivar')!
+      .trigger('click');
+    expect(wrapper.get('.confirm-dialog').text()).toContain('Conta teste');
+    expect(
+      vi.mocked(authenticatedFetch).mock.calls.some(([path]) => String(path).endsWith('/archive')),
+    ).toBe(false);
+    await wrapper.get('.confirm-dialog .danger').trigger('click');
+    await flushPromises();
+    expect(
+      vi.mocked(authenticatedFetch).mock.calls.some(([path]) => String(path).endsWith('/archive')),
+    ).toBe(true);
+    expect(wrapper.find('.confirm-dialog').exists()).toBe(false);
   });
   it('carrega arquivadas ao ativar filtro', async () => {
     vi.mocked(authenticatedFetch).mockReturnValue(response([]));

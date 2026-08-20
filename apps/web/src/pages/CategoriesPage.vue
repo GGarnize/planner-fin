@@ -8,6 +8,7 @@ import type {
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 import KebabMenu, { type KebabMenuAction } from '../components/KebabMenu.vue';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
 const categories = ref<PublicFinancialCategory[]>([]),
   loading = ref(false),
   error = ref(''),
@@ -15,6 +16,8 @@ const categories = ref<PublicFinancialCategory[]>([]),
   filterType = ref<'' | FinancialCategoryType>('');
 const showForm = ref(false),
   editingId = ref<string | null>(null);
+const archiving = ref<PublicFinancialCategory | null>(null),
+  archivingBusy = ref(false);
 const initial = (): CreateFinancialCategoryRequest => ({
   name: '',
   type: 'EXPENSE',
@@ -114,12 +117,20 @@ function actionsFor(item: PublicFinancialCategory): KebabMenuAction[] {
   if (item.archivedAt) return [{ label: 'Reativar', onSelect: () => action(item, 'restore') }];
   return [
     { label: 'Editar', onSelect: () => edit(item) },
-    { label: 'Arquivar', danger: true, onSelect: () => action(item, 'archive') },
+    { label: 'Arquivar', danger: true, onSelect: () => (archiving.value = item) },
   ];
 }
+async function confirmArchive() {
+  if (!archiving.value || archivingBusy.value) return;
+  archivingBusy.value = true;
+  try {
+    await action(archiving.value, 'archive');
+    archiving.value = null;
+  } finally {
+    archivingBusy.value = false;
+  }
+}
 async function action(item: PublicFinancialCategory, operation: 'archive' | 'restore') {
-  if (operation === 'archive' && !globalThis.confirm(`Arquivar a categoria “${item.name}”?`))
-    return;
   loading.value = true;
   try {
     await api(`/categories/${item.id}/${operation}`, { method: 'POST' });
@@ -232,6 +243,15 @@ onMounted(load);
         </div>
       </form>
     </div>
+    <ConfirmDialog
+      :open="!!archiving"
+      :title="`Arquivar a categoria “${archiving?.name}”?`"
+      message="Ela deixa de aparecer para novos lançamentos, mas o histórico é preservado."
+      confirm-label="Arquivar"
+      :busy="archivingBusy"
+      @confirm="confirmArchive"
+      @cancel="archiving = null"
+    />
   </main>
 </template>
 <style scoped>

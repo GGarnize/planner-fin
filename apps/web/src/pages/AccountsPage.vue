@@ -7,12 +7,16 @@ import type {
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 import KebabMenu, { type KebabMenuAction } from '../components/KebabMenu.vue';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
+import { normalizeMoney } from '../transaction-template';
 
 const accounts = ref<PublicFinancialAccount[]>([]);
 const loading = ref(false);
 const error = ref('');
 const includeArchived = ref(false);
 const editingId = ref<string | null>(null);
+const archiving = ref<PublicFinancialAccount | null>(null);
+const archivingBusy = ref(false);
 const showForm = ref(false);
 const initial = (): CreateFinancialAccountRequest => ({
   name: '',
@@ -79,7 +83,7 @@ function valid(): boolean {
   return (
     form.name.trim().length > 0 &&
     form.name.trim().length <= 120 &&
-    /^-?(0|[1-9][0-9]{0,16})(\.[0-9]{1,2})?$/.test(form.openingBalance) &&
+    normalizeMoney(form.openingBalance, { allowNegative: true, allowZero: true }) !== null &&
     /^\d{4}-\d{2}-\d{2}$/.test(form.openingBalanceDate) &&
     (!form.institution || form.institution.trim().length <= 120)
   );
@@ -95,7 +99,10 @@ async function save() {
     ...form,
     name: form.name.trim(),
     institution: form.institution?.trim() || null,
-    openingBalance: form.openingBalance,
+    openingBalance: normalizeMoney(form.openingBalance, {
+      allowNegative: true,
+      allowZero: true,
+    })!,
   };
   try {
     await api(editingId.value ? `/accounts/${editingId.value}` : '/accounts', {
@@ -111,16 +118,22 @@ async function save() {
     loading.value = false;
   }
 }
-async function archive(account: PublicFinancialAccount) {
-  if (!globalThis.confirm(`Arquivar a conta “${account.name}”?`)) return;
-  await action(account.id, 'archive');
+async function confirmArchive() {
+  if (!archiving.value || archivingBusy.value) return;
+  archivingBusy.value = true;
+  try {
+    await action(archiving.value.id, 'archive');
+    archiving.value = null;
+  } finally {
+    archivingBusy.value = false;
+  }
 }
 function actionsFor(account: PublicFinancialAccount): KebabMenuAction[] {
   if (account.archivedAt)
     return [{ label: 'Reativar', onSelect: () => action(account.id, 'restore') }];
   return [
     { label: 'Editar', onSelect: () => openEdit(account) },
-    { label: 'Arquivar', danger: true, onSelect: () => archive(account) },
+    { label: 'Arquivar', danger: true, onSelect: () => (archiving.value = account) },
   ];
 }
 async function action(id: string, operation: 'archive' | 'restore') {
@@ -212,6 +225,15 @@ onMounted(load);
         </div>
       </form>
     </div>
+    <ConfirmDialog
+      :open="!!archiving"
+      :title="`Arquivar a conta “${archiving?.name}”?`"
+      message="Ela deixa de aparecer para novos lançamentos, mas o histórico é preservado."
+      confirm-label="Arquivar"
+      :busy="archivingBusy"
+      @confirm="confirmArchive"
+      @cancel="archiving = null"
+    />
   </main>
 </template>
 
