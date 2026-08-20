@@ -46,4 +46,29 @@ describe('validação HTTP de cartões', () => {
       status: 400,
     });
   });
+
+  const cardBase = { name: 'Cartão fictício', closingDay: 10, dueDay: 17 };
+  it.each([
+    [undefined, true],
+    [null, true],
+    ['1234', true],
+    ['123', false],
+    ['12345', false],
+    ['12ab', false],
+  ])('últimos 4 dígitos: %s aceito=%s', async (last4, accepted) => {
+    const dto = Object.assign(new CreateCardDto(), { ...cardBase, last4 });
+    expect((await validate(dto)).length === 0).toBe(accepted);
+  });
+
+  it.each([
+    ['5000', true],
+    ['5000.00', true],
+    ['5000.5', true],
+    ['5000.555', false],
+    ['0.00', false],
+    ['abc', false],
+  ])('limite de crédito: %s aceito=%s', async (creditLimit, accepted) => {
+    const dto = Object.assign(new CreateCardDto(), { ...cardBase, creditLimit });
+    expect((await validate(dto)).length === 0).toBe(accepted);
+  });
 });

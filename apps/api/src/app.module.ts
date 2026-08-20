@@ -7,6 +7,7 @@ import { UsersModule } from './users/users.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { CategoriesModule } from './categories/categories.module';
 import { TransactionsModule } from './transactions/transactions.module';
+import { FinancialEntriesModule } from './financial-entries/financial-entries.module';
 import { TransfersModule } from './transfers/transfers.module';
 import { RecurrencesModule } from './recurrences/recurrences.module';
 import { CardsModule } from './cards/cards.module';
@@ -29,6 +30,7 @@ import { ReleasesModule } from './releases/releases.module';
     AccountsModule,
     CategoriesModule,
     TransactionsModule,
+    FinancialEntriesModule,
     TransfersModule,
     RecurrencesModule,
     CardsModule,
