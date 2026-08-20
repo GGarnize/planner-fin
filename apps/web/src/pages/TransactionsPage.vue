@@ -94,7 +94,7 @@ function categoryName(categoryId: string) {
 function cardLabel(entry: PublicFinancialEntry) {
   if (!entry.cardName) return '';
   return entry.installmentCount && entry.installmentCount > 1
-    ? `${entry.cardName} · ${entry.installmentNumber}/${entry.installmentCount}`
+    ? `${entry.cardName} · ${entry.installmentCount}x`
     : entry.cardName;
 }
 const MONTH_ABBR = [
@@ -134,7 +134,7 @@ const groupedItems = computed<EntryGroup[]>(() => {
   return groups.filter((group) => group.items.length);
 });
 function actionsFor(entry: PublicFinancialEntry): KebabMenuAction[] {
-  if (entry.source === 'CARD_INSTALLMENT') {
+  if (entry.source === 'CARD_PURCHASE') {
     return [
       { label: 'Ver no cartão', onSelect: () => goToCard(entry.cardId!) },
       { label: 'Excluir', danger: true, onSelect: () => openDelete(entry) },
@@ -157,7 +157,7 @@ function goToCard(cardId: string) {
   void router?.push(`/cards/${cardId}`);
 }
 function activateEntry(entry: PublicFinancialEntry) {
-  if (entry.source === 'CARD_INSTALLMENT') goToCard(entry.cardId!);
+  if (entry.source === 'CARD_PURCHASE') goToCard(entry.cardId!);
   else void openEdit(entry);
 }
 async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>[1]): Promise<T> {
@@ -334,11 +334,11 @@ async function removeTransaction() {
   deleteError.value = '';
   deletingBusy.value = true;
   const path =
-    entry.source === 'CARD_INSTALLMENT'
+    entry.source === 'CARD_PURCHASE'
       ? `/card-purchases/${entry.purchaseId}`
       : `/transactions/${entry.sourceId}`;
   const fallbackMessage =
-    entry.source === 'CARD_INSTALLMENT'
+    entry.source === 'CARD_PURCHASE'
       ? 'Não foi possível excluir a compra.'
       : 'Não foi possível excluir o lançamento.';
   try {
@@ -536,7 +536,7 @@ function onPopState() {
           :class="{
             'transaction-card--paid': entry.status === 'PAID',
             'transaction-card--pending': entry.status === 'PENDING',
-            'transaction-card--purchase': entry.source === 'CARD_INSTALLMENT',
+            'transaction-card--purchase': entry.source === 'CARD_PURCHASE',
           }"
         >
           <button type="button" class="entry-tap" @click="activateEntry(entry)">
@@ -656,7 +656,7 @@ function onPopState() {
       <form class="confirm-delete" novalidate @submit.prevent="removeTransaction">
         <h2 id="delete-title">
           {{
-            deleting.source === 'CARD_INSTALLMENT'
+            deleting.source === 'CARD_PURCHASE'
               ? 'Excluir esta compra do cartão?'
               : deleting.isRecurringOccurrence
                 ? 'Excluir somente este lançamento?'
@@ -667,10 +667,8 @@ function onPopState() {
           <p v-if="deleteError" role="alert">{{ deleteError }}</p>
           <p>
             {{
-              deleting.source === 'CARD_INSTALLMENT'
-                ? deleting.installmentCount && deleting.installmentCount > 1
-                  ? `Isso remove as ${deleting.installmentCount} parcelas dessa compra, não só esta, e recalcula as faturas.`
-                  : 'Isso remove essa compra do cartão e recalcula a fatura.'
+              deleting.source === 'CARD_PURCHASE'
+                ? 'Isso remove a compra e todas as suas parcelas das faturas abertas.'
                 : deleting.isRecurringOccurrence
                   ? 'A recorrência continuará ativa e as próximas ocorrências serão mantidas.'
                   : 'Esta ação remove o lançamento dos seus cálculos e listas.'

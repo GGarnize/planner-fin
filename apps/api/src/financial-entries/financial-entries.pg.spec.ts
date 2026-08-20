@@ -360,28 +360,20 @@ describePg('feed unificado de lançamentos com PostgreSQL real', () => {
     await prisma.$disconnect();
   });
 
-  it('une FinancialTransaction e CardInstallment sem incluir CardInvoicePayment', async () => {
+  it('une FinancialTransaction e CardPurchase sem incluir CardInvoicePayment', async () => {
     const service = entries(prisma);
     const page = await service.list(userA, {});
     const sources = page.data.map((e) => `${e.source}:${e.sourceId}`).sort();
     expect(sources).toEqual(
       [
+        `CARD_PURCHASE:${purchase1x}`,
+        `CARD_PURCHASE:${purchase3x}`,
         `TRANSACTION:${txPaid}`,
         `TRANSACTION:${txPending}`,
         `TRANSACTION:${txIncome}`,
-        // purchase1x tem 1 parcela, purchase3x tem 3 parcelas: 4 CardInstallment ao todo
-      ]
-        .concat(
-          (
-            await prisma.cardInstallment.findMany({
-              where: { purchase: { userId: userA } },
-              select: { id: true },
-            })
-          ).map((row) => `CARD_INSTALLMENT:${row.id}`),
-        )
-        .sort(),
+      ].sort(),
     );
-    expect(page.data).toHaveLength(7);
+    expect(page.data).toHaveLength(5);
     expect(sources.some((s) => s.includes('CardInvoicePayment'))).toBe(false);
   });
 
@@ -392,54 +384,61 @@ describePg('feed unificado de lançamentos com PostgreSQL real', () => {
     expect(page.data.some((e) => e.purchaseId === purchaseOther)).toBe(false);
   });
 
-  it('resolve o valor priorizando realizado quando pago, e o total da parcela no cartão', async () => {
+  it('resolve transacoes por status e compras por totalAmount canonico', async () => {
     const service = entries(prisma);
-    const page = await service.list(userA, { dueDateFrom: '2020-01-01', dueDateTo: '2020-01-31' });
+    const page = await service.list(userA, { dueDateFrom: '2020-01-01', dueDateTo: '2020-02-29' });
     const paid = page.data.find((e) => e.sourceId === txPaid)!;
     const pending = page.data.find((e) => e.sourceId === txPending)!;
+    const purchase = page.data.find((e) => e.sourceId === purchase3x)!;
     expect(paid.amount).toBe('90.00');
     expect(pending.amount).toBe('50.00');
+    expect(purchase.amount).toBe('300.00');
   });
 
-  it('rotula parcela de cartão com cardName, purchaseId e numeração', async () => {
+  it('compra a vista e compra 3x viram uma linha cada por purchaseDate', async () => {
     const service = entries(prisma);
-    const page = await service.list(userA, { dueDateFrom: '2020-03-01', dueDateTo: '2020-04-30' });
-    const installments = page.data.filter((e) => e.source === 'CARD_INSTALLMENT');
-    expect(installments).toHaveLength(2);
-    for (const entry of installments) {
-      expect(entry.cardName).toBe('Nubank');
-      expect(entry.purchaseId).toBe(purchase3x);
-      expect(entry.installmentCount).toBe(3);
-      expect(entry.accountId).toBeNull();
-      expect(entry.status).toBeNull();
-      expect(entry.type).toBe('EXPENSE');
-    }
+    const page1x = await service.list(userA, { dueDateFrom: '2099-01-01', dueDateTo: '2099-01-31' });
+    const page3x = await service.list(userA, { dueDateFrom: '2020-02-01', dueDateTo: '2020-02-29' });
+    const one = page1x.data.find((e) => e.sourceId === purchase1x)!;
+    const three = page3x.data.find((e) => e.sourceId === purchase3x)!;
+    expect(page1x.data.filter((e) => e.source === 'CARD_PURCHASE')).toHaveLength(1);
+    expect(page3x.data.filter((e) => e.source === 'CARD_PURCHASE')).toHaveLength(1);
+    expect(one.amount).toBe('150.00');
+    expect(one.date).toBe('2099-01-20');
+    expect(one.installmentCount).toBe(1);
+    expect(three.amount).toBe('300.00');
+    expect(three.date).toBe('2020-02-20');
+    expect(three.installmentCount).toBe(3);
+    expect(three.installmentNumber).toBeNull();
   });
 
-  it('marca parcela vencida como overdue só quando a fatura não foi paga', async () => {
+  it('rotula compra de cartao com cardName e purchaseId sem numeracao 1/3', async () => {
     const service = entries(prisma);
-    const page = await service.list(userA, { dueDateFrom: '2020-03-01', dueDateTo: '2020-04-30' });
-    const unpaidPastInstallment = page.data.find((e) => e.date === '2020-03-17')!;
-    const paidPastInstallment = page.data.find((e) => e.date === '2020-04-17')!;
-    expect(unpaidPastInstallment.overdue).toBe(true);
-    expect(paidPastInstallment.overdue).toBe(false);
+    const page = await service.list(userA, { dueDateFrom: '2020-02-01', dueDateTo: '2020-02-29' });
+    const purchase = page.data.find((e) => e.source === 'CARD_PURCHASE')!;
+    expect(purchase.cardName).toBe('Nubank');
+    expect(purchase.purchaseId).toBe(purchase3x);
+    expect(purchase.accountId).toBeNull();
+    expect(purchase.status).toBeNull();
+    expect(purchase.type).toBe('EXPENSE');
+    expect(purchase.overdue).toBe(false);
   });
 
-  it('filtro de conta exclui parcelas de cartão sem inventar dado', async () => {
+  it('filtro de conta exclui compras de cartao sem inventar dado', async () => {
     const service = entries(prisma);
     const page = await service.list(userA, { accountId: accountA });
     expect(page.data.every((e) => e.source === 'TRANSACTION')).toBe(true);
     expect(page.data).toHaveLength(3);
   });
 
-  it('filtro de status exclui parcelas de cartão sem inventar dado', async () => {
+  it('filtro de status exclui compras de cartao sem inventar dado', async () => {
     const service = entries(prisma);
     const page = await service.list(userA, { status: 'PENDING' });
     expect(page.data.every((e) => e.source === 'TRANSACTION')).toBe(true);
     expect(page.data.map((e) => e.sourceId).sort()).toEqual([txIncome, txPending].sort());
   });
 
-  it('filtro de data de pagamento exclui parcelas de cartão sem inventar dado', async () => {
+  it('filtro de data de pagamento exclui compras de cartao sem inventar dado', async () => {
     const service = entries(prisma);
     const page = await service.list(userA, { paidAtFrom: '2020-01-01', paidAtTo: '2020-01-31' });
     expect(page.data).toHaveLength(1);
@@ -447,7 +446,7 @@ describePg('feed unificado de lançamentos com PostgreSQL real', () => {
     expect(page.data[0]!.sourceId).toBe(txPaid);
   });
 
-  it('filtro type=INCOME exclui parcelas de cartão pois são sempre despesa', async () => {
+  it('filtro type=INCOME exclui compras de cartao pois sao sempre despesa', async () => {
     const service = entries(prisma);
     const page = await service.list(userA, { type: 'INCOME' });
     expect(page.data.map((e) => e.sourceId)).toEqual([txIncome]);
@@ -458,7 +457,7 @@ describePg('feed unificado de lançamentos com PostgreSQL real', () => {
     const page = await service.list(userA, { categoryId: categoryExpenseA });
     expect(page.data.every((e) => e.categoryId === categoryExpenseA)).toBe(true);
     expect(page.data.some((e) => e.source === 'TRANSACTION')).toBe(true);
-    expect(page.data.some((e) => e.source === 'CARD_INSTALLMENT')).toBe(true);
+    expect(page.data.some((e) => e.source === 'CARD_PURCHASE')).toBe(true);
     expect(page.data.some((e) => e.sourceId === txIncome)).toBe(false);
   });
 
@@ -479,7 +478,7 @@ describePg('feed unificado de lançamentos com PostgreSQL real', () => {
       cursor = page.page.nextCursor;
       guard++;
     } while (cursor && guard < 20);
-    expect(seen.size).toBe(7);
+    expect(seen.size).toBe(5);
   });
 
   it('rejeita cursor com fingerprint de outra consulta', async () => {

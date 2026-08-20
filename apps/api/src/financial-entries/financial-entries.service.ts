@@ -48,11 +48,14 @@ type Row = {
 };
 
 /**
- * Feed único da tela de Lançamentos: une FinancialTransaction e CardInstallment
- * (parcela de compra no cartão, na mesma granularidade usada por
- * dashboard/orçamento — ver SPEC-010 §"CardInstallment") numa única lista
- * ordenada e paginada. CardInvoicePayment nunca entra aqui: a despesa já foi
- * reconhecida na parcela, o pagamento da fatura é só baixa de caixa.
+ * Feed único da tela de Lançamentos: une FinancialTransaction e CardPurchase.
+ *
+ * Lançamentos: o que foi registrado/comprado.
+ * Agregados mensais: quanto da despesa pertence a cada período.
+ *
+ * CardInstallment segue sendo a granularidade de competência em faturas,
+ * dashboard e orçamento. CardInvoicePayment nunca entra aqui: o pagamento da
+ * fatura é só baixa de caixa, não nova despesa.
  */
 @Injectable()
 export class FinancialEntriesService {
@@ -73,9 +76,9 @@ export class FinancialEntriesService {
       ? readEntryCursor(query.cursor, this.config.jwtSecret, fingerprint)
       : undefined;
 
-    // CardInstallment não tem conta, status pago/pendente ou data de pagamento
-    // próprios — quando esses filtros são usados, a semântica correta é
-    // "nenhuma parcela de cartão pode casar", não inventar um valor falso.
+    // CardPurchase não tem conta, status pago/pendente ou data de pagamento
+    // próprios. Quando esses filtros são usados, a semântica correta é excluir
+    // compras de cartão server-side, sem inventar equivalentes artificiais.
     const cardEnabled =
       !query.accountId &&
       !query.status &&
@@ -105,36 +108,34 @@ export class FinancialEntriesService {
     if (query.categoryId)
       cardFilters.push(Prisma.sql`AND cp."categoryId" = ${query.categoryId}::uuid`);
     if (query.dueDateFrom)
-      cardFilters.push(Prisma.sql`AND inv."dueDate" >= ${civilDate(query.dueDateFrom)}`);
+      cardFilters.push(Prisma.sql`AND cp."purchaseDate" >= ${civilDate(query.dueDateFrom)}`);
     if (query.dueDateTo)
-      cardFilters.push(Prisma.sql`AND inv."dueDate" <= ${civilDate(query.dueDateTo)}`);
+      cardFilters.push(Prisma.sql`AND cp."purchaseDate" <= ${civilDate(query.dueDateTo)}`);
 
     const cardBlock = cardEnabled
       ? Prisma.sql`
         UNION ALL
         SELECT
-          'CARD_INSTALLMENT'::text AS "source",
-          ci."id" AS "sourceId",
+          'CARD_PURCHASE'::text AS "source",
+          cp."id" AS "sourceId",
           cp."id" AS "purchaseId",
           'EXPENSE'::"FinancialTransactionType" AS "type",
           cp."description" AS "description",
           cp."notes" AS "notes",
-          ci."amount" AS "amount",
-          inv."dueDate" AS "date",
+          cp."totalAmount" AS "amount",
+          cp."purchaseDate" AS "date",
           cp."categoryId" AS "categoryId",
           NULL::uuid AS "accountId",
           NULL::"FinancialTransactionStatus" AS "status",
           cp."cardId" AS "cardId",
           card."name" AS "cardName",
-          ci."installmentNumber" AS "installmentNumber",
-          ci."installmentCount" AS "installmentCount",
-          (inv."status" = 'PAID') AS "invoicePaid",
+          NULL::int AS "installmentNumber",
+          cp."installmentCount" AS "installmentCount",
+          false AS "invoicePaid",
           NULL::uuid AS "recurrenceRuleId",
           NULL::date AS "occurrenceDate",
-          ci."createdAt" AS "createdAt"
-        FROM "CardInstallment" ci
-        JOIN "CardPurchase" cp ON cp."id" = ci."purchaseId"
-        JOIN "CardInvoice" inv ON inv."id" = ci."invoiceId"
+          cp."createdAt" AS "createdAt"
+        FROM "CardPurchase" cp
         JOIN "FinancialCreditCard" card ON card."id" = cp."cardId"
         WHERE cp."userId" = ${userId}::uuid
         ${and(cardFilters)}
@@ -238,7 +239,7 @@ export class FinancialEntriesService {
       overdue:
         row.source === 'TRANSACTION'
           ? row.status === 'PENDING' && date < today
-          : !row.invoicePaid && date < today,
+          : false,
       isRecurringOccurrence: Boolean(row.recurrenceRuleId && row.occurrenceDate),
       createdAt: row.createdAt.toISOString(),
     };

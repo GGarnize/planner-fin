@@ -96,18 +96,16 @@ function makeTx(
 
 function makeCardEntry(
   overrides: Partial<{
-    installmentNumber: number;
     installmentCount: number;
     date: string;
     amount: string;
   }> = {},
 ): PublicFinancialEntry {
-  const installmentNumber = overrides.installmentNumber ?? 1;
   const installmentCount = overrides.installmentCount ?? 1;
   return {
-    id: `CARD_INSTALLMENT:instalment-${installmentNumber}`,
-    source: 'CARD_INSTALLMENT',
-    sourceId: `instalment-${installmentNumber}`,
+    id: `CARD_PURCHASE:${purchaseId}`,
+    source: 'CARD_PURCHASE',
+    sourceId: purchaseId,
     type: 'EXPENSE',
     description: 'Abastecimento',
     notes: null,
@@ -119,7 +117,7 @@ function makeCardEntry(
     cardId,
     cardName: 'Nubank',
     purchaseId,
-    installmentNumber,
+    installmentNumber: null,
     installmentCount,
     overdue: false,
     isRecurringOccurrence: false,
@@ -611,7 +609,7 @@ describe('tela de lançamentos (API mockada)', () => {
   });
 });
 
-describe('feed único inclui compras de cartão (CARD_INSTALLMENT)', () => {
+describe('feed único inclui compras de cartão (CARD_PURCHASE)', () => {
   beforeEach(() => {
     vi.mocked(authenticatedFetch).mockReset();
     vi.useFakeTimers();
@@ -621,7 +619,7 @@ describe('feed único inclui compras de cartão (CARD_INSTALLMENT)', () => {
     vi.useRealTimers();
   });
 
-  it('mostra a parcela do cartão na listagem com o rótulo do cartão', async () => {
+  it('mostra a compra do cartão na listagem com o rótulo do cartão', async () => {
     mockPage({ data: [makeCardEntry()], page: { limit: 20, nextCursor: null } });
     const wrapper = await mountPage();
     const entry = wrapper.get('.transaction-card--purchase');
@@ -629,16 +627,19 @@ describe('feed único inclui compras de cartão (CARD_INSTALLMENT)', () => {
     expect(entry.get('.status-badge--card').text()).toBe('Nubank');
   });
 
-  it('mostra a numeração da parcela no rótulo quando a compra é parcelada', async () => {
+  it('mostra quantidade de parcelas no rótulo quando a compra é parcelada', async () => {
     mockPage({
-      data: [makeCardEntry({ installmentNumber: 2, installmentCount: 3 })],
+      data: [makeCardEntry({ installmentCount: 3 })],
       page: { limit: 20, nextCursor: null },
     });
     const wrapper = await mountPage();
-    expect(wrapper.get('.status-badge--card').text()).toBe('Nubank · 2/3');
+    expect(wrapper.get('.status-badge--card').text()).toBe('Nubank · 3x');
+    expect(wrapper.text()).not.toContain('1/3');
+    expect(wrapper.text()).not.toContain('2/3');
+    expect(wrapper.text()).not.toContain('3/3');
   });
 
-  it('toque na parcela do cartão navega para a tela do cartão', async () => {
+  it('toque na compra do cartão navega para a tela do cartão', async () => {
     mockPage({ data: [makeCardEntry()], page: { limit: 20, nextCursor: null } });
     const { wrapper, router } = await mountPageWithFullRouter();
     await wrapper.get('.entry-tap').trigger('click');
@@ -673,17 +674,19 @@ describe('feed único inclui compras de cartão (CARD_INSTALLMENT)', () => {
     expect(wrapper.find('.transaction-card--purchase').exists()).toBe(false);
   });
 
-  it('excluir parcela de compra parcelada avisa que remove todas as parcelas', async () => {
+  it('excluir compra parcelada avisa que remove a compra e parcelas abertas', async () => {
     mockPage({
-      data: [makeCardEntry({ installmentNumber: 2, installmentCount: 3 })],
+      data: [makeCardEntry({ installmentCount: 3 })],
       page: { limit: 20, nextCursor: null },
     });
     const wrapper = await mountPage();
     await openAction(wrapper, 'Excluir');
-    expect(wrapper.get('.modal').text()).toContain('remove as 3 parcelas dessa compra, não só esta');
+    expect(wrapper.get('.modal').text()).toContain(
+      'Isso remove a compra e todas as suas parcelas das faturas abertas.',
+    );
   });
 
-  it('oculta parcelas de cartão quando um filtro de conta está ativo', async () => {
+  it('oculta compras de cartão quando um filtro de conta está ativo', async () => {
     mockPage(undefined, [], (path) => {
       if (path.startsWith('/financial-entries?')) {
         const hasAccountFilter = path.includes('accountId=');

@@ -33,7 +33,7 @@ export function readEntryCursor(token: string, secret: string, fingerprint: stri
       value.fingerprint !== fingerprint ||
       !isCivilDate(value.date) ||
       Number.isNaN(Date.parse(value.createdAt)) ||
-      (value.source !== 'TRANSACTION' && value.source !== 'CARD_INSTALLMENT') ||
+      (value.source !== 'TRANSACTION' && value.source !== 'CARD_PURCHASE') ||
       !/^[0-9a-f-]{36}$/i.test(value.id)
     )
       throw new Error();

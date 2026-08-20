@@ -486,41 +486,45 @@ export type FinancialTransactionErrorCode =
 
 /**
  * Feed somente-leitura que une FinancialTransaction (lançamentos de conta) e
- * CardInstallment (parcelas de compras no cartão) numa única lista ordenada por
- * data, para a tela de Lançamentos. Cada fonte mantém seu modelo de escrita
- * próprio (POST /transactions, POST /card-purchases) — este feed não cria uma
- * terceira entidade, só combina leitura.
+ * CardPurchase (compras no cartão) numa única lista ordenada por data, para a
+ * tela de Lançamentos. Cada fonte mantém seu modelo de escrita próprio
+ * (POST /transactions, POST /card-purchases) — este feed não cria uma terceira
+ * entidade, só combina leitura.
+ *
+ * Lançamentos: o que foi registrado/comprado.
+ * Agregados mensais: quanto da despesa pertence a cada período.
  */
-export type FinancialEntrySource = 'TRANSACTION' | 'CARD_INSTALLMENT';
+export type FinancialEntrySource = 'TRANSACTION' | 'CARD_PURCHASE';
 export interface PublicFinancialEntry {
   /** Chave estável para a UI: `${source}:${sourceId}`. */
   id: string;
   source: FinancialEntrySource;
-  /** id do FinancialTransaction ou do CardInstallment de origem. */
+  /** id do FinancialTransaction ou do CardPurchase de origem. */
   sourceId: string;
   type: FinancialTransactionType;
   description: string;
   notes: string | null;
   /**
    * Data usada para ordenar/agrupar (Hoje/Futuros/Anteriores): dueDate do
-   * lançamento, ou dueDate da fatura à qual a parcela pertence.
+   * lançamento, ou purchaseDate da compra no cartão.
    */
   date: string;
-  /** Valor já resolvido: realizado quando pago, previsto quando pendente; valor da parcela quando é cartão. */
+  /** Valor já resolvido: realizado quando pago, previsto quando pendente; totalAmount da compra no cartão. */
   amount: string;
   categoryId: string;
-  /** null para CARD_INSTALLMENT — parcela de cartão não tem estado pago/pendente próprio. */
+  /** null para CARD_PURCHASE — compra de cartão não tem estado pago/pendente próprio. */
   status: FinancialTransactionStatus | null;
-  /** null para CARD_INSTALLMENT — parcela de cartão não está ligada a uma conta. */
+  /** null para CARD_PURCHASE — compra de cartão não está ligada a uma conta. */
   accountId: string | null;
   cardId: string | null;
   cardName: string | null;
   /** id do CardPurchase, para editar/excluir a compra de origem. null para TRANSACTION. */
   purchaseId: string | null;
+  /** null no feed principal; numeração de parcelas pertence à fatura/detalhe. */
   installmentNumber: number | null;
   installmentCount: number | null;
   overdue: boolean;
-  /** true só para TRANSACTION gerado por recorrência; sempre false para CARD_INSTALLMENT. */
+  /** true só para TRANSACTION gerado por recorrência; sempre false para CARD_PURCHASE. */
   isRecurringOccurrence: boolean;
   createdAt: string;
 }
