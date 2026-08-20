@@ -5,22 +5,42 @@ import { routeLocationKey, routerKey, type RouteLocationNormalizedLoaded } from 
 import type {
   FinancialTransactionStatus,
   FinancialTransactionType,
+  PublicCardPurchase,
   PublicFinancialAccount,
   PublicFinancialCategory,
+  PublicFinancialCreditCard,
   PublicFinancialTransaction,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 import { safeApiErrorMessage } from '../api-error';
 import { setModalScrollLock } from '../modal-scroll-lock';
+import KebabMenu, { type KebabMenuAction } from '../components/KebabMenu.vue';
 const route = inject(routeLocationKey, { query: {} } as RouteLocationNormalizedLoaded);
 const router = inject(routerKey, null);
 type Page = {
   data: PublicFinancialTransaction[];
   page: { limit: number; nextCursor: string | null };
 };
+interface Entry {
+  id: string;
+  kind: 'transaction' | 'card';
+  date: string;
+  createdAt: string;
+  description: string;
+  type: FinancialTransactionType;
+  amount: string;
+  categoryId: string;
+  overdue: boolean;
+  cardLabel?: string;
+  transaction?: PublicFinancialTransaction;
+  purchase?: PublicCardPurchase;
+}
 const items = ref<PublicFinancialTransaction[]>([]),
+  cardPurchases = ref<PublicCardPurchase[]>([]),
+  cardPurchasesTruncated = ref(false),
   accounts = ref<PublicFinancialAccount[]>([]),
-  categories = ref<PublicFinancialCategory[]>([]);
+  categories = ref<PublicFinancialCategory[]>([]),
+  cards = ref<PublicFinancialCreditCard[]>([]);
 const loading = ref(false),
   error = ref(''),
   formError = ref(''),
@@ -29,7 +49,7 @@ const loading = ref(false),
   showForm = ref(false),
   editing = ref<PublicFinancialTransaction | null>(null),
   paying = ref<PublicFinancialTransaction | null>(null),
-  deleting = ref<PublicFinancialTransaction | null>(null),
+  deleting = ref<Entry | null>(null),
   deletingBusy = ref(false),
   deleteError = ref('');
 const filtersOpen = ref(false);
@@ -85,32 +105,115 @@ const money = (value: string | null) => {
   const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   return `R$ ${grouped},${cents.padEnd(2, '0').slice(0, 2)}`;
 };
-type TransactionGroup = {
-  key: 'today' | 'future' | 'past';
-  title: string;
-  items: PublicFinancialTransaction[];
-};
-const groupedItems = computed<TransactionGroup[]>(() => {
+function categoryName(categoryId: string) {
+  return categories.value.find((c) => c.id === categoryId)?.name ?? '';
+}
+function cardLabelFor(purchase: PublicCardPurchase) {
+  const name = cards.value.find((c) => c.id === purchase.cardId)?.name ?? 'Cartão';
+  return purchase.installmentCount > 1 ? `${name} · ${purchase.installmentCount}x` : name;
+}
+const MONTH_ABBR = [
+  'jan',
+  'fev',
+  'mar',
+  'abr',
+  'mai',
+  'jun',
+  'jul',
+  'ago',
+  'set',
+  'out',
+  'nov',
+  'dez',
+];
+function shortDate(date: string) {
+  const [, month, day] = date.split('-');
+  return `${Number(day)} ${MONTH_ABBR[Number(month) - 1]}`;
+}
+const entries = computed<Entry[]>(() => [
+  ...items.value.map(
+    (t): Entry => ({
+      id: `t:${t.id}`,
+      kind: 'transaction',
+      date: t.dueDate,
+      createdAt: t.createdAt,
+      description: t.description,
+      type: t.type,
+      amount: (t.status === 'PAID' ? t.actualAmount : null) ?? t.plannedAmount,
+      categoryId: t.categoryId,
+      overdue: t.isOverdue,
+      transaction: t,
+    }),
+  ),
+  ...cardPurchases.value.map(
+    (p): Entry => ({
+      id: `c:${p.id}`,
+      kind: 'card',
+      date: p.purchaseDate,
+      createdAt: p.createdAt,
+      description: p.description,
+      type: 'EXPENSE',
+      amount: p.totalAmount,
+      categoryId: p.categoryId,
+      overdue: false,
+      cardLabel: cardLabelFor(p),
+      purchase: p,
+    }),
+  ),
+]);
+type EntryGroup = { key: 'today' | 'future' | 'past'; title: string; items: Entry[] };
+const groupedItems = computed<EntryGroup[]>(() => {
   const today = civilDateString();
-  const groups: TransactionGroup[] = [
+  const groups: EntryGroup[] = [
     { key: 'today', title: 'Hoje', items: [] },
     { key: 'future', title: 'Futuros', items: [] },
     { key: 'past', title: 'Anteriores', items: [] },
   ];
-  for (const item of items.value) {
-    if (item.dueDate === today) groups[0]!.items.push(item);
-    else if (item.dueDate > today) groups[1]!.items.push(item);
-    else groups[2]!.items.push(item);
+  for (const entry of entries.value) {
+    if (entry.date === today) groups[0]!.items.push(entry);
+    else if (entry.date > today) groups[1]!.items.push(entry);
+    else groups[2]!.items.push(entry);
   }
-  const byNewest = (a: PublicFinancialTransaction, b: PublicFinancialTransaction) =>
-    b.dueDate.localeCompare(a.dueDate) || b.createdAt.localeCompare(a.createdAt);
+  const byNewest = (a: Entry, b: Entry) =>
+    b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt);
   groups[0]!.items.sort(byNewest);
   groups[1]!.items.sort(
-    (a, b) => a.dueDate.localeCompare(b.dueDate) || b.createdAt.localeCompare(a.createdAt),
+    (a, b) => a.date.localeCompare(b.date) || b.createdAt.localeCompare(a.createdAt),
   );
   groups[2]!.items.sort(byNewest);
   return groups.filter((group) => group.items.length);
 });
+function actionsFor(entry: Entry): KebabMenuAction[] {
+  if (entry.kind === 'card') {
+    const purchase = entry.purchase!;
+    return [
+      { label: 'Ver no cartão', onSelect: () => goToCard(purchase.cardId) },
+      { label: 'Excluir', danger: true, onSelect: () => openDelete(entry) },
+    ];
+  }
+  const t = entry.transaction!;
+  return [
+    t.status === 'PENDING'
+      ? {
+          label: 'Marcar como pago',
+          onSelect: () => {
+            paying.value = t;
+            payFormError.value = '';
+            payForm.actualAmount = t.plannedAmount;
+            payForm.paidAt = t.dueDate;
+          },
+        }
+      : { label: 'Reabrir para pendente', onSelect: () => reopen(t) },
+    { label: 'Excluir', danger: true, onSelect: () => openDelete(entry) },
+  ];
+}
+function goToCard(cardId: string) {
+  void router?.push(`/cards/${cardId}`);
+}
+function activateEntry(entry: Entry) {
+  if (entry.kind === 'card') goToCard(entry.purchase!.cardId);
+  else openEdit(entry.transaction!);
+}
 async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>[1]): Promise<T> {
   const response = await authenticatedFetch(path, init);
   if (!response.ok) {
@@ -118,6 +221,27 @@ async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>
     throw new Error(safeApiErrorMessage(body, 'Não foi possível concluir a operação.'));
   }
   return response.json() as Promise<T>;
+}
+async function loadCardPurchases() {
+  if (filters.type === 'INCOME' || filters.accountId || filters.status || filters.paidAtFrom || filters.paidAtTo) {
+    cardPurchases.value = [];
+    cardPurchasesTruncated.value = false;
+    return;
+  }
+  const params = new globalThis.URLSearchParams({ limit: '100' });
+  if (filters.categoryId) params.set('categoryId', filters.categoryId);
+  if (filters.dueDateFrom) params.set('dateFrom', filters.dueDateFrom);
+  if (filters.dueDateTo) params.set('dateTo', filters.dueDateTo);
+  try {
+    const page = await api<{ items?: PublicCardPurchase[]; nextCursor?: string | null }>(
+      `/card-purchases?${params}`,
+    );
+    cardPurchases.value = page.items ?? [];
+    cardPurchasesTruncated.value = Boolean(page.nextCursor);
+  } catch {
+    cardPurchases.value = [];
+    cardPurchasesTruncated.value = false;
+  }
 }
 async function load(append = false) {
   loading.value = true;
@@ -128,7 +252,10 @@ async function load(append = false) {
       if (v) params.set(k, v);
     });
     if (append && nextCursor.value) params.set('cursor', nextCursor.value);
-    const page = await api<Page>(`/transactions?${params}`);
+    const [page] = await Promise.all([
+      api<Page>(`/transactions?${params}`),
+      append ? Promise.resolve() : loadCardPurchases(),
+    ]);
     items.value = append ? [...items.value, ...page.data] : page.data;
     nextCursor.value = page.page.nextCursor;
   } catch {
@@ -139,9 +266,10 @@ async function load(append = false) {
 }
 async function loadRelations() {
   try {
-    [accounts.value, categories.value] = await Promise.all([
+    [accounts.value, categories.value, cards.value] = await Promise.all([
       api<PublicFinancialAccount[]>('/accounts'),
       api<PublicFinancialCategory[]>('/categories'),
+      api<{ items?: PublicFinancialCreditCard[] }>('/cards').then((r) => r.items ?? []),
     ]);
   } catch {
     error.value = 'API indisponível. Tente novamente.';
@@ -282,27 +410,31 @@ async function pay() {
 }
 async function removeTransaction() {
   if (!deleting.value || deletingBusy.value) return;
+  const entry = deleting.value;
   deleteError.value = '';
   deletingBusy.value = true;
-  const id = deleting.value.id;
+  const path =
+    entry.kind === 'card' ? `/card-purchases/${entry.purchase!.id}` : `/transactions/${entry.transaction!.id}`;
+  const fallbackMessage =
+    entry.kind === 'card' ? 'Não foi possível excluir a compra.' : 'Não foi possível excluir o lançamento.';
   try {
-    const response = await authenticatedFetch(`/transactions/${id}`, { method: 'DELETE' });
+    const response = await authenticatedFetch(path, { method: 'DELETE' });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      throw new Error(safeApiErrorMessage(body, 'Não foi possível excluir o lançamento.'));
+      throw new Error(safeApiErrorMessage(body, fallbackMessage));
     }
     deleting.value = null;
     await load();
   } catch (e) {
-    deleteError.value = e instanceof Error ? e.message : 'Não foi possível excluir o lançamento.';
+    deleteError.value = e instanceof Error ? e.message : fallbackMessage;
   } finally {
     deletingBusy.value = false;
   }
 }
-function openDelete(item: PublicFinancialTransaction) {
+function openDelete(entry: Entry) {
   deleteError.value = '';
   deletingBusy.value = false;
-  deleting.value = item;
+  deleting.value = entry;
 }
 function cancelDelete() {
   deleteError.value = '';
@@ -422,10 +554,6 @@ function onPopState() {
           · <router-link to="/transfers">Transferências</router-link>
         </nav>
       </div>
-      <div class="actions">
-        <button @click="openCreate('INCOME')">Nova receita</button
-        ><button @click="openCreate('EXPENSE')">Nova despesa</button>
-      </div>
     </header>
     <p v-if="error" role="alert">
       {{ error }} <button class="link" @click="load()">Tentar novamente</button>
@@ -458,8 +586,15 @@ function onPopState() {
       ><button @click="applyFilters">Aplicar</button
       ><button class="secondary" @click="clearFilters">Limpar</button>
     </section>
+    <p v-if="filters.accountId || filters.status || filters.paidAtFrom || filters.paidAtTo" class="hint">
+      Compras no cartão ficam ocultas quando filtros de conta, status ou data de pagamento estão ativos.
+    </p>
+    <p v-if="cardPurchasesTruncated" class="hint">
+      Há mais compras no cartão neste período do que o exibido — restrinja o intervalo de datas para
+      ver todas.
+    </p>
     <p v-if="loading" aria-live="polite">Carregando…</p>
-    <section v-else-if="!items.length" class="empty">
+    <section v-else-if="!entries.length" class="empty">
       <h2>
         {{
           Object.values(filters).some(Boolean)
@@ -475,51 +610,37 @@ function onPopState() {
       <section v-for="group in groupedItems" :key="group.key" class="date-group">
         <h2>{{ group.title }}</h2>
         <article
-          v-for="item in group.items"
-          :key="item.id"
+          v-for="entry in group.items"
+          :key="entry.id"
           class="transaction-card"
           :class="{
-            'transaction-card--paid': item.status === 'PAID',
-            'transaction-card--pending': item.status === 'PENDING',
+            'transaction-card--paid': entry.transaction?.status === 'PAID',
+            'transaction-card--pending': entry.transaction?.status === 'PENDING',
+            'transaction-card--purchase': entry.kind === 'card',
           }"
         >
-          <header>
-            <h3>{{ item.description }}</h3>
-            <span class="status-badge">{{ item.status === 'PAID' ? 'Pago' : 'Pendente' }}</span
-            ><strong v-if="item.isOverdue">Vencido</strong>
-          </header>
-          <p>
-            {{ item.type === 'INCOME' ? 'Receita' : 'Despesa' }} · vencimento {{ item.dueDate }}
-          </p>
-          <div class="amounts">
-            <span class="amount-main"
-              >{{ item.status === 'PAID' ? 'Realizado' : 'Previsto' }}
-              <b>{{
-                money(item.status === 'PAID' ? item.actualAmount : item.plannedAmount)
-              }}</b></span
-            ><span class="amount-secondary"
-              >{{ item.status === 'PAID' ? 'Previsto' : 'Realizado' }}
-              <b>{{
-                money(item.status === 'PAID' ? item.plannedAmount : item.actualAmount)
-              }}</b></span
-            >
-          </div>
-          <p v-if="item.notes">{{ item.notes }}</p>
-          <div class="actions">
-            <button class="secondary" @click="openEdit(item)">Editar</button
-            ><button
-              v-if="item.status === 'PENDING'"
-              @click="
-                paying = item;
-                payFormError = '';
-                payForm.actualAmount = item.plannedAmount;
-                payForm.paidAt = item.dueDate;
-              "
-            >
-              Marcar como pago</button
-            ><button v-else @click="reopen(item)">Reabrir para pendente</button>
-            <button class="danger" @click="openDelete(item)">Excluir</button>
-          </div>
+          <button type="button" class="entry-tap" @click="activateEntry(entry)">
+            <span class="entry-top">
+              <h3>{{ entry.description }}</h3>
+              <span class="entry-amount">{{ entry.type === 'INCOME' ? '+' : '-' }} {{ money(entry.amount) }}</span>
+            </span>
+            <span class="entry-meta">
+              {{ shortDate(entry.date) }} ·
+              <span v-if="entry.kind === 'transaction'" class="status-badge">{{
+                entry.transaction!.status === 'PAID' ? 'Pago' : 'Pendente'
+              }}</span>
+              <span v-else class="status-badge status-badge--card">{{ entry.cardLabel }}</span>
+              <strong v-if="entry.overdue"> · Vencido</strong>
+            </span>
+            <span v-if="categoryName(entry.categoryId)" class="entry-category">{{
+              categoryName(entry.categoryId)
+            }}</span>
+          </button>
+          <KebabMenu
+            class="entry-kebab"
+            :label="`Ações de ${entry.description}`"
+            :actions="actionsFor(entry)"
+          />
         </article>
       </section>
     </section>
@@ -615,18 +736,22 @@ function onPopState() {
       <form class="confirm-delete" novalidate @submit.prevent="removeTransaction">
         <h2 id="delete-title">
           {{
-            deleting.isRecurringOccurrence
-              ? 'Excluir somente este lançamento?'
-              : 'Excluir este lançamento?'
+            deleting.kind === 'card'
+              ? 'Excluir esta compra do cartão?'
+              : deleting.transaction!.isRecurringOccurrence
+                ? 'Excluir somente este lançamento?'
+                : 'Excluir este lançamento?'
           }}
         </h2>
         <div class="modal-body">
           <p v-if="deleteError" role="alert">{{ deleteError }}</p>
           <p>
             {{
-              deleting.isRecurringOccurrence
-                ? 'A recorrência continuará ativa e as próximas ocorrências serão mantidas.'
-                : 'Esta ação remove o lançamento dos seus cálculos e listas.'
+              deleting.kind === 'card'
+                ? 'As parcelas dessa compra serão removidas e a fatura será recalculada.'
+                : deleting.transaction!.isRecurringOccurrence
+                  ? 'A recorrência continuará ativa e as próximas ocorrências serão mantidas.'
+                  : 'Esta ação remove o lançamento dos seus cálculos e listas.'
             }}
           </p>
         </div>
@@ -647,12 +772,19 @@ function onPopState() {
   padding: 2rem;
 }
 .transactions-page > header,
-.actions,
-.amounts {
+.actions {
   display: flex;
   gap: 1rem;
   justify-content: space-between;
   align-items: center;
+}
+.hint {
+  padding: 0.6rem 0.85rem;
+  margin: 0.5rem 0;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  border-radius: 0.6rem;
+  font-size: 0.85rem;
 }
 .filters {
   display: grid;
@@ -688,48 +820,90 @@ form {
   box-shadow: var(--shadow-surface);
 }
 .transaction-card {
-  border-left: 0.35rem solid var(--color-border);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 0 0.5rem;
+  padding: 0.85rem 0.9rem;
+  border-left: 0.3rem solid var(--color-border);
 }
 .transaction-card--paid {
   border-left-color: var(--color-success);
-  background: linear-gradient(90deg, var(--color-success-container) 0, var(--color-surface) 34%);
 }
 .transaction-card--pending {
   border-left-color: var(--color-warning);
 }
-.list article > header {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
+.transaction-card--purchase {
+  border-left-color: var(--color-accent);
 }
-.list h3 {
-  margin-right: auto;
+.entry-tap {
+  grid-column: 1;
+  display: grid;
+  gap: 0.15rem;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 0.5rem;
+}
+.entry-tap:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.entry-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+.entry-top h3 {
+  margin: 0;
+  font-size: 1rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.entry-amount {
+  flex-shrink: 0;
+  font-weight: 700;
+}
+.entry-meta {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+.entry-meta strong {
+  color: var(--color-error);
+  font-weight: 700;
+}
+.entry-category {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+.entry-kebab {
+  grid-column: 2;
+  grid-row: 1;
 }
 .status-badge {
-  padding: 0.2rem 0.55rem;
+  padding: 0.1rem 0.5rem;
   border: 1px solid var(--color-border);
   border-radius: 999px;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 700;
+}
+.status-badge--card {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 .transaction-card--paid .status-badge::before {
   content: '✓ ';
 }
 .transaction-card--pending .status-badge::before {
   content: '• ';
-}
-.amounts span {
-  display: grid;
-}
-.amount-main b {
-  font-size: 1.2rem;
-}
-.amount-secondary {
-  color: var(--color-text-muted);
-}
-.amount-secondary b {
-  font-size: 0.95rem;
-  font-weight: 600;
 }
 .secondary {
   background: var(--color-surface-muted);
@@ -739,7 +913,6 @@ form {
   background: var(--color-error);
   color: var(--color-on-accent);
 }
-.transaction-card .actions button,
 .modal .actions button {
   min-height: 44px;
 }
@@ -784,8 +957,7 @@ textarea {
   .transactions-page {
     padding: 1rem;
   }
-  .transactions-page > header,
-  .amounts {
+  .transactions-page > header {
     align-items: stretch;
     flex-direction: column;
   }

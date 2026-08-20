@@ -52,7 +52,9 @@ function mockTemplates(count: number) {
       ? ok([account])
       : path === '/categories'
         ? ok(categories)
-        : ok(Array.from({ length: count }, (_, index) => model(index))),
+        : path === '/cards'
+          ? ok({ items: [] })
+          : ok(Array.from({ length: count }, (_, index) => model(index))),
   );
 }
 async function mounted(count: number) {
@@ -79,7 +81,7 @@ describe('novo lançamento com modelos', () => {
     await flushPromises();
     const form = wrapper.get('form');
     expect((form.find('input[type="date"]').element as HTMLInputElement).value).toBe('2026-08-12');
-    expect((form.findAll('select')[1]!.element as HTMLSelectElement).value).toBe('a');
+    expect((form.findAll('select')[1]!.element as HTMLSelectElement).value).toBe('account:a');
     expect((form.findAll('select')[2]!.element as HTMLSelectElement).value).toBe('ce');
   });
   it('oculta busca com 7 modelos e mostra com 8', async () => {
@@ -192,7 +194,9 @@ describe('novo lançamento com modelos', () => {
         ? ok([account])
         : path === '/categories'
           ? ok(categories)
-          : ok([model(0), incomeModel]),
+          : path === '/cards'
+            ? ok({ items: [] })
+            : ok([model(0), incomeModel]),
     );
     const wrapper = mount(TransactionFormPage);
     await flushPromises();

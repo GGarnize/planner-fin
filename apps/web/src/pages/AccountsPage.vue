@@ -6,6 +6,7 @@ import type {
   PublicFinancialAccount,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import KebabMenu, { type KebabMenuAction } from '../components/KebabMenu.vue';
 
 const accounts = ref<PublicFinancialAccount[]>([]);
 const loading = ref(false);
@@ -114,6 +115,14 @@ async function archive(account: PublicFinancialAccount) {
   if (!globalThis.confirm(`Arquivar a conta “${account.name}”?`)) return;
   await action(account.id, 'archive');
 }
+function actionsFor(account: PublicFinancialAccount): KebabMenuAction[] {
+  if (account.archivedAt)
+    return [{ label: 'Reativar', onSelect: () => action(account.id, 'restore') }];
+  return [
+    { label: 'Editar', onSelect: () => openEdit(account) },
+    { label: 'Arquivar', danger: true, onSelect: () => archive(account) },
+  ];
+}
 async function action(id: string, operation: 'archive' | 'restore') {
   loading.value = true;
   error.value = '';
@@ -131,7 +140,6 @@ async function action(id: string, operation: 'archive' | 'restore') {
 }
 const money = (value: string) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value));
-const date = (value: string) => value.split('-').reverse().join('/');
 onMounted(load);
 </script>
 
@@ -159,25 +167,28 @@ onMounted(load);
       <button @click="openCreate">Criar primeira conta</button>
     </section>
     <section v-else class="account-grid">
-      <article v-for="account in accounts" :key="account.id" class="account-card">
-        <span v-if="account.archivedAt" class="badge">Arquivada</span>
-        <h2>{{ account.name }}</h2>
-        <p>
-          {{ labels[account.type]
-          }}<span v-if="account.institution"> · {{ account.institution }}</span>
-        </p>
-        <strong>Posição inicial: {{ money(account.openingBalance) }}</strong
-        ><small>Data da posição inicial: {{ date(account.openingBalanceDate) }}</small>
-        <strong v-if="account.realizedBalance === null">Saldo atual: ainda não disponível</strong
-        ><strong v-else>Saldo atual: {{ money(account.realizedBalance) }}</strong>
-        <div class="actions">
-          <template v-if="account.archivedAt"
-            ><button @click="action(account.id, 'restore')">Reativar</button></template
-          ><template v-else
-            ><button class="secondary" @click="openEdit(account)">Editar</button
-            ><button class="danger" @click="archive(account)">Arquivar</button></template
-          >
-        </div>
+      <article
+        v-for="account in accounts"
+        :key="account.id"
+        class="account-card"
+        :class="{ 'account-card--archived': account.archivedAt }"
+      >
+        <button type="button" class="entry-tap" @click="openEdit(account)">
+          <span class="entry-top">
+            <h2>
+              {{ account.name
+              }}<span v-if="account.archivedAt" class="badge">Arquivada</span>
+            </h2>
+            <span class="entry-amount">{{
+              account.realizedBalance === null ? 'Saldo indisponível' : money(account.realizedBalance)
+            }}</span>
+          </span>
+          <span class="entry-meta">
+            {{ labels[account.type]
+            }}<span v-if="account.institution"> · {{ account.institution }}</span>
+          </span>
+        </button>
+        <KebabMenu :label="`Ações de ${account.name}`" :actions="actionsFor(account)" />
       </article>
     </section>
     <div v-if="showForm" class="modal" role="dialog" aria-modal="true" aria-labelledby="form-title">
@@ -220,18 +231,67 @@ onMounted(load);
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   gap: 1rem;
 }
-.account-card,
 .empty,
 .account-form {
-  background: #fff;
+  background: var(--color-surface);
   padding: 1.5rem;
   border-radius: 1rem;
-  box-shadow: 0 0.5rem 2rem #0f172a18;
+  box-shadow: var(--shadow-surface);
 }
-.account-card small,
-.account-card strong {
-  display: block;
-  margin-top: 0.6rem;
+.account-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--color-surface);
+  padding: 0.85rem 0.9rem;
+  border-radius: 0.9rem;
+  box-shadow: var(--shadow-surface);
+}
+.account-card--archived {
+  opacity: 0.75;
+}
+.entry-tap {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 0.5rem;
+}
+.entry-tap:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.entry-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+.entry-top h2 {
+  margin: 0;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.entry-amount {
+  flex-shrink: 0;
+  font-weight: 700;
+}
+.entry-meta {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
 }
 .actions {
   display: flex;
@@ -239,17 +299,20 @@ onMounted(load);
   margin-top: 1rem;
 }
 .secondary {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
 }
 .danger {
-  background: #b42318;
+  background: var(--color-error);
+  color: var(--color-on-accent);
 }
 .badge {
-  color: #475467;
-  background: #eaecf0;
-  padding: 0.2rem 0.5rem;
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
+  padding: 0.1rem 0.5rem;
   border-radius: 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 .filter {
   display: flex;
@@ -263,7 +326,7 @@ onMounted(load);
 .modal {
   position: fixed;
   inset: 0;
-  background: #0f172a99;
+  background: var(--color-overlay);
   display: grid;
   place-items: center;
   padding: 1rem;
@@ -277,12 +340,14 @@ onMounted(load);
 .account-form select {
   font: inherit;
   padding: 0.75rem;
-  border: 1px solid #94a3b8;
+  border: 1px solid var(--color-border);
   border-radius: 0.5rem;
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 .link-button {
   background: none;
-  color: #b42318;
+  color: var(--color-error);
   text-decoration: underline;
   padding: 0.2rem;
 }

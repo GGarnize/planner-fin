@@ -65,16 +65,23 @@ describe('tela de contas (API mockada)', () => {
     );
   });
   it.each([
-    ['1500.00', 'Saldo atual: R$ 1.500,00'],
-    [null, 'Saldo atual: ainda não disponível'],
+    ['1500.00', 'R$ 1.500,00'],
+    [null, 'Saldo indisponível'],
   ])('apresenta saldo atual %s sem confundir indisponibilidade com zero', async (balance, text) => {
     vi.mocked(authenticatedFetch).mockReturnValue(response([account(balance)]));
     const wrapper = mount(AccountsPage, { global: { stubs: ['router-link'] } });
     await flushPromises();
-    expect(wrapper.text()).toContain('Posição inicial: R$ 1.500,00');
-    expect(wrapper.text()).toContain('Data da posição inicial: 09/08/2026');
-    expect(wrapper.text()).toContain(text);
-    if (balance === null) expect(wrapper.text()).not.toContain('Saldo atual: R$ 0,00');
+    expect(wrapper.get('.entry-amount').text()).toBe(text);
+    if (balance === null) expect(wrapper.text()).not.toContain('R$ 0,00');
+  });
+  it('move posição inicial e data de referência para o formulário de edição', async () => {
+    vi.mocked(authenticatedFetch).mockReturnValue(response([account('1500.00')]));
+    const wrapper = mount(AccountsPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    await wrapper.get('.entry-tap').trigger('click');
+    const inputs = wrapper.get('form').findAll('input');
+    expect((inputs[3]!.element as HTMLInputElement).value).toBe('1500.00');
+    expect((inputs[4]!.element as HTMLInputElement).value).toBe('2026-08-09');
   });
   it.each([
     ['passado para futuro', account('1510.00', '2026-08-07'), account(null)],
@@ -86,16 +93,15 @@ describe('tela de contas (API mockada)', () => {
       .mockReturnValueOnce(response([after]));
     const wrapper = mount(AccountsPage, { global: { stubs: ['router-link'] } });
     await flushPromises();
+    await wrapper.get('.kebab-trigger').trigger('click');
     await wrapper
-      .findAll('button')
+      .findAll('.kebab-panel button')
       .find((button) => button.text() === 'Editar')!
       .trigger('click');
     await wrapper.get('form').trigger('submit');
     await flushPromises();
-    expect(wrapper.text()).toContain(
-      after.realizedBalance === null
-        ? 'Saldo atual: ainda não disponível'
-        : 'Saldo atual: R$ 1.510,00',
+    expect(wrapper.get('.entry-amount').text()).toBe(
+      after.realizedBalance === null ? 'Saldo indisponível' : 'R$ 1.510,00',
     );
   });
 });

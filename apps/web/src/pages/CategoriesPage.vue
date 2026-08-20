@@ -7,6 +7,7 @@ import type {
   PublicFinancialCategory,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import KebabMenu, { type KebabMenuAction } from '../components/KebabMenu.vue';
 const categories = ref<PublicFinancialCategory[]>([]),
   loading = ref(false),
   error = ref(''),
@@ -109,6 +110,13 @@ async function save() {
     loading.value = false;
   }
 }
+function actionsFor(item: PublicFinancialCategory): KebabMenuAction[] {
+  if (item.archivedAt) return [{ label: 'Reativar', onSelect: () => action(item, 'restore') }];
+  return [
+    { label: 'Editar', onSelect: () => edit(item) },
+    { label: 'Arquivar', danger: true, onSelect: () => action(item, 'archive') },
+  ];
+}
 async function action(item: PublicFinancialCategory, operation: 'archive' | 'restore') {
   if (operation === 'archive' && !globalThis.confirm(`Arquivar a categoria “${item.name}”?`))
     return;
@@ -167,23 +175,29 @@ onMounted(load);
             v-for="item in grouped[type]"
             :key="item.id"
             class="category"
-            :style="{ borderColor: item.color || '#d0d5dd' }"
+            :style="{ borderColor: item.color || 'var(--color-border)' }"
           >
-            <span v-if="item.archivedAt" class="badge">Arquivada</span
-            ><q-icon
-              v-if="item.icon"
-              :name="iconMap[item.icon]"
-              size="1.5rem"
-              :aria-label="icons.find((i) => i.value === item.icon)?.label"
-            />
-            <h3>{{ item.name }}</h3>
-            <div class="actions">
-              <button v-if="item.archivedAt" @click="action(item, 'restore')">Reativar</button
-              ><template v-else>
-                <button class="secondary" @click="edit(item)">Editar</button
-                ><button class="danger" @click="action(item, 'archive')">Arquivar</button>
-              </template>
-            </div>
+            <button type="button" class="entry-tap" @click="edit(item)">
+              <span class="entry-icon">
+                <q-icon
+                  v-if="item.icon"
+                  :name="iconMap[item.icon]"
+                  size="1.35rem"
+                  :aria-label="icons.find((i) => i.value === item.icon)?.label"
+                /><span
+                  v-else
+                  class="dot"
+                  :style="{ background: item.color || 'var(--color-border)' }"
+                  aria-hidden="true"
+                />
+              </span>
+              <span class="entry-text">
+                <span class="entry-name"
+                  >{{ item.name }}<span v-if="item.archivedAt" class="badge">Arquivada</span></span
+                ><span class="entry-sub">{{ item.type === 'INCOME' ? 'Receita' : 'Despesa' }}</span>
+              </span>
+            </button>
+            <KebabMenu :label="`Ações de ${item.name}`" :actions="actionsFor(item)" />
           </article>
         </div>
       </section>
@@ -251,40 +265,98 @@ onMounted(load);
 }
 .grid {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
-.category,
 .empty,
 form {
-  background: white;
+  background: var(--color-surface);
   padding: 1.25rem;
   border-radius: 1rem;
-  box-shadow: 0 0.5rem 2rem #0f172a18;
+  box-shadow: var(--shadow-surface);
 }
 .category {
-  border-left: 6px solid;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--color-surface);
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.9rem;
+  border-left: 4px solid;
+  box-shadow: var(--shadow-surface);
+}
+.entry-tap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 0.5rem;
+}
+.entry-tap:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.entry-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+}
+.entry-icon .dot {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+}
+.entry-text {
+  min-width: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+.entry-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.entry-sub {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
 }
 .badge {
-  background: #eaecf0;
-  padding: 0.2rem 0.5rem;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  padding: 0.1rem 0.5rem;
   border-radius: 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 .secondary {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
 }
 .danger {
-  background: #b42318;
+  background: var(--color-error);
+  color: var(--color-on-accent);
 }
 .link {
   background: none;
-  color: #b42318;
+  color: var(--color-error);
   text-decoration: underline;
 }
 .modal {
   position: fixed;
   inset: 0;
-  background: #0f172a99;
+  background: var(--color-overlay);
   display: grid;
   place-items: center;
   padding: 1rem;
@@ -292,12 +364,18 @@ form {
 }
 .modal form {
   width: min(100%, 30rem);
+  background: var(--color-surface);
+  padding: 1.25rem;
+  border-radius: 1rem;
+  box-shadow: var(--shadow-overlay);
 }
 select {
   font: inherit;
   padding: 0.75rem;
-  border: 1px solid #94a3b8;
+  border: 1px solid var(--color-border);
   border-radius: 0.5rem;
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 @media (max-width: 600px) {
   .categories-page {

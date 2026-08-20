@@ -13,7 +13,7 @@ import {
   ValidateBy,
 } from 'class-validator';
 import { isCivilDate } from '../accounts/dto';
-const MONEY = /^(0|[1-9][0-9]{0,16})\.[0-9]{2}$/,
+const MONEY = /^(?:[1-9][0-9]{0,16}(?:\.[0-9]{1,2})?|0\.(?:0[1-9]|[1-9][0-9]?))$/,
   DATE = /^\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])$/;
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 export class CreateCardPurchaseDto {

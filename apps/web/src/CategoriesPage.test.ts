@@ -56,17 +56,25 @@ describe('tela de categorias (API mockada)', () => {
     vi.mocked(authenticatedFetch).mockReturnValue(response([item]));
     const w = mount(CategoriesPage, { global: { stubs: ['router-link', 'q-icon'] } });
     await flushPromises();
+    await w.get('.kebab-trigger').trigger('click');
     expect(w.text()).toContain('Editar');
     expect(w.text()).toContain('Arquivar');
     vi.mocked(authenticatedFetch).mockReturnValue(response([archived]));
     await w
-      .findAll('button')
+      .findAll('.kebab-panel button')
       .find((b) => b.text() === 'Arquivar')!
       .trigger('click');
     await flushPromises();
     expect(vi.mocked(authenticatedFetch).mock.calls.some((c) => c[0].endsWith('/archive'))).toBe(
       true,
     );
+  });
+  it('toque no item abre a edição diretamente', async () => {
+    vi.mocked(authenticatedFetch).mockReturnValue(response([item]));
+    const w = mount(CategoriesPage, { global: { stubs: ['router-link', 'q-icon'] } });
+    await flushPromises();
+    await w.get('.entry-tap').trigger('click');
+    expect((w.get('input[maxlength="80"]').element as HTMLInputElement).value).toBe('Salário');
   });
   it('informa API indisponível', async () => {
     vi.mocked(authenticatedFetch).mockRejectedValueOnce(new Error('offline'));

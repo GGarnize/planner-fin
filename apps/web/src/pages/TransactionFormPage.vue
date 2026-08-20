@@ -6,6 +6,7 @@ import type {
   FinancialTransactionType,
   PublicFinancialAccount,
   PublicFinancialCategory,
+  PublicFinancialCreditCard,
   PublicTransactionTemplate,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
@@ -19,7 +20,8 @@ const loading = ref(false),
   templateWarning = ref(''),
   templates = ref<PublicTransactionTemplate[]>([]);
 const accounts = ref<PublicFinancialAccount[]>([]),
-  categories = ref<PublicFinancialCategory[]>([]);
+  categories = ref<PublicFinancialCategory[]>([]),
+  cards = ref<PublicFinancialCreditCard[]>([]);
 const selectedTemplate = ref<PublicTransactionTemplate | null>(null),
   pendingTemplate = ref<PublicTransactionTemplate | null>(null);
 const showTemplates = ref(false),
@@ -48,6 +50,8 @@ const form = reactive({
   description: '',
   dueDate: civilDateString(),
   accountId: '',
+  cardId: '',
+  installmentCount: 1,
   categoryId: '',
   actualAmount: '',
   paidAt: '',
@@ -57,6 +61,24 @@ const compatibleCategories = computed(() =>
   categories.value.filter((c) => !c.archivedAt && c.type === form.type),
 );
 const activeAccounts = computed(() => accounts.value.filter((account) => !account.archivedAt));
+const activeCards = computed(() => cards.value.filter((card) => !card.archivedAt));
+const isCardPayment = computed(() => form.type === 'EXPENSE' && !!form.cardId);
+const paymentMethod = computed({
+  get: () =>
+    form.cardId ? `card:${form.cardId}` : form.accountId ? `account:${form.accountId}` : '',
+  set: (value: string) => {
+    if (value.startsWith('card:')) {
+      form.cardId = value.slice('card:'.length);
+      form.accountId = '';
+    } else if (value.startsWith('account:')) {
+      form.accountId = value.slice('account:'.length);
+      form.cardId = '';
+    } else {
+      form.accountId = '';
+      form.cardId = '';
+    }
+  },
+});
 const activeTemplates = computed(() =>
   filterActiveTemplates(templates.value, '').filter(
     (template) => templateTypeFilter.value === 'ALL' || template.type === templateTypeFilter.value,
@@ -90,7 +112,12 @@ function closeTemplates() {
 function apply(template: PublicTransactionTemplate) {
   const now = new Date();
   const defaults = templateDefaults(template, now.getFullYear(), now.getMonth() + 1);
-  Object.assign(form, { ...defaults, dueDate: defaults.dueDate || civilDateString() });
+  Object.assign(form, {
+    ...defaults,
+    dueDate: defaults.dueDate || civilDateString(),
+    cardId: '',
+    installmentCount: 1,
+  });
   actualAmountTouched.value = false;
   paidAtTouched.value = false;
   applySmartDefaults();
@@ -175,38 +202,53 @@ function touchPaidAt() {
 async function save() {
   error.value = '';
   const plannedAmount = normalizeMoney(form.plannedAmount);
-  if (
-    !plannedAmount ||
-    !form.description.trim() ||
-    !form.dueDate ||
-    !form.accountId ||
-    !form.categoryId
-  ) {
-    error.value = 'Preencha valor, descrição, vencimento, conta e categoria.';
+  if (!plannedAmount || !form.description.trim() || !form.dueDate || !form.categoryId) {
+    error.value = 'Preencha valor, descrição, vencimento e categoria.';
     return;
   }
-  const actualAmount = form.status === 'PAID' ? normalizeMoney(form.actualAmount) : null;
-  if (form.status === 'PAID' && (!actualAmount || !form.paidAt)) {
-    error.value = 'Informe o valor realizado e a data do pagamento.';
+  if (!form.accountId && !form.cardId) {
+    error.value = 'Escolha com o que essa despesa foi paga.';
     return;
   }
   loading.value = true;
   try {
-    await api('/transactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        accountId: form.accountId,
-        categoryId: form.categoryId,
-        type: form.type,
-        status: form.status,
-        description: form.description.trim(),
-        notes: form.notes || null,
-        plannedAmount,
-        dueDate: form.dueDate,
-        ...(form.status === 'PAID' ? { actualAmount, paidAt: form.paidAt } : {}),
-      }),
-    });
+    if (isCardPayment.value) {
+      await api('/card-purchases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cardId: form.cardId,
+          categoryId: form.categoryId,
+          description: form.description.trim(),
+          notes: form.notes || null,
+          purchaseDate: form.dueDate,
+          totalAmount: plannedAmount,
+          installmentCount: Number(form.installmentCount) || 1,
+        }),
+      });
+    } else {
+      const actualAmount = form.status === 'PAID' ? normalizeMoney(form.actualAmount) : null;
+      if (form.status === 'PAID' && (!actualAmount || !form.paidAt)) {
+        error.value = 'Informe o valor realizado e a data do pagamento.';
+        loading.value = false;
+        return;
+      }
+      await api('/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId: form.accountId,
+          categoryId: form.categoryId,
+          type: form.type,
+          status: form.status,
+          description: form.description.trim(),
+          notes: form.notes || null,
+          plannedAmount,
+          dueDate: form.dueDate,
+          ...(form.status === 'PAID' ? { actualAmount, paidAt: form.paidAt } : {}),
+        }),
+      });
+    }
     await router.replace('/transactions');
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Falha ao salvar.';
@@ -218,10 +260,11 @@ onMounted(async () => {
   window.addEventListener('keydown', onKeydown);
   window.addEventListener('plannerfin:android-back', onAndroidBack, true);
   try {
-    [accounts.value, categories.value, templates.value] = await Promise.all([
+    [accounts.value, categories.value, templates.value, cards.value] = await Promise.all([
       api<PublicFinancialAccount[]>('/accounts'),
       api<PublicFinancialCategory[]>('/categories'),
       api<PublicTransactionTemplate[]>('/transaction-templates'),
+      api<{ items: PublicFinancialCreditCard[] }>('/cards').then((r) => r.items),
     ]);
     applySmartDefaults();
   } catch {
@@ -237,6 +280,7 @@ watch(
   () => {
     if (!compatibleCategories.value.some((category) => category.id === form.categoryId))
       form.categoryId = '';
+    if (form.type === 'INCOME') form.cardId = '';
     applySmartDefaults();
   },
 );
@@ -300,7 +344,22 @@ watch(showDiscardConfirm, async (visible) => {
       /></label>
       <label>Descrição<input v-model="form.description" maxlength="200" required /></label>
       <label>Vencimento<input v-model="form.dueDate" type="date" required /></label>
-      <label
+      <label v-if="form.type === 'EXPENSE'"
+        >Pago com<select v-model="paymentMethod" required>
+          <option value="">Selecione</option>
+          <optgroup label="Contas">
+            <option v-for="a in activeAccounts" :key="a.id" :value="`account:${a.id}`">
+              {{ a.name }}
+            </option>
+          </optgroup>
+          <optgroup v-if="activeCards.length" label="Cartões de crédito">
+            <option v-for="c in activeCards" :key="c.id" :value="`card:${c.id}`">
+              {{ c.name }}
+            </option>
+          </optgroup>
+        </select></label
+      >
+      <label v-else
         >Conta<select v-model="form.accountId" required>
           <option value="">Selecione</option>
           <option v-for="a in activeAccounts" :key="a.id" :value="a.id">
@@ -308,28 +367,40 @@ watch(showDiscardConfirm, async (visible) => {
           </option>
         </select></label
       >
+      <label v-if="isCardPayment"
+        >Parcelas<input
+          v-model.number="form.installmentCount"
+          type="number"
+          min="1"
+          max="36"
+          required
+      /></label>
       <label
         >Categoria<select v-model="form.categoryId" required>
           <option value="">Selecione</option>
           <option v-for="c in compatibleCategories" :key="c.id" :value="c.id">{{ c.name }}</option>
         </select></label
       >
-      <label
-        >Estado<select v-model="form.status">
-          <option value="PENDING">Pendente</option>
-          <option value="PAID">Pago</option>
-        </select></label
+      <p v-if="isCardPayment" class="hint">
+        Esta compra entra na fatura do cartão. O pagamento da fatura não gera uma nova despesa.
+      </p>
+      <template v-else
+        ><label
+          >Estado<select v-model="form.status">
+            <option value="PENDING">Pendente</option>
+            <option value="PAID">Pago</option>
+          </select></label
+        ><template v-if="form.status === 'PAID'"
+          ><label
+            >Valor realizado<input
+              v-model="form.actualAmount"
+              inputmode="decimal"
+              @input="touchActualAmount" /></label
+          ><label
+            >Data do pagamento<input v-model="form.paidAt" type="date" @input="touchPaidAt"
+          /></label
+        ></template></template
       >
-      <template v-if="form.status === 'PAID'"
-        ><label
-          >Valor realizado<input
-            v-model="form.actualAmount"
-            inputmode="decimal"
-            @input="touchActualAmount" /></label
-        ><label
-          >Data do pagamento<input v-model="form.paidAt" type="date" @input="touchPaidAt"
-        /></label
-      ></template>
       <button type="button" class="details" @click="detailsOpen = !detailsOpen">
         {{ detailsOpen ? 'Ocultar detalhes' : 'Mais detalhes' }}
       </button>
@@ -469,6 +540,13 @@ watch(showDiscardConfirm, async (visible) => {
   padding: 0.75rem;
   background: var(--color-warning-container);
   color: var(--color-warning);
+}
+.hint {
+  padding: 0.75rem;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted, var(--color-text));
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
 }
 .template-tabs {
   display: grid;

@@ -237,6 +237,25 @@ export class CardPurchasesService {
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
   }
+  async remove(userId: string, id: string): Promise<void> {
+    await this.prisma.$transaction(
+      async (tx) => {
+        const row = await tx.cardPurchase.findFirst({
+          where: { id, userId },
+          include: { installments: { include: { invoice: true } } },
+        });
+        if (!row) throw missing();
+        if (row.installments.some((x) => x.invoice.status !== 'OPEN'))
+          throw new ConflictException({
+            code: 'PURCHASE_IN_CLOSED_INVOICE',
+            message: 'Compra vinculada a fatura fechada não pode ser excluída.',
+          });
+        await tx.cardInstallment.deleteMany({ where: { purchaseId: id } });
+        await tx.cardPurchase.delete({ where: { id } });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  }
   private amounts(total: string, count: number) {
     try {
       if (new Prisma.Decimal(total).lte(0)) throw new Error();
