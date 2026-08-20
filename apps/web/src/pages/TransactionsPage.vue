@@ -14,6 +14,7 @@ import { authenticatedFetch } from '../auth';
 import { safeApiErrorMessage } from '../api-error';
 import { setModalScrollLock } from '../modal-scroll-lock';
 import KebabMenu, { type KebabMenuAction } from '../components/KebabMenu.vue';
+import CategoryIcon from '../components/CategoryIcon.vue';
 import { normalizeMoney } from '../transaction-template';
 const route = inject(routeLocationKey, { query: {} } as RouteLocationNormalizedLoaded);
 const router = inject(routerKey, null);
@@ -89,7 +90,10 @@ const money = (value: string | null) => {
   return `R$ ${grouped},${cents.padEnd(2, '0').slice(0, 2)}`;
 };
 function categoryName(categoryId: string) {
-  return categories.value.find((c) => c.id === categoryId)?.name ?? '';
+  return categoryFor(categoryId)?.name ?? '';
+}
+function categoryFor(categoryId: string) {
+  return categories.value.find((c) => c.id === categoryId) ?? null;
 }
 function cardLabel(entry: PublicFinancialEntry) {
   if (!entry.cardName) return '';
@@ -552,9 +556,14 @@ function onPopState() {
               <span v-else class="status-badge status-badge--card">{{ cardLabel(entry) }}</span>
               <strong v-if="entry.overdue"> · Vencido</strong>
             </span>
-            <span v-if="categoryName(entry.categoryId)" class="entry-category">{{
-              categoryName(entry.categoryId)
-            }}</span>
+            <span v-if="categoryFor(entry.categoryId)" class="entry-category">
+              <CategoryIcon
+                :icon="categoryFor(entry.categoryId)?.icon"
+                :color="categoryFor(entry.categoryId)?.color"
+                :label="categoryFor(entry.categoryId)?.name"
+              />
+              <span>{{ categoryName(entry.categoryId) }}</span>
+            </span>
           </button>
           <KebabMenu
             class="entry-kebab"
@@ -801,8 +810,19 @@ form {
   font-weight: 700;
 }
 .entry-category {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   font-size: 0.8rem;
   color: var(--color-text-muted);
+}
+.entry-category :deep(.category-icon) {
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 0.4rem;
+}
+.entry-category :deep(.material-icons) {
+  font-size: 0.9rem;
 }
 .entry-kebab {
   grid-column: 2;

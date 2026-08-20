@@ -40,6 +40,15 @@ describe('tela de categorias (API mockada)', () => {
       JSON.parse(vi.mocked(authenticatedFetch).mock.calls[1]![1]!.body as string),
     ).toMatchObject({ name: 'Salário', type: 'INCOME', icon: 'WORK' });
   });
+  it('mostra o ícone seguro junto do nome da categoria', async () => {
+    vi.mocked(authenticatedFetch).mockReturnValue(response([item]));
+    const w = mount(CategoriesPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    const category = w.get('.category');
+    expect(category.text()).toContain('Salário');
+    expect(category.get('.material-icons').text()).toBe('work');
+    expect(category.attributes('style')).toContain('border-color');
+  });
   it('filtra arquivadas e natureza', async () => {
     vi.mocked(authenticatedFetch).mockReturnValue(response([]));
     const w = mount(CategoriesPage, { global: { stubs: ['router-link', 'q-icon'] } });

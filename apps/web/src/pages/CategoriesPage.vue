@@ -9,6 +9,8 @@ import type {
 import { authenticatedFetch } from '../auth';
 import KebabMenu, { type KebabMenuAction } from '../components/KebabMenu.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import CategoryIcon from '../components/CategoryIcon.vue';
+import { CATEGORY_ICON_OPTIONS, validCategoryColor } from '../category-icon';
 const categories = ref<PublicFinancialCategory[]>([]),
   loading = ref(false),
   error = ref(''),
@@ -25,17 +27,7 @@ const initial = (): CreateFinancialCategoryRequest => ({
   icon: null,
 });
 const form = reactive(initial());
-const icons: Array<{ value: FinancialCategoryIcon; label: string; material: string }> = [
-  { value: 'HOME', label: 'Casa', material: 'home' },
-  { value: 'WORK', label: 'Trabalho', material: 'work' },
-  { value: 'SHOPPING_CART', label: 'Compras', material: 'shopping_cart' },
-  { value: 'RESTAURANT', label: 'Alimentação', material: 'restaurant' },
-  { value: 'DIRECTIONS_CAR', label: 'Transporte', material: 'directions_car' },
-  { value: 'HEALTH_AND_SAFETY', label: 'Saúde', material: 'health_and_safety' },
-  { value: 'SCHOOL', label: 'Educação', material: 'school' },
-  { value: 'SAVINGS', label: 'Economia', material: 'savings' },
-];
-const iconMap = Object.fromEntries(icons.map((icon) => [icon.value, icon.material]));
+const icons = CATEGORY_ICON_OPTIONS satisfies Array<{ value: FinancialCategoryIcon; label: string }>;
 const grouped = computed(() => ({
   INCOME: categories.value.filter((item) => item.type === 'INCOME'),
   EXPENSE: categories.value.filter((item) => item.type === 'EXPENSE'),
@@ -88,6 +80,9 @@ function valid() {
     }) &&
     (!form.color || /^#[0-9A-Fa-f]{6}$/.test(form.color))
   );
+}
+function categoryBorderColor(color: string | null) {
+  return validCategoryColor(color) && color ? color : 'var(--color-border)';
 }
 async function save() {
   if (!valid()) {
@@ -186,22 +181,10 @@ onMounted(load);
             v-for="item in grouped[type]"
             :key="item.id"
             class="category"
-            :style="{ borderColor: item.color || 'var(--color-border)' }"
+            :style="{ borderColor: categoryBorderColor(item.color) }"
           >
             <button type="button" class="entry-tap" @click="edit(item)">
-              <span class="entry-icon">
-                <q-icon
-                  v-if="item.icon"
-                  :name="iconMap[item.icon]"
-                  size="1.35rem"
-                  :aria-label="icons.find((i) => i.value === item.icon)?.label"
-                /><span
-                  v-else
-                  class="dot"
-                  :style="{ background: item.color || 'var(--color-border)' }"
-                  aria-hidden="true"
-                />
-              </span>
+              <CategoryIcon :icon="item.icon" :color="item.color" :label="item.name" />
               <span class="entry-text">
                 <span class="entry-name"
                   >{{ item.name }}<span v-if="item.archivedAt" class="badge">Arquivada</span></span
@@ -322,17 +305,6 @@ form {
 .entry-tap:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
-}
-.entry-icon {
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  width: 1.75rem;
-}
-.entry-icon .dot {
-  width: 0.85rem;
-  height: 0.85rem;
-  border-radius: 50%;
 }
 .entry-text {
   min-width: 0;
