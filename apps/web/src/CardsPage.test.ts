@@ -283,8 +283,22 @@ describe('CardsPage', () => {
       closingDate: '2026-08-10',
       dueDate: '2026-08-17',
       installments: [
-        { id: 'i1', amount: '1000.00', purchaseDescription: 'Compra grande' },
-        { id: 'i2', amount: '230.45', purchaseDescription: 'Compra menor' },
+        {
+          id: 'i1',
+          amount: '1000.00',
+          purchaseDescription: 'Compra grande',
+          installmentNumber: 1,
+          installmentCount: 1,
+          categoryId: 'category-1',
+        },
+        {
+          id: 'i2',
+          amount: '230.45',
+          purchaseDescription: 'Compra menor',
+          installmentNumber: 1,
+          installmentCount: 1,
+          categoryId: 'category-1',
+        },
       ],
       payment: null,
     };
@@ -304,8 +318,9 @@ describe('CardsPage', () => {
     expect(card.text()).toMatch(/R\$\s*1\.230,45/);
     expect(card.text()).toContain('Cartão atual');
     expect(card.text()).toContain('Fechada');
-    expect(card.text()).toContain('2 parcelas');
-    expect(card.findAll('li')).toHaveLength(0);
+    expect(card.text()).toContain('2 lançamentos');
+    expect(card.text()).not.toContain('2 parcelas');
+    expect(card.find('.invoice-detail').exists()).toBe(false);
     expect(wrapper.text()).not.toContain('Conta pagadora');
 
     await wrapper.get('.invoice-card .kebab-trigger').trigger('click');
@@ -319,6 +334,164 @@ describe('CardsPage', () => {
       .find((button) => button.text() === 'Cancelar')!
       .trigger('click');
     expect(wrapper.text()).not.toContain('Conta pagadora');
+  });
+
+  it('renderiza as faturas na ordem recebida da API (vencimento mais próximo primeiro)', async () => {
+    const invoiceOf = (referenceMonth: string, dueDate: string) => ({
+      id: `invoice-${referenceMonth}`,
+      cardId: 'card-1',
+      status: 'OPEN',
+      referenceMonth,
+      total: '10.00',
+      closingDate: `${referenceMonth}-10`,
+      dueDate,
+      installments: [],
+      payment: null,
+    });
+    const invoices = [
+      invoiceOf('2026-08', '2026-09-05'),
+      invoiceOf('2026-09', '2026-10-05'),
+      invoiceOf('2026-10', '2026-11-05'),
+    ];
+    vi.mocked(authenticatedFetch).mockImplementation((path) => {
+      const url = String(path);
+      if (url.startsWith('/cards')) return response({ items: cards });
+      if (url.startsWith('/card-purchases')) return response({ items: [], nextCursor: null });
+      if (url.startsWith('/card-invoices')) return response({ items: invoices, nextCursor: null });
+      if (url.startsWith('/categories')) return response(categories);
+      return response([]);
+    });
+    const wrapper = mount(CardsPage);
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Out'));
+    const titles = wrapper.findAll('.invoice-card h3').map((h) => h.text());
+    expect(titles).toEqual(['Ago de 2026', 'Set de 2026', 'Out de 2026']);
+  });
+
+  it('usa singular/plural correto para a contagem de lançamentos', async () => {
+    const single = {
+      id: 'invoice-single',
+      cardId: 'card-1',
+      status: 'OPEN',
+      referenceMonth: '2026-08',
+      total: '10.00',
+      closingDate: '2026-08-10',
+      dueDate: '2026-09-05',
+      installments: [
+        {
+          id: 'i1',
+          amount: '10.00',
+          purchaseDescription: 'Compra única',
+          installmentNumber: 1,
+          installmentCount: 1,
+          categoryId: 'category-1',
+        },
+      ],
+      payment: null,
+    };
+    vi.mocked(authenticatedFetch).mockImplementation((path) => {
+      const url = String(path);
+      if (url.startsWith('/cards')) return response({ items: cards });
+      if (url.startsWith('/card-purchases')) return response({ items: [], nextCursor: null });
+      if (url.startsWith('/card-invoices')) return response({ items: [single], nextCursor: null });
+      if (url.startsWith('/categories')) return response(categories);
+      return response([]);
+    });
+    const wrapper = mount(CardsPage);
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Ago'));
+    expect(wrapper.get('.invoice-card').text()).toContain('1 lançamento');
+    expect(wrapper.get('.invoice-card').text()).not.toContain('1 lançamentos');
+  });
+
+  it('abre a composição da fatura ao tocar no card, fecha ao tocar de novo e alterna com outra fatura; kebab não altera o detalhe', async () => {
+    const mixed = {
+      id: 'invoice-mixed',
+      cardId: 'card-1',
+      status: 'OPEN',
+      referenceMonth: '2026-08',
+      total: '890.00',
+      closingDate: '2026-08-10',
+      dueDate: '2026-09-05',
+      installments: [
+        {
+          id: 'i-a',
+          amount: '200.00',
+          purchaseDescription: 'Compra A',
+          installmentNumber: 1,
+          installmentCount: 3,
+          categoryId: 'category-1',
+        },
+        {
+          id: 'i-b',
+          amount: '500.00',
+          purchaseDescription: 'Compra B',
+          installmentNumber: 1,
+          installmentCount: 1,
+          categoryId: 'category-1',
+        },
+        {
+          id: 'i-c',
+          amount: '190.00',
+          purchaseDescription: 'Compra C',
+          installmentNumber: 2,
+          installmentCount: 5,
+          categoryId: 'category-2',
+        },
+      ],
+      payment: null,
+    };
+    const other = {
+      id: 'invoice-other',
+      cardId: 'card-1',
+      status: 'OPEN',
+      referenceMonth: '2026-09',
+      total: '50.00',
+      closingDate: '2026-09-10',
+      dueDate: '2026-10-05',
+      installments: [
+        {
+          id: 'i-d',
+          amount: '50.00',
+          purchaseDescription: 'Compra D',
+          installmentNumber: 1,
+          installmentCount: 1,
+          categoryId: 'category-1',
+        },
+      ],
+      payment: null,
+    };
+    vi.mocked(authenticatedFetch).mockImplementation((path) => {
+      const url = String(path);
+      if (url.startsWith('/cards')) return response({ items: cards });
+      if (url.startsWith('/card-purchases')) return response({ items: [], nextCursor: null });
+      if (url.startsWith('/card-invoices'))
+        return response({ items: [mixed, other], nextCursor: null });
+      if (url.startsWith('/categories')) return response(categories);
+      return response([]);
+    });
+    const wrapper = mount(CardsPage);
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Ago'));
+    const [mixedCard, otherCard] = wrapper.findAll('.invoice-card');
+    expect(mixedCard!.find('.invoice-detail').exists()).toBe(false);
+
+    await mixedCard!.get('.kebab-trigger').trigger('click');
+    expect(mixedCard!.find('.invoice-detail').exists()).toBe(false);
+    await mixedCard!.get('.kebab-trigger').trigger('click');
+
+    await mixedCard!.get('.invoice-card__summary').trigger('click');
+    const detail = mixedCard!.get('.invoice-detail');
+    expect(detail.text()).toContain('Compra A · 1/3');
+    expect(detail.text()).toContain('Compra B · À vista');
+    expect(detail.text()).toContain('Compra C · 2/5');
+    expect(detail.text()).toMatch(/200,00/);
+    expect(detail.text()).toMatch(/500,00/);
+    expect(detail.text()).toMatch(/190,00/);
+
+    await otherCard!.get('.invoice-card__summary').trigger('click');
+    expect(mixedCard!.find('.invoice-detail').exists()).toBe(false);
+    expect(otherCard!.find('.invoice-detail').exists()).toBe(true);
+
+    await otherCard!.get('.invoice-card__summary').trigger('click');
+    expect(otherCard!.find('.invoice-detail').exists()).toBe(false);
   });
 
   it('distingue API indisponível e oferece retry', async () => {

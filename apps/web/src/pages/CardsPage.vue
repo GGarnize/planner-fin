@@ -27,6 +27,7 @@ const cards = ref<PublicFinancialCreditCard[]>([]),
   loadingInvoices = ref(false),
   purchaseCursor = ref<string | null>(null),
   invoiceCursor = ref<string | null>(null),
+  expandedInvoiceId = ref(''),
   error = ref('');
 const showCardForm = ref(false);
 const showPurchaseForm = ref(false);
@@ -254,6 +255,7 @@ function closeInlineFlows() {
   cancelCardEdit();
   cancelPurchaseEdit();
   cancelInvoicePayment();
+  expandedInvoiceId.value = '';
 }
 function openCardForm() {
   closeInlineFlows();
@@ -479,12 +481,31 @@ function invoiceMeta(invoice: PublicCardInvoice) {
     cardNameById.value.get(invoice.cardId) ?? 'Cartão não encontrado',
     `vence ${shortDate(invoice.dueDate)}`,
     invoiceStatusLabel[invoice.status],
-    count === 1 ? '1 parcela' : `${count} parcelas`,
+    count === 1 ? '1 lançamento' : `${count} lançamentos`,
   ].join(' · ');
+}
+function toggleInvoiceDetail(invoice: PublicCardInvoice) {
+  if (!invoice.installments.length) return;
+  expandedInvoiceId.value = expandedInvoiceId.value === invoice.id ? '' : invoice.id;
+}
+function installmentDetailLabel(installment: PublicCardInvoice['installments'][number]) {
+  const position =
+    installment.installmentCount > 1
+      ? `${installment.installmentNumber}/${installment.installmentCount}`
+      : 'À vista';
+  return `${installment.purchaseDescription} · ${position}`;
 }
 function invoiceActionsFor(invoice: PublicCardInvoice): KebabMenuAction[] {
   if (invoice.status === 'OPEN')
-    return [{ label: 'Fechar fatura', onSelect: () => mutate(`/card-invoices/${invoice.id}/close`) }];
+    return [
+      {
+        label: 'Fechar fatura',
+        onSelect: () => {
+          expandedInvoiceId.value = '';
+          mutate(`/card-invoices/${invoice.id}/close`);
+        },
+      },
+    ];
   if (invoice.status === 'CLOSED')
     return [{ label: 'Pagar fatura', onSelect: () => startInvoicePayment(invoice) }];
   return [];
@@ -738,19 +759,57 @@ onMounted(load);
         <h2>Faturas</h2>
         <p v-if="!invoices.length" class="empty">Nenhuma fatura materializada.</p>
         <article v-for="x in invoices" :key="x.id" class="invoice-card">
-          <div class="invoice-card__summary">
+          <div
+            class="invoice-card__summary"
+            role="button"
+            tabindex="0"
+            :aria-expanded="expandedInvoiceId === x.id"
+            :aria-controls="x.installments.length ? `invoice-detail-${x.id}` : undefined"
+            @click="toggleInvoiceDetail(x)"
+            @keydown.enter.prevent="toggleInvoiceDetail(x)"
+            @keydown.space.prevent="toggleInvoiceDetail(x)"
+          >
             <div class="invoice-card__main">
               <h3>{{ invoiceTitle(x.referenceMonth) }}</h3>
               <strong>{{ money(x.total) }}</strong>
             </div>
-            <p>{{ invoiceMeta(x) }}</p>
+            <p>
+              {{ invoiceMeta(x) }}
+              <span
+                v-if="x.installments.length"
+                class="material-icons invoice-card__chevron"
+                aria-hidden="true"
+                >{{ expandedInvoiceId === x.id ? 'expand_less' : 'expand_more' }}</span
+              >
+            </p>
           </div>
           <KebabMenu
             v-if="invoiceActionsFor(x).length"
             :label="`Ações da fatura ${invoiceTitle(x.referenceMonth)}`"
             :actions="invoiceActionsFor(x)"
+            @click.stop
           />
-          <div v-if="payingInvoiceId === x.id" class="pay">
+          <div
+            v-if="expandedInvoiceId === x.id && x.installments.length"
+            :id="`invoice-detail-${x.id}`"
+            class="invoice-detail"
+            role="region"
+            :aria-label="`Composição da fatura ${invoiceTitle(x.referenceMonth)}`"
+          >
+            <div v-for="i in x.installments" :key="i.id" class="invoice-detail__row">
+              <div class="invoice-detail__desc">
+                <CategoryIcon
+                  v-if="categoryFor(i.categoryId)"
+                  :icon="categoryFor(i.categoryId)?.icon"
+                  :color="categoryFor(i.categoryId)?.color"
+                  :label="categoryFor(i.categoryId)?.name"
+                />
+                <span>{{ installmentDetailLabel(i) }}</span>
+              </div>
+              <strong>{{ money(i.amount) }}</strong>
+            </div>
+          </div>
+          <div v-if="payingInvoiceId === x.id" class="pay" @click.stop>
             <p>
               <strong>O pagamento reduz o saldo da conta e não registra uma nova despesa.</strong>
             </p>
@@ -931,6 +990,42 @@ article,
 .invoice-card__summary {
   min-width: 0;
   flex: 1;
+  cursor: pointer;
+  border-radius: 0.5rem;
+}
+.invoice-card__summary:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.invoice-card__chevron {
+  vertical-align: middle;
+  font-size: 1.1rem;
+  color: var(--color-accent);
+}
+.invoice-detail {
+  flex-basis: 100%;
+  display: grid;
+  gap: 0.4rem;
+  border-top: 1px solid var(--color-border);
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+}
+.invoice-detail__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+.invoice-detail__desc {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  overflow-wrap: anywhere;
+}
+.invoice-detail__row strong {
+  white-space: nowrap;
 }
 .invoice-card__main {
   display: flex;
