@@ -20,6 +20,8 @@
     "android:apk:lan": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android/build-apk.ps1 -Target lan",
     "android:apk:remote": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android/build-apk.ps1 -Target remote",
     "android:apk:serve": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android/serve-apk.ps1",
+    "android:bundle": "pnpm --filter @planner-fin/web android:bundle:release",
+    "android:bundle:release": "pnpm --filter @planner-fin/web android:bundle:release",
     "dev:seed-test-user": "pnpm --filter @planner-fin/api dev:seed-test-user",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
