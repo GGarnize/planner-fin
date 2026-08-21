@@ -196,6 +196,32 @@ public class PlannerFinNotificationListenerPlugin extends Plugin {
         call.resolve(result);
     }
 
+    @PluginMethod
+    public void ignoreObservedPackage(PluginCall call) {
+        String packageName = call.getString("packageName", "");
+        if (!PlannerFinNotificationCaptureState.isValidPackageName(packageName)) {
+            call.reject("packageName invalido.");
+            return;
+        }
+        PlannerFinNotificationPreferences.ignoreObservedPackage(getContext(), packageName);
+        JSObject result = new JSObject();
+        result.put("packages", observedPackagesArray());
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void restoreObservedPackage(PluginCall call) {
+        String packageName = call.getString("packageName", "");
+        if (!PlannerFinNotificationCaptureState.isValidPackageName(packageName)) {
+            call.reject("packageName invalido.");
+            return;
+        }
+        PlannerFinNotificationPreferences.restoreObservedPackage(getContext(), packageName);
+        JSObject result = new JSObject();
+        result.put("packages", observedPackagesArray());
+        call.resolve(result);
+    }
+
     private JSArray observedPackagesArray() {
         JSArray packages = new JSArray();
         for (PlannerFinNotificationObservedApps.Entry entry :
@@ -204,6 +230,7 @@ public class PlannerFinNotificationListenerPlugin extends Plugin {
             item.put("packageName", entry.packageName);
             item.put("label", entry.label == null ? JSONObject.NULL : entry.label);
             item.put("lastSeenAt", entry.lastSeenAt);
+            item.put("ignoredAt", entry.ignoredAt == 0L ? JSONObject.NULL : entry.ignoredAt);
             packages.put(item);
         }
         return packages;

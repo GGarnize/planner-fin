@@ -75,6 +75,20 @@ public class PlannerFinNotificationObservedAppsTest {
     }
 
     @Test
+    public void purgaNaoRemoveIgnoradosPorqueElesSoVoltamPorAcaoDoUsuario() {
+        long now = 1_000_000_000L;
+        PlannerFinNotificationObservedApps.recordObserved("com.example.caju", "Caju", now);
+        PlannerFinNotificationObservedApps.ignore("com.example.caju", now + 1_000L);
+
+        PlannerFinNotificationObservedApps.purgeExpired(now + PlannerFinNotificationObservedApps.RETENTION_MS + 1);
+
+        List<PlannerFinNotificationObservedApps.Entry> observed = PlannerFinNotificationObservedApps.getObserved();
+        assertEquals(1, observed.size());
+        assertEquals("com.example.caju", observed.get(0).packageName);
+        assertTrue(observed.get(0).isIgnored());
+    }
+
+    @Test
     public void limiteDefensivoDescartaOMaisAntigoQuandoExcedido() {
         long now = 1_000L;
         for (int index = 0; index < PlannerFinNotificationObservedApps.MAX_OBSERVED; index += 1) {
@@ -98,5 +112,34 @@ public class PlannerFinNotificationObservedAppsTest {
         PlannerFinNotificationObservedApps.clear();
 
         assertTrue(PlannerFinNotificationObservedApps.getObserved().isEmpty());
+    }
+
+    @Test
+    public void ignoradoNaoAtualizaLastSeenNemLabelAoReceberNovaNotificacao() {
+        PlannerFinNotificationObservedApps.recordObserved("com.example.caju", "Caju", 1_000L);
+        PlannerFinNotificationObservedApps.ignore("com.example.caju", 2_000L);
+
+        PlannerFinNotificationObservedApps.recordObserved("com.example.caju", "Caju Novo", 3_000L);
+
+        List<PlannerFinNotificationObservedApps.Entry> observed = PlannerFinNotificationObservedApps.getObserved();
+        assertEquals(1, observed.size());
+        assertEquals("Caju", observed.get(0).label);
+        assertEquals(1_000L, observed.get(0).lastSeenAt);
+        assertEquals(2_000L, observed.get(0).ignoredAt);
+        assertTrue(PlannerFinNotificationObservedApps.isIgnored("com.example.caju"));
+    }
+
+    @Test
+    public void restaurarVoltaPermitirAtualizacaoDoObservado() {
+        PlannerFinNotificationObservedApps.recordObserved("com.example.caju", "Caju", 1_000L);
+        PlannerFinNotificationObservedApps.ignore("com.example.caju", 2_000L);
+        PlannerFinNotificationObservedApps.restore("com.example.caju");
+
+        PlannerFinNotificationObservedApps.recordObserved("com.example.caju", "Caju Novo", 3_000L);
+
+        List<PlannerFinNotificationObservedApps.Entry> observed = PlannerFinNotificationObservedApps.getObserved();
+        assertEquals("Caju Novo", observed.get(0).label);
+        assertEquals(3_000L, observed.get(0).lastSeenAt);
+        assertEquals(0L, observed.get(0).ignoredAt);
     }
 }

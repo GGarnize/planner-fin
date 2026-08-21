@@ -7,9 +7,11 @@ import {
   getCaptureState,
   getNotificationAccessStatus,
   getObservedPackages,
+  ignoreObservedPackage,
   isNotificationListenerDiagnosticAvailable,
   openNotificationAccessSettings,
   purgePendingQueue,
+  restoreObservedPackage,
   type NotificationAccessStatus,
   type NotificationCaptureState,
   type ObservedNotificationPackage,
@@ -74,8 +76,16 @@ const monitoredEntries = computed(() =>
 // para que um app conhecido+observado apareça uma única vez (na seção correspondente).
 const visibleObserved = computed(() =>
   observedPackages.value
+    .filter((entry) => !entry.ignoredAt)
     .filter((entry) => !captureState.value.monitoredPackages.includes(entry.packageName))
     .filter((entry) => !knownPackageNames.value.has(entry.packageName))
+    .filter((entry) => matchesSearch(entry.label ?? entry.packageName, entry.packageName)),
+);
+
+const ignoredObserved = computed(() =>
+  observedPackages.value
+    .filter((entry) => !!entry.ignoredAt)
+    .filter((entry) => !captureState.value.monitoredPackages.includes(entry.packageName))
     .filter((entry) => matchesSearch(entry.label ?? entry.packageName, entry.packageName)),
 );
 
@@ -207,6 +217,30 @@ async function addToMonitored(packageName: string) {
     captureState.value = { ...captureState.value, monitoredPackages: nextPackages };
   } catch {
     actionError.value = 'Não foi possível ativar o monitoramento agora. Tente novamente.';
+  } finally {
+    savingApp.value = null;
+  }
+}
+
+async function ignoreObserved(packageName: string) {
+  actionError.value = '';
+  savingApp.value = packageName;
+  try {
+    observedPackages.value = await ignoreObservedPackage(packageName);
+  } catch {
+    actionError.value = 'Não foi possível ignorar este app agora. Tente novamente.';
+  } finally {
+    savingApp.value = null;
+  }
+}
+
+async function restoreIgnored(packageName: string) {
+  actionError.value = '';
+  savingApp.value = packageName;
+  try {
+    observedPackages.value = await restoreObservedPackage(packageName);
+  } catch {
+    actionError.value = 'Não foi possível voltar a mostrar este app agora. Tente novamente.';
   } finally {
     savingApp.value = null;
   }
@@ -386,6 +420,14 @@ async function addToMonitored(packageName: string) {
                   >
                     Monitorar
                   </button>
+                  <button
+                    type="button"
+                    class="secondary"
+                    :disabled="savingApp === entry.packageName"
+                    @click="ignoreObserved(entry.packageName)"
+                  >
+                    Ignorar
+                  </button>
                 </div>
               </li>
             </ul>
@@ -393,6 +435,28 @@ async function addToMonitored(packageName: string) {
               Nenhum app novo observado ainda. Apps que enviarem notificações após você ativar o
               acesso aparecem aqui.
             </p>
+          </div>
+
+          <div v-if="ignoredObserved.length" class="app-group">
+            <h3>Ignorados ({{ ignoredObserved.length }})</h3>
+            <ul class="app-list">
+              <li v-for="entry in ignoredObserved" :key="entry.packageName">
+                <div class="choice observed-choice">
+                  <span>
+                    <strong>{{ entry.label ?? entry.packageName }}</strong>
+                    <small>{{ entry.packageName }}</small>
+                  </span>
+                  <button
+                    type="button"
+                    class="secondary"
+                    :disabled="savingApp === entry.packageName"
+                    @click="restoreIgnored(entry.packageName)"
+                  >
+                    Voltar a mostrar
+                  </button>
+                </div>
+              </li>
+            </ul>
           </div>
 
           <div class="app-group">
@@ -542,7 +606,7 @@ dd {
   text-align: left;
 }
 .observed-choice {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 .choice[aria-pressed='true'] {
   color: var(--color-on-accent-container);

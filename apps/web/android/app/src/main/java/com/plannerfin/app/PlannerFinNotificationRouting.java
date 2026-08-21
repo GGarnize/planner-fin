@@ -20,9 +20,12 @@ final class PlannerFinNotificationRouting {
         if (!PlannerFinNotificationCaptureState.isCaptureEnabled()) {
             return Decision.IGNORE;
         }
-        if (!PlannerFinNotificationCaptureState.isMonitored(packageName)) {
-            return Decision.RECORD_OBSERVED;
+        if (PlannerFinNotificationCaptureState.isMonitored(packageName)) {
+            return Decision.CAPTURE;
         }
-        return Decision.CAPTURE;
+        if (PlannerFinNotificationObservedApps.isIgnored(packageName)) {
+            return Decision.IGNORE;
+        }
+        return Decision.RECORD_OBSERVED;
     }
 }

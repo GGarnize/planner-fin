@@ -94,6 +94,16 @@ final class PlannerFinNotificationPreferences {
         persistObserved(context);
     }
 
+    static void ignoreObservedPackage(Context context, String packageName) {
+        PlannerFinNotificationObservedApps.ignore(packageName, System.currentTimeMillis());
+        persistObserved(context);
+    }
+
+    static void restoreObservedPackage(Context context, String packageName) {
+        PlannerFinNotificationObservedApps.restore(packageName);
+        persistObserved(context);
+    }
+
     static List<PlannerFinNotificationObservedApps.Entry> getObservedPackages(Context context) {
         PlannerFinNotificationObservedApps.purgeExpired(System.currentTimeMillis());
         List<PlannerFinNotificationObservedApps.Entry> observed = PlannerFinNotificationObservedApps.getObserved();
@@ -118,6 +128,7 @@ final class PlannerFinNotificationPreferences {
                 item.put("packageName", entry.packageName);
                 item.put("label", entry.label == null ? JSONObject.NULL : entry.label);
                 item.put("lastSeenAt", entry.lastSeenAt);
+                item.put("ignoredAt", entry.ignoredAt);
             } catch (Exception ignored) {
                 continue;
             }
@@ -136,7 +147,8 @@ final class PlannerFinNotificationPreferences {
                 String packageName = item.optString("packageName", "");
                 String label = item.isNull("label") ? null : item.optString("label", null);
                 long lastSeenAt = item.optLong("lastSeenAt", 0L);
-                entries.add(new PlannerFinNotificationObservedApps.Entry(packageName, label, lastSeenAt));
+                long ignoredAt = item.optLong("ignoredAt", 0L);
+                entries.add(new PlannerFinNotificationObservedApps.Entry(packageName, label, lastSeenAt, ignoredAt));
             }
         } catch (Exception ignored) {
             return new ArrayList<>();

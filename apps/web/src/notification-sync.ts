@@ -32,6 +32,7 @@ export async function syncCapturedNotifications(): Promise<void> {
     const device = await bindDevice(deviceId, {
       captureEnabled: localState.captureEnabled,
       monitoredPackages: localState.monitoredPackages,
+      replacePreferences: false,
     });
     await bindOwnerNative(device.deviceId, device.ownerBindingId);
     await setCaptureEnabled(device.captureEnabled);
@@ -85,7 +86,7 @@ export async function pushNotificationPreferences(preferences: {
   if (!isNotificationListenerDiagnosticAvailable() || !authState.token || !authState.user) return null;
   const deviceId = await getOrCreateDeviceId();
   if (!deviceId) return null;
-  const device = await bindDevice(deviceId, preferences);
+  const device = await bindDevice(deviceId, { ...preferences, replacePreferences: true });
   await bindOwnerNative(device.deviceId, device.ownerBindingId);
   await setCaptureEnabled(device.captureEnabled);
   await setMonitoredPackages(device.monitoredPackages);
@@ -111,7 +112,7 @@ export function installNotificationSyncHooks(): void {
 
 async function bindDevice(
   deviceId: string,
-  preferences: { captureEnabled: boolean; monitoredPackages: string[] },
+  preferences: { captureEnabled: boolean; monitoredPackages: string[]; replacePreferences?: boolean },
 ): Promise<NotificationDeviceResponse> {
   const response = await authenticatedFetch('/notification-devices/bind', {
     method: 'POST',

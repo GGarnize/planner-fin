@@ -29,6 +29,7 @@ const data = {
     upcomingTransactions: 0,
     unpaidCardInvoices: 0,
     overdueDebtInstallments: 0,
+    pendingNotificationReviews: 0,
   },
 };
 const response = (body: unknown, ok = true) =>
@@ -182,6 +183,31 @@ describe('DashboardPage', () => {
     expect(wrapper.text()).toContain('Resultado realizado');
     expect(wrapper.text()).not.toContain('Saldo realizado');
     expect(wrapper.get('a[href="/budgets"]').attributes('href')).toBe('/budgets');
+  });
+  it('mostra atalho Para revisar somente quando ha pendencias de notificacao', async () => {
+    vi.mocked(authenticatedFetch).mockReturnValue(
+      response({
+        ...data,
+        counters: { ...data.counters, pendingNotificationReviews: 3 },
+      }),
+    );
+    const wrapper = mount(DashboardPage, {
+      global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } },
+    });
+    await flushPromises();
+
+    expect(wrapper.get('a[href="/notifications/inbox"]').text()).toContain('Para revisar');
+    expect(wrapper.get('a[href="/notifications/inbox"]').text()).toContain(
+      '3 movimentações aguardando revisão',
+    );
+
+    vi.mocked(authenticatedFetch).mockReturnValue(response(data));
+    const withoutPending = mount(DashboardPage, {
+      global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } },
+    });
+    await flushPromises();
+    expect(withoutPending.find('a[href="/notifications/inbox"]').exists()).toBe(false);
+    withoutPending.unmount();
   });
   it('mostra ausência de contas e limpa o snapshot anterior durante nova carga com erro', async () => {
     let reject!: () => void;

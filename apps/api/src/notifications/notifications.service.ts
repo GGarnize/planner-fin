@@ -59,13 +59,18 @@ export class NotificationsService {
     userId: string,
     dto: BindNotificationDeviceRequest,
   ): Promise<NotificationDeviceResponse> {
-    const monitoredPackages = sanitizePackages(dto.monitoredPackages ?? []);
     const existing = await this.prisma.notificationDevice.findUnique({
       where: { userId_deviceId: { userId, deviceId: dto.deviceId } },
     });
+    const shouldReplacePreferences = !existing || dto.replacePreferences === true;
+    const monitoredPackages = shouldReplacePreferences
+      ? sanitizePackages(dto.monitoredPackages ?? [])
+      : toPackageList(existing.monitoredPackages);
     const data = {
       name: dto.name?.trim() || null,
-      captureEnabled: dto.captureEnabled ?? existing?.captureEnabled ?? false,
+      captureEnabled: shouldReplacePreferences
+        ? (dto.captureEnabled ?? false)
+        : (existing.captureEnabled ?? false),
       monitoredPackages,
       status: 'ACTIVE' as const,
       revokedAt: null,

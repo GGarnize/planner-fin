@@ -133,6 +133,7 @@ describe('contrato público do dashboard', () => {
         upcomingTransactions: 1,
         unpaidCardInvoices: 1,
         overdueDebtInstallments: 0,
+        pendingNotificationReviews: 0,
       },
     };
     expect(dashboard.cashPosition.totalRealizedBalance).toBeNull();
