@@ -46,6 +46,7 @@ export interface ObservedNotificationPackage {
   packageName: string;
   label: string | null;
   lastSeenAt: number;
+  ignoredAt?: number | null;
 }
 
 interface PlannerFinNotificationListenerPlugin {
@@ -72,6 +73,8 @@ interface PlannerFinNotificationListenerPlugin {
   clearRecentCapturedNotifications(): Promise<CapturedNotificationsDebug>;
   getObservedPackages(): Promise<{ packages: ObservedNotificationPackage[] }>;
   clearObservedPackages(): Promise<{ packages: ObservedNotificationPackage[] }>;
+  ignoreObservedPackage(options: { packageName: string }): Promise<{ packages: ObservedNotificationPackage[] }>;
+  restoreObservedPackage(options: { packageName: string }): Promise<{ packages: ObservedNotificationPackage[] }>;
 }
 
 const plugin = registerPlugin<PlannerFinNotificationListenerPlugin>('PlannerFinNotificationListener');
@@ -175,4 +178,14 @@ export async function getObservedPackages(): Promise<ObservedNotificationPackage
 export async function clearObservedPackages(): Promise<void> {
   if (!isNotificationListenerDiagnosticAvailable()) return;
   await plugin.clearObservedPackages();
+}
+
+export async function ignoreObservedPackage(packageName: string): Promise<ObservedNotificationPackage[]> {
+  if (!isNotificationListenerDiagnosticAvailable()) return [];
+  return (await plugin.ignoreObservedPackage({ packageName })).packages;
+}
+
+export async function restoreObservedPackage(packageName: string): Promise<ObservedNotificationPackage[]> {
+  if (!isNotificationListenerDiagnosticAvailable()) return [];
+  return (await plugin.restoreObservedPackage({ packageName })).packages;
 }

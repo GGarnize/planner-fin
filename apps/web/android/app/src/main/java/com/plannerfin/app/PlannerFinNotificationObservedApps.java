@@ -25,12 +25,33 @@ final class PlannerFinNotificationObservedApps {
     static synchronized void recordObserved(String packageName, String label, long now) {
         if (!PlannerFinNotificationCaptureState.isValidPackageName(packageName)) return;
         Entry existing = observed.get(packageName);
+        if (existing != null && existing.isIgnored()) return;
         String nextLabel = (label != null && !label.isBlank())
                 ? label
                 : (existing != null ? existing.label : null);
-        observed.put(packageName, new Entry(packageName, nextLabel, now));
+        observed.put(packageName, new Entry(packageName, nextLabel, now, 0L));
         purgeExpiredLocked(now);
         enforceLimitLocked();
+    }
+
+    static synchronized void ignore(String packageName, long now) {
+        if (!PlannerFinNotificationCaptureState.isValidPackageName(packageName)) return;
+        Entry existing = observed.get(packageName);
+        String label = existing == null ? null : existing.label;
+        long lastSeenAt = existing == null ? now : existing.lastSeenAt;
+        observed.put(packageName, new Entry(packageName, label, lastSeenAt, now));
+        enforceLimitLocked();
+    }
+
+    static synchronized void restore(String packageName) {
+        Entry existing = observed.get(packageName);
+        if (existing == null) return;
+        observed.put(packageName, new Entry(existing.packageName, existing.label, existing.lastSeenAt, 0L));
+    }
+
+    static synchronized boolean isIgnored(String packageName) {
+        Entry existing = observed.get(packageName);
+        return existing != null && existing.isIgnored();
     }
 
     static synchronized void purgeExpired(long now) {
@@ -58,7 +79,7 @@ final class PlannerFinNotificationObservedApps {
 
     private static void purgeExpiredLocked(long now) {
         long cutoff = now - RETENTION_MS;
-        observed.values().removeIf(entry -> entry.lastSeenAt < cutoff);
+        observed.values().removeIf(entry -> !entry.isIgnored() && entry.lastSeenAt < cutoff);
     }
 
     private static void enforceLimitLocked() {
@@ -80,11 +101,21 @@ final class PlannerFinNotificationObservedApps {
         final String packageName;
         final String label;
         final long lastSeenAt;
+        final long ignoredAt;
 
         Entry(String packageName, String label, long lastSeenAt) {
+            this(packageName, label, lastSeenAt, 0L);
+        }
+
+        Entry(String packageName, String label, long lastSeenAt, long ignoredAt) {
             this.packageName = packageName;
             this.label = label;
             this.lastSeenAt = lastSeenAt;
+            this.ignoredAt = ignoredAt;
+        }
+
+        boolean isIgnored() {
+            return ignoredAt > 0L;
         }
     }
 }

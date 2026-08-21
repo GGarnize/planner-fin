@@ -43,6 +43,7 @@ function prismaFixture(rows: Record<string, unknown[]> = {}, budget: unknown = n
     monthlyBudget: { findFirst: vi.fn(async () => budget) },
     cardInvoice: many('invoices'),
     debtInstallment: many('debts'),
+    capturedNotification: { count: vi.fn(async () => rows.pendingNotificationReviews?.length ?? 0) },
   };
   return {
     tx,
@@ -56,7 +57,7 @@ function prismaFixture(rows: Record<string, unknown[]> = {}, budget: unknown = n
 }
 
 describe('DashboardService', () => {
-  it('compõe resposta vazia em um RepeatableRead com quantidade fixa de onze queries', async () => {
+  it('compõe resposta vazia em um RepeatableRead com quantidade fixa de doze queries', async () => {
     let queries = 0;
     const empty = () => ({
       findMany: vi.fn(async () => {
@@ -80,6 +81,12 @@ describe('DashboardService', () => {
       },
       cardInvoice: empty(),
       debtInstallment: empty(),
+      capturedNotification: {
+        count: vi.fn(async () => {
+          queries += 1;
+          return 0;
+        }),
+      },
     };
     const transaction = vi.fn(async (callback, options) => {
       expect(options).toEqual({ isolationLevel: 'RepeatableRead' });
@@ -100,6 +107,7 @@ describe('DashboardService', () => {
         upcomingTransactions: 0,
         unpaidCardInvoices: 0,
         overdueDebtInstallments: 0,
+        pendingNotificationReviews: 0,
       },
     });
     expect(result.monthlyFlow).toEqual({
@@ -110,7 +118,7 @@ describe('DashboardService', () => {
       realizedNet: '0.00',
       plannedNet: '0.00',
     });
-    expect(queries).toBe(11);
+    expect(queries).toBe(12);
     expect(now).toHaveBeenCalledTimes(1);
     expect(transaction).toHaveBeenCalledTimes(1);
   });
@@ -274,6 +282,7 @@ describe('DashboardService', () => {
       ],
       invoices,
       debts,
+      pendingNotificationReviews: [{ id: 'n1' }, { id: 'n2' }, { id: 'n3' }],
     });
     const result = await new DashboardService(
       fixture.prisma as never,
@@ -292,6 +301,13 @@ describe('DashboardService', () => {
       upcomingTransactions: 10,
       unpaidCardInvoices: 6,
       overdueDebtInstallments: 1,
+      pendingNotificationReviews: 3,
+    });
+    expect(fixture.tx.capturedNotification.count).toHaveBeenCalledWith({
+      where: {
+        userId: 'user',
+        status: { in: ['UNCLASSIFIED', 'FINANCIAL_CANDIDATE', 'AMBIGUOUS'] },
+      },
     });
     expect(result.cardInvoices).toHaveLength(5);
     expect(result.cardInvoices[0]).toMatchObject({

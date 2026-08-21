@@ -51,6 +51,7 @@ export class DashboardService {
       budget,
       invoices,
       debts,
+      pendingNotificationReviews,
     ] = await Promise.all([
       tx.financialTransaction.findMany({
         where: {
@@ -147,6 +148,9 @@ export class DashboardService {
           feeAmount: true,
           debt: { select: { creditorName: true } },
         },
+      }),
+      tx.capturedNotification.count({
+        where: { userId, status: { in: ['UNCLASSIFIED', 'FINANCIAL_CANDIDATE', 'AMBIGUOUS'] } },
       }),
     ]);
 
@@ -316,6 +320,7 @@ export class DashboardService {
           .length,
         unpaidCardInvoices: invoices.length,
         overdueDebtInstallments: debts.filter((item) => item.dueDate < todayDate).length,
+        pendingNotificationReviews,
       },
     };
   }

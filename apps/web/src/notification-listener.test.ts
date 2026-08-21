@@ -14,6 +14,8 @@ const mocked = vi.hoisted(() => ({
     purgePendingQueue: vi.fn(),
     getObservedPackages: vi.fn(),
     clearObservedPackages: vi.fn(),
+    ignoreObservedPackage: vi.fn(),
+    restoreObservedPackage: vi.fn(),
   },
 }));
 
@@ -138,5 +140,26 @@ describe('notification-listener bridge', () => {
     await bridge.clearObservedPackages();
 
     expect(mocked.plugin.clearObservedPackages).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignora e restaura pacote observado somente no Android', async () => {
+    mocked.native = true;
+    mocked.platform = 'android';
+    mocked.plugin.ignoreObservedPackage.mockResolvedValue({
+      packages: [{ packageName: 'com.example.caju', label: 'Caju', lastSeenAt: 1, ignoredAt: 2 }],
+    });
+    mocked.plugin.restoreObservedPackage.mockResolvedValue({
+      packages: [{ packageName: 'com.example.caju', label: 'Caju', lastSeenAt: 1, ignoredAt: null }],
+    });
+    const bridge = await import('./notification-listener');
+
+    await expect(bridge.ignoreObservedPackage('com.example.caju')).resolves.toEqual([
+      { packageName: 'com.example.caju', label: 'Caju', lastSeenAt: 1, ignoredAt: 2 },
+    ]);
+    await expect(bridge.restoreObservedPackage('com.example.caju')).resolves.toEqual([
+      { packageName: 'com.example.caju', label: 'Caju', lastSeenAt: 1, ignoredAt: null },
+    ]);
+    expect(mocked.plugin.ignoreObservedPackage).toHaveBeenCalledWith({ packageName: 'com.example.caju' });
+    expect(mocked.plugin.restoreObservedPackage).toHaveBeenCalledWith({ packageName: 'com.example.caju' });
   });
 });

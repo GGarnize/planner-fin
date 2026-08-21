@@ -12,6 +12,7 @@ public class PlannerFinNotificationRoutingTest {
     public void resetState() {
         PlannerFinNotificationCaptureState.setCaptureEnabled(false);
         PlannerFinNotificationCaptureState.setMonitoredPackages(Set.of());
+        PlannerFinNotificationObservedApps.clear();
     }
 
     @Test
@@ -44,5 +45,26 @@ public class PlannerFinNotificationRoutingTest {
         assertEquals(
                 PlannerFinNotificationRouting.Decision.CAPTURE,
                 PlannerFinNotificationRouting.decide("com.nu.production"));
+    }
+
+    @Test
+    public void capturaLigadaPacoteIgnoradoNaoRegistraObservadoNemCaptura() {
+        PlannerFinNotificationCaptureState.setCaptureEnabled(true);
+        PlannerFinNotificationObservedApps.ignore("com.example.caju", 1_000L);
+
+        assertEquals(
+                PlannerFinNotificationRouting.Decision.IGNORE,
+                PlannerFinNotificationRouting.decide("com.example.caju"));
+    }
+
+    @Test
+    public void pacoteMonitoradoTemPrecedenciaSobreIgnoradoPorSerOptInExplicito() {
+        PlannerFinNotificationCaptureState.setCaptureEnabled(true);
+        PlannerFinNotificationCaptureState.setMonitoredPackages(Set.of("com.example.caju"));
+        PlannerFinNotificationObservedApps.ignore("com.example.caju", 1_000L);
+
+        assertEquals(
+                PlannerFinNotificationRouting.Decision.CAPTURE,
+                PlannerFinNotificationRouting.decide("com.example.caju"));
     }
 }

@@ -157,6 +157,35 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
     expect(await service(prisma).list(userB)).toEqual([]);
   });
 
+  it('bind automatico preserva preferencias server-side de device existente', async () => {
+    const svc = service(prisma);
+    await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+      replacePreferences: true,
+    });
+
+    const preserved = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: false,
+      monitoredPackages: [],
+      replacePreferences: false,
+    });
+
+    expect(preserved.captureEnabled).toBe(true);
+    expect(preserved.monitoredPackages).toEqual([packageName]);
+
+    const replaced = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: false,
+      monitoredPackages: [],
+      replacePreferences: true,
+    });
+    expect(replaced.captureEnabled).toBe(false);
+    expect(replaced.monitoredPackages).toEqual([]);
+  });
+
   it('ingere lote idempotente e nao duplica retry', async () => {
     const svc = service(prisma);
     const device = await svc.bind(userA, {

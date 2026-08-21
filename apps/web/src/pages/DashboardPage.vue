@@ -213,6 +213,25 @@ async function skipSetup() {
             + Novo lançamento</button
           ><router-link to="/transfers">Transferir</router-link>
         </div>
+        <router-link
+          v-if="snapshot.counters.pendingNotificationReviews > 0"
+          class="review-shortcut"
+          to="/notifications/inbox"
+        >
+          <span class="material-icons" aria-hidden="true">rate_review</span>
+          <span>
+            <strong>Para revisar</strong>
+            <small>
+              {{ snapshot.counters.pendingNotificationReviews }}
+              {{
+                snapshot.counters.pendingNotificationReviews === 1
+                  ? 'movimentação aguardando revisão'
+                  : 'movimentações aguardando revisão'
+              }}
+            </small>
+          </span>
+          <span class="material-icons" aria-hidden="true">chevron_right</span>
+        </router-link>
         <section class="panel summary-panel">
           <h2>Resumo do mês</h2>
           <dl>
@@ -515,6 +534,35 @@ async function skipSetup() {
   color: var(--color-on-accent);
   background: var(--color-accent);
 }
+.review-shortcut {
+  grid-column: 1;
+  min-height: 3.25rem;
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr) 1.5rem;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 0.75rem;
+  color: var(--color-on-accent-container);
+  background: var(--color-accent-container);
+  border: 1px solid var(--color-accent);
+  border-radius: 0.6rem;
+  text-decoration: none;
+}
+.review-shortcut strong,
+.review-shortcut small {
+  display: block;
+}
+.review-shortcut strong {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.review-shortcut small {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+.review-shortcut .material-icons {
+  font-size: 1.25rem;
+}
 .actions {
   display: flex;
   gap: 0.5rem;
@@ -601,8 +649,11 @@ async function skipSetup() {
   .quick-actions {
     grid-row: 2;
   }
-  .summary-panel {
+  .review-shortcut {
     grid-row: 3;
+  }
+  .summary-panel {
+    grid-row: 4;
     padding: 0.75rem 1rem;
   }
   .summary-panel dl div {

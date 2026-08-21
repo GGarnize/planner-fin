@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   getStatus: vi.fn(),
   getCaptureState: vi.fn(),
   getObservedPackages: vi.fn(),
+  ignoreObservedPackage: vi.fn(),
+  restoreObservedPackage: vi.fn(),
   openSettings: vi.fn(),
   purgePendingQueue: vi.fn(),
   pushPreferences: vi.fn(),
@@ -30,6 +32,8 @@ vi.mock('./notification-listener', () => ({
   getNotificationAccessStatus: mocks.getStatus,
   getCaptureState: mocks.getCaptureState,
   getObservedPackages: mocks.getObservedPackages,
+  ignoreObservedPackage: mocks.ignoreObservedPackage,
+  restoreObservedPackage: mocks.restoreObservedPackage,
   openNotificationAccessSettings: mocks.openSettings,
   purgePendingQueue: mocks.purgePendingQueue,
 }));
@@ -62,6 +66,8 @@ beforeEach(() => {
   mocks.getStatus.mockResolvedValue({ supported: true, granted: false });
   mocks.getCaptureState.mockResolvedValue(emptyCaptureState());
   mocks.getObservedPackages.mockResolvedValue([]);
+  mocks.ignoreObservedPackage.mockResolvedValue([]);
+  mocks.restoreObservedPackage.mockResolvedValue([]);
   mocks.pushPreferences.mockResolvedValue(undefined);
   mocks.purgePendingQueue.mockResolvedValue({ pendingCount: 0 });
 });
@@ -305,6 +311,48 @@ describe('NotificationsPage — apps observados neste dispositivo', () => {
       captureEnabled: false,
       monitoredPackages: ['com.example.caju'],
     });
+  });
+
+  it('Ignorar remove o app de Observados e mostra em Ignorados sem monitorar', async () => {
+    mocks.getObservedPackages.mockResolvedValue([
+      { packageName: 'com.example.caju', label: 'Caju', lastSeenAt: Date.now() },
+    ]);
+    mocks.ignoreObservedPackage.mockResolvedValue([
+      { packageName: 'com.example.caju', label: 'Caju', lastSeenAt: Date.now(), ignoredAt: Date.now() },
+    ]);
+    const wrapper = mountPage();
+    await flushPromises();
+    await openManager(wrapper);
+
+    const ignorar = wrapper.findAll('button').find((b) => b.text() === 'Ignorar')!;
+    await ignorar.trigger('click');
+    await flushPromises();
+
+    expect(mocks.ignoreObservedPackage).toHaveBeenCalledWith('com.example.caju');
+    expect(mocks.pushPreferences).not.toHaveBeenCalled();
+    expect(wrapper.findAll('.observed-choice').filter((el) => el.text().includes('Monitorar'))).toHaveLength(0);
+    expect(wrapper.text()).toContain('Ignorados (1)');
+    expect(wrapper.text()).toContain('Voltar a mostrar');
+  });
+
+  it('permite voltar a mostrar um app ignorado', async () => {
+    mocks.getObservedPackages.mockResolvedValue([
+      { packageName: 'com.example.caju', label: 'Caju', lastSeenAt: Date.now(), ignoredAt: Date.now() },
+    ]);
+    mocks.restoreObservedPackage.mockResolvedValue([
+      { packageName: 'com.example.caju', label: 'Caju', lastSeenAt: Date.now(), ignoredAt: null },
+    ]);
+    const wrapper = mountPage();
+    await flushPromises();
+    await openManager(wrapper);
+
+    const restaurar = wrapper.findAll('button').find((b) => b.text() === 'Voltar a mostrar')!;
+    await restaurar.trigger('click');
+    await flushPromises();
+
+    expect(mocks.restoreObservedPackage).toHaveBeenCalledWith('com.example.caju');
+    expect(wrapper.text()).toContain('Monitorar');
+    expect(wrapper.text()).not.toContain('Ignorados (1)');
   });
 
   it('app conhecido também observado aparece uma única vez (sem duplicar)', async () => {

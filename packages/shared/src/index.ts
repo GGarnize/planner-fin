@@ -156,6 +156,7 @@ export interface BindNotificationDeviceRequest {
   name?: string | null;
   captureEnabled?: boolean;
   monitoredPackages?: string[];
+  replacePreferences?: boolean;
 }
 export interface UpdateNotificationDevicePreferencesRequest {
   captureEnabled?: boolean;
@@ -1026,6 +1027,7 @@ export interface DashboardCounters {
   upcomingTransactions: number;
   unpaidCardInvoices: number;
   overdueDebtInstallments: number;
+  pendingNotificationReviews: number;
 }
 export interface DashboardResponse {
   month: string;

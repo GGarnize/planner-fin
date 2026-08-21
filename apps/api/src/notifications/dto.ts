@@ -45,6 +45,10 @@ export class BindNotificationDeviceDto {
   @ArrayMaxSize(50)
   @Matches(PACKAGE_PATTERN, { each: true })
   monitoredPackages?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  replacePreferences?: boolean;
 }
 
 export class UpdateNotificationDevicePreferencesDto {
