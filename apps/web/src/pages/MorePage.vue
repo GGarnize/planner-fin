@@ -27,6 +27,10 @@ const groups = [
       ['Dívidas', '/debts', 'request_quote'],
     ],
   },
+  {
+    title: 'Sobre',
+    items: [['Política de Privacidade', '/privacy-policy', 'privacy_tip']],
+  },
 ] as const;
 async function leave() {
   await logout();

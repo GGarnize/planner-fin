@@ -8,6 +8,13 @@ vi.mock('./auth', () => mocked);
 import { router } from './router';
 
 describe('redirecionamentos de autenticação', () => {
+  it('permite abrir a Política de Privacidade sem autenticação', async () => {
+    mocked.authState.token = null;
+    await router.push('/privacy-policy');
+    await router.isReady();
+    expect(router.currentRoute.value.fullPath).toBe('/privacy-policy');
+  });
+
   it('preserva deep-link no login e não força rotas autenticadas ao dashboard', async () => {
     mocked.authState.token = null;
     await router.push('/dashboard');

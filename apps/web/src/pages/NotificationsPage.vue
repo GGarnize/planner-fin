@@ -280,8 +280,9 @@ async function restoreIgnored(packageName: string) {
           para você poder selecioná-lo depois; o conteúdo da notificação não é armazenado nem
           enviado. Nada vira lançamento automaticamente: você sempre revisa e confirma. Você pode
           desligar a captura, remover um app e apagar o histórico aqui a qualquer momento. Consulte
-          a Política de Privacidade do PlannerFin para saber quais dados são tratados, por quanto
-          tempo e como solicitar exclusão.
+          a
+          <router-link to="/privacy-policy">Política de Privacidade do PlannerFin</router-link>
+          para saber quais dados são tratados, por quanto tempo e como solicitar exclusão.
         </p>
         <div class="actions">
           <button type="button" class="primary" @click="activate">Ativar acesso</button>

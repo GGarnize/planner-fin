@@ -6,10 +6,8 @@ Data da auditoria: 2026-08-21.
 
 Status: **não upload-ready**.
 
-O projeto está tecnicamente próximo para Internal Testing porque já usa `applicationId = com.plannerfin.app`, assinatura release local, `compileSdk = 36`, `targetSdk = 36` e agora possui fluxo AAB separado. Ainda há P0 bloqueantes de Play readiness antes do primeiro upload:
+O projeto está tecnicamente próximo para Internal Testing porque já usa `applicationId = com.plannerfin.app`, assinatura release local, `compileSdk = 36`, `targetSdk = 36`, fluxo AAB separado e rota pública de Política de Privacidade. Ainda há P0 bloqueantes de Play readiness antes do primeiro upload:
 
-- ausência de Política de Privacidade HTTPS pública, sem login e não PDF;
-- ausência de link/rota in-app para Política de Privacidade;
 - ausência de exclusão permanente de conta e dados;
 - Data Safety depende de confirmação de retenção, terceiros/observabilidade e exclusão;
 - Play App Signing precisa ser configurado com a chave atual como app signing key para preservar upgrade sideload -> Play.
@@ -77,10 +75,13 @@ Continuidade sideload -> Play: **SIM, condicionada** a o Play App Signing usar e
 - Criação de conta existe: `POST /auth/register`.
 - Login/logout existem; logout revoga sessão.
 - Exclusão permanente de conta não foi localizada na UI nem na API.
-- Privacy Policy pública não foi localizada.
-- Disclosure de notificações existe, mas menciona Política de Privacidade sem link efetivo localizado.
+- Privacy Policy existe na rota pública `/privacy-policy`, sem exigir autenticação no router.
+- URL pública esperada após deploy do Web PRD: `https://<web-prd>/privacy-policy`.
+- Link in-app existe em `Mais > Sobre > Política de Privacidade`.
+- Disclosure de notificações aponta para `/privacy-policy`.
+- Contato de privacidade ainda usa placeholder explícito até definição do proprietário.
 
-Classificação: **P0 BLOCKED**.
+Classificação: **Privacy Policy READY no código**; Play readiness segue **P0 BLOCKED** por exclusão permanente de conta/dados.
 
 ## Notificações
 
@@ -106,6 +107,7 @@ Localizado/proposto:
 
 - nome: PlannerFin;
 - categoria: Finanças;
+- Política de Privacidade: `/privacy-policy`;
 - descrição curta/completa: proposta em `STORE-LISTING-PT-BR.md`;
 - release notes de teste: proposta em `STORE-LISTING-PT-BR.md`.
 
@@ -113,7 +115,7 @@ Pendente do proprietário:
 
 - e-mail de suporte;
 - website;
-- URL de Política de Privacidade;
+- host/URL final de Política de Privacidade no formulário do Play Console;
 - ícone 512x512;
 - feature graphic 1024x500;
 - screenshots reais;

@@ -7,6 +7,7 @@ Data da auditoria: 2026-08-21.
 - Manifesto declara `NotificationListenerService` com `android.permission.BIND_NOTIFICATION_LISTENER_SERVICE` em `apps/web/android/app/src/main/AndroidManifest.xml`.
 - A tela `Captura por notificações` exibe disclosure antes de abrir Settings Android quando o acesso ainda não está concedido.
 - O texto informa leitura de título e texto, apps escolhidos, finalidade financeira, envio seguro ao servidor, revisão humana, desligamento, remoção de apps e apagar histórico.
+- O disclosure contém link para a Política de Privacidade em `/privacy-policy`.
 - A captura é opcional e depende de ação afirmativa separada: abrir Settings Android, conceder acesso, ligar captura e escolher apps monitorados.
 - Nenhum app é monitorado por padrão.
 - Apps não escolhidos são tratados localmente apenas como observados: nome/pacote e última vez visto; conteúdo não é armazenado nem enviado.
@@ -18,8 +19,8 @@ Data da auditoria: 2026-08-21.
 
 ## Riscos de review
 
-- **BLOQUEADO:** o disclosure menciona “Política de Privacidade”, mas não há link público/in-app localizado.
-- **P1:** o texto atual diz que apps não escolhidos guardam identificador/nome localmente; a Política de Privacidade precisa repetir isso de forma consistente.
+- **RESOLVIDO:** o disclosure aponta para a rota pública `/privacy-policy`.
+- **P1:** confirmar a URL HTTPS final após deploy do Web PRD antes de preencher o Play Console.
 - **P1:** capturas confirmadas permanecem vinculadas ao lançamento financeiro; isso precisa estar claro na política e na exclusão de conta.
 - **P1:** o reviewer pode exigir roteiro claro para gerar uma notificação de app monitorado durante teste.
 
@@ -39,4 +40,4 @@ Data da auditoria: 2026-08-21.
 
 ## Conclusão
 
-O desenho técnico da captura está alinhado com consentimento granular e revisão humana, mas a submissão Play fica bloqueada enquanto não houver Política de Privacidade pública e acessível dentro do app.
+O desenho técnico da captura está alinhado com consentimento granular e revisão humana, e a Política de Privacidade agora está acessível dentro do app. A submissão Play ainda depende da exclusão permanente de conta/dados e da confirmação da URL HTTPS final após deploy.
