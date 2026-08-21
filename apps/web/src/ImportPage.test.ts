@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ImportPage from './pages/ImportPage.vue';
 
 const mocks = vi.hoisted(() => ({
+  android: false,
   route: { params: {} as Record<string, string> },
   replace: vi.fn(),
   upload: vi.fn(),
@@ -37,6 +38,12 @@ vi.mock('./import-api', async () => {
   };
 });
 vi.mock('./auth', () => ({ authenticatedFetch: mocks.fetch }));
+vi.mock('./mobile', () => ({
+  importStatementFileAccept: () =>
+    mocks.android
+      ? '.ofx,.csv,text/csv,application/x-ofx,text/plain,application/octet-stream'
+      : '.ofx,.csv,text/csv,application/x-ofx',
+}));
 
 const account = { id: 'a', name: 'Conta teste', currency: 'BRL', archivedAt: null };
 const categories = [
@@ -72,9 +79,24 @@ const session = (status = 'READY_FOR_REVIEW', rows = [row()]) => ({
   page: { limit: 100, offset: 0, filteredCount: rows.length },
 });
 const mountPage = () => mount(ImportPage, { global: { stubs: { RouterLink: RouterLinkStub } } });
+const chooseSyntheticFile = async (wrapper: ReturnType<typeof mountPage>, file: File) => {
+  Object.defineProperty(wrapper.find('input[type=file]').element, 'files', {
+    value: [file],
+    configurable: true,
+  });
+  await wrapper.find('input[type=file]').trigger('change');
+};
+const submitUpload = async (wrapper: ReturnType<typeof mountPage>) => {
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Enviar arquivo')!
+    .trigger('click');
+  await flushPromises();
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.android = false;
   mocks.route.params = {};
   mocks.listOpen.mockResolvedValue([]);
   mocks.fetch.mockImplementation((path: string) =>
@@ -90,18 +112,60 @@ describe('ImportPage', () => {
     const wrapper = mountPage();
     await flushPromises();
     expect(wrapper.text()).toContain('máximo de 10 MiB e 10.000 linhas');
-    expect(wrapper.find('input[type=file]').attributes('accept')).toContain('.ofx');
+    expect(wrapper.find('input[type=file]').attributes('accept')).toBe(
+      '.ofx,.csv,text/csv,application/x-ofx',
+    );
     const file = new File(['OFXHEADER'], 'teste.ofx', { type: 'application/x-ofx' });
-    Object.defineProperty(wrapper.find('input[type=file]').element, 'files', { value: [file] });
-    await wrapper.find('input[type=file]').trigger('change');
+    await chooseSyntheticFile(wrapper, file);
     mocks.upload.mockResolvedValue(session());
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === 'Enviar arquivo')!
-      .trigger('click');
-    await flushPromises();
+    await submitUpload(wrapper);
     expect(mocks.upload).toHaveBeenCalledWith(file, 'a', 'OFX', ',');
     expect(setLocal).not.toHaveBeenCalled();
+  });
+
+  it('amplia o accept somente no Android nativo para providers OFX genericos', async () => {
+    mocks.android = true;
+    const wrapper = mountPage();
+    await flushPromises();
+    expect(wrapper.find('input[type=file]').attributes('accept')).toBe(
+      '.ofx,.csv,text/csv,application/x-ofx,text/plain,application/octet-stream',
+    );
+  });
+
+  it.each([
+    ['extrato.ofx', 'OFX'],
+    ['extrato.OFX', 'OFX'],
+    ['extrato.csv', 'CSV'],
+  ] as const)('detecta %s como %s antes do upload', async (name, detectedFormat) => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const file = new File(['conteudo'], name, { type: 'text/plain' });
+    await chooseSyntheticFile(wrapper, file);
+    expect(wrapper.text()).toContain(`Formato detectado: ${detectedFormat}`);
+    mocks.upload.mockResolvedValue(session('READY_FOR_REVIEW', []));
+    await submitUpload(wrapper);
+    expect(mocks.upload).toHaveBeenCalledWith(file, 'a', detectedFormat, ',');
+  });
+
+  it('rejeita extensao invalida mesmo quando o picker Android aceita MIME generico', async () => {
+    mocks.android = true;
+    const wrapper = mountPage();
+    await flushPromises();
+    await chooseSyntheticFile(wrapper, new File(['texto'], 'extrato.txt', { type: 'text/plain' }));
+    await submitUpload(wrapper);
+    expect(wrapper.text()).toContain('Use somente arquivos OFX ou CSV.');
+    expect(mocks.upload).not.toHaveBeenCalled();
+  });
+
+  it('rejeita arquivo acima de 10 MiB antes de chamar a API', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const file = new File(['OFXHEADER'], 'grande.ofx', { type: 'application/octet-stream' });
+    Object.defineProperty(file, 'size', { value: 10 * 1024 * 1024 + 1 });
+    await chooseSyntheticFile(wrapper, file);
+    await submitUpload(wrapper);
+    expect(wrapper.text()).toContain('O arquivo excede o limite de 10 MiB.');
+    expect(mocks.upload).not.toHaveBeenCalled();
   });
 
   it('mapeia CSV com headers, amostras e fallback sem header', async () => {
