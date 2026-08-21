@@ -23,6 +23,7 @@ describe('MorePage', () => {
       'Movimentação',
       'Planejamento',
       'Crédito e compromissos',
+      'Sobre',
       'Conta',
     ]);
     expect(wrapper.findAllComponents(RouterLinkStub).map((link) => link.props('to'))).toEqual([
@@ -35,9 +36,10 @@ describe('MorePage', () => {
       '/recurrences',
       '/cards',
       '/debts',
+      '/privacy-policy',
       '/conta',
     ]);
-    expect(wrapper.findAll('a,button')).toHaveLength(11);
+    expect(wrapper.findAll('a,button')).toHaveLength(12);
   });
   it('inclui a entrada de captura por notificacoes com descricao curta', () => {
     const wrapper = mount(MorePage, { global: { stubs: { RouterLink: RouterLinkStub } } });
@@ -49,5 +51,13 @@ describe('MorePage', () => {
     expect(link!.text()).toContain(
       'Use notificações de apps financeiros para preparar movimentações para revisão.',
     );
+  });
+  it('inclui link acessível para a Política de Privacidade pública', () => {
+    const wrapper = mount(MorePage, { global: { stubs: { RouterLink: RouterLinkStub } } });
+    const link = wrapper
+      .findAllComponents(RouterLinkStub)
+      .find((candidate) => candidate.props('to') === '/privacy-policy');
+    expect(link).toBeTruthy();
+    expect(link!.text()).toContain('Política de Privacidade');
   });
 });

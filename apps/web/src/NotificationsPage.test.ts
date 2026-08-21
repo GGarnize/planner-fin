@@ -96,6 +96,17 @@ describe('NotificationsPage — sem acesso concedido', () => {
     expect(mocks.openSettings).not.toHaveBeenCalled();
   });
 
+  it('mostra link real para a Política de Privacidade no disclosure', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const link = wrapper
+      .findAllComponents(RouterLinkStub)
+      .find((candidate) => candidate.props('to') === '/privacy-policy');
+    expect(link).toBeTruthy();
+    expect(link!.text()).toContain('Política de Privacidade do PlannerFin');
+  });
+
   it('só abre o Settings do Android após o gesto explícito no botão Ativar acesso', async () => {
     const wrapper = mountPage();
     await flushPromises();

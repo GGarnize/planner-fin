@@ -20,12 +20,14 @@ import ImportPage from './pages/ImportPage.vue';
 import NotificationListenerDevPage from './pages/NotificationListenerDevPage.vue';
 import NotificationsPage from './pages/NotificationsPage.vue';
 import NotificationsInboxPage from './pages/NotificationsInboxPage.vue';
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage.vue';
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', redirect: '/dashboard' },
     { path: '/login', component: LoginPage, meta: { public: true } },
     { path: '/cadastro', component: RegisterPage, meta: { public: true } },
+    { path: '/privacy-policy', component: PrivacyPolicyPage, meta: { public: true } },
     { path: '/conta', component: AccountPage },
     { path: '/accounts', component: AccountsPage },
     { path: '/categories', component: CategoriesPage },

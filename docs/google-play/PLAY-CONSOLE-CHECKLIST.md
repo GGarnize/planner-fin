@@ -18,10 +18,10 @@ Fontes Google consultadas:
 | Target audience | NEEDS OWNER INPUT | Produto financeiro pessoal; provável público adulto, confirmar. |
 | News | READY | Não é app de notícias. |
 | Financial features declaration | NEEDS OWNER INPUT | Declarar app de finanças pessoais, sem banco, sem movimentação de dinheiro, sem aconselhamento automatizado. |
-| Data Safety | BLOCKED | Matriz criada, mas depende de Política de Privacidade, exclusão de conta e terceiros/observabilidade. |
-| Privacy Policy | BLOCKED | Não há URL HTTPS pública sem login localizada; não há rota in-app com link. |
+| Data Safety | BLOCKED | Matriz criada e policy pública adicionada; ainda depende de exclusão de conta, logs/backups e terceiros/observabilidade final. |
+| Privacy Policy | READY | Rota pública `/privacy-policy`, sem auth, com link em `Mais` e no disclosure de notificações; privacy/support contact `plannerfin.app@gmail.com`; usar `https://<web-prd>/privacy-policy` no Play Console após deploy. |
 | Account deletion | BLOCKED | App cria conta, mas não há fluxo/endpoint permanente de exclusão total. |
-| Sensitive access: notification listener | BLOCKED | Disclosure técnico existe; bloqueado por ausência de Privacy Policy pública/in-app. |
+| Sensitive access: notification listener | READY | Disclosure técnico existe e aponta para `/privacy-policy`; reviewer ainda precisa de roteiro/test account. |
 | Store listing | NEEDS OWNER INPUT | Texto inicial proposto em `STORE-LISTING-PT-BR.md`; assets reais faltam. |
 | Countries/regions | NEEDS OWNER INPUT | Proprietário define disponibilidade. |
 | Pricing | NEEDS OWNER INPUT | Proprietário define grátis/pago; não há billing no app. |
