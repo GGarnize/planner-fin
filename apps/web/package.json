@@ -19,6 +19,7 @@
     "android:build:debug": "pnpm android:sync && node scripts/build-android.mjs debug",
     "android:build:internal": "pnpm android:sync && node scripts/build-android.mjs internal",
     "android:release:build": "pnpm android:sync && node scripts/build-android-release.mjs",
+    "android:bundle:release": "pnpm android:sync && node scripts/build-android-play-bundle.mjs",
     "android:release:publish": "node scripts/publish-android-release.mjs"
   },
   "dependencies": {
