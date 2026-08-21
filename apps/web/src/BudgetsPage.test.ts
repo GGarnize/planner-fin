@@ -254,6 +254,16 @@ describe('tela de orçamento mensal', () => {
     expect(wrapper.text()).toContain('Arquivada');
     expect(wrapper.findAllComponents({ name: 'CategoryIcon' }).length).toBeGreaterThanOrEqual(2);
     expect(wrapper.findAll('.category-row').length).toBe(2);
+    const meters = wrapper.findAll('[role="meter"]');
+    expect(meters[0]!.attributes('aria-valuenow')).toBe('100');
+    expect(meters[0]!.attributes('aria-valuemax')).toBe('100');
+    expect(meters[0]!.attributes('aria-valuetext')).toContain('113% comprometido');
+    expect(meters[0]!.attributes('aria-valuetext')).toContain('limite excedido');
+    expect(meters[1]!.attributes('aria-valuenow')).toBe('80');
+    expect(meters[1]!.attributes('aria-valuetext')).toBe('Mercado: 80% comprometido');
+    expect(meters[2]!.attributes('aria-valuenow')).toBe('100');
+    expect(meters[2]!.attributes('aria-valuetext')).toContain('Casa: 200% comprometido');
+    expect(meters[2]!.attributes('aria-valuetext')).toContain('limite excedido');
     expect(wrapper.text()).toContain('Sem limite específico');
     expect(wrapper.text()).toContain('Custos de dívida não categorizados');
     expect(wrapper.text().toLowerCase()).not.toContain('saldo');

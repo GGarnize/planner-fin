@@ -54,6 +54,20 @@ const money = (value: string) => {
   return `${match[1]}R$ ${match[2]!.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${match[3]}`;
 };
 const percentLabel = (value: string) => `${value}%`;
+const ariaPercentValue = (value: string) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.min(Math.max(numeric, 0), 100);
+};
+const accessiblePercentLabel = (value: string) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return percentLabel(value);
+  return `${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(numeric)}%`;
+};
+const committedAriaText = (value: string, exceeded: boolean, context?: string) =>
+  `${context ? `${context}: ` : ''}${accessiblePercentLabel(value)} comprometido${
+    exceeded ? ' - limite excedido' : ''
+  }`;
 const progressStyle = (value: string) => ({
   '--progress': `${Math.min(Math.max(Number(value), 0), 100)}%`,
 });
@@ -394,9 +408,12 @@ onMounted(async () => {
           :style="progressStyle(budget.totals.committedPercent)"
           role="meter"
           aria-label="Percentual comprometido do orçamento"
-          :aria-valuenow="Number(budget.totals.committedPercent)"
+          :aria-valuenow="ariaPercentValue(budget.totals.committedPercent)"
           aria-valuemin="0"
           aria-valuemax="100"
+          :aria-valuetext="
+            committedAriaText(budget.totals.committedPercent, committedExceeded)
+          "
         />
         <p class="summary-meta">
           Comprometido {{ percentLabel(budget.totals.committedPercent) }} · Realizado
@@ -440,9 +457,16 @@ onMounted(async () => {
               :style="progressStyle(line.committedPercent)"
               role="meter"
               :aria-label="`Percentual comprometido de ${line.categoryName}`"
-              :aria-valuenow="Number(line.committedPercent)"
+              :aria-valuenow="ariaPercentValue(line.committedPercent)"
               aria-valuemin="0"
               aria-valuemax="100"
+              :aria-valuetext="
+                committedAriaText(
+                  line.committedPercent,
+                  line.remainingAgainstCommitted.startsWith('-'),
+                  line.categoryName,
+                )
+              "
             />
             <p>
               <span>Comprometido {{ percentLabel(line.committedPercent) }}</span>
