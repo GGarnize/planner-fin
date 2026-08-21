@@ -8,6 +8,7 @@ Data da auditoria: 2026-08-21.
 - A tela `Captura por notificações` exibe disclosure antes de abrir Settings Android quando o acesso ainda não está concedido.
 - O texto informa leitura de título e texto, apps escolhidos, finalidade financeira, envio seguro ao servidor, revisão humana, desligamento, remoção de apps e apagar histórico.
 - O disclosure contém link para a Política de Privacidade em `/privacy-policy`.
+- Privacy/support contact registrado na política: `plannerfin.app@gmail.com`.
 - A captura é opcional e depende de ação afirmativa separada: abrir Settings Android, conceder acesso, ligar captura e escolher apps monitorados.
 - Nenhum app é monitorado por padrão.
 - Apps não escolhidos são tratados localmente apenas como observados: nome/pacote e última vez visto; conteúdo não é armazenado nem enviado.

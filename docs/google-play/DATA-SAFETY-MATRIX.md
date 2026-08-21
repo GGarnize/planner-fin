@@ -6,6 +6,8 @@ Fontes principais no código: `apps/api/prisma/schema.prisma`, `apps/api/src/aut
 
 Status geral: **BLOQUEADO para submissão** até existir fluxo/URL de exclusão de conta e decisão explícita de retenção para dados financeiros, logs e backups após exclusão. A Política de Privacidade pública foi adicionada em `/privacy-policy`.
 
+Privacy/support contact: `plannerfin.app@gmail.com`.
+
 | Tipo de dado | Coletado? | Compartilhado? | Obrigatório/opcional? | Finalidade | Transmissão | Criptografado em trânsito? | Usuário pode excluir? | Retenção | Origem no código |
 |---|---:|---:|---|---|---|---|---|---|---|
 | Nome | Sim | Não evidenciado | Obrigatório para conta | Identificação da conta | API | Sim, build PRD exige HTTPS | **P0: sem fluxo de exclusão de conta** | Indefinida | `User.name`, `AuthService.register` |

@@ -79,7 +79,7 @@ Continuidade sideload -> Play: **SIM, condicionada** a o Play App Signing usar e
 - URL pública esperada após deploy do Web PRD: `https://<web-prd>/privacy-policy`.
 - Link in-app existe em `Mais > Sobre > Política de Privacidade`.
 - Disclosure de notificações aponta para `/privacy-policy`.
-- Contato de privacidade ainda usa placeholder explícito até definição do proprietário.
+- Privacy/support contact: `plannerfin.app@gmail.com`.
 
 Classificação: **Privacy Policy READY no código**; Play readiness segue **P0 BLOCKED** por exclusão permanente de conta/dados.
 
@@ -114,6 +114,7 @@ Localizado/proposto:
 Pendente do proprietário:
 
 - e-mail de suporte;
+- e-mail de privacidade: `plannerfin.app@gmail.com` (**resolvido**);
 - website;
 - host/URL final de Política de Privacidade no formulário do Play Console;
 - ícone 512x512;

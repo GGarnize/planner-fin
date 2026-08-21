@@ -19,7 +19,7 @@ Fontes Google consultadas:
 | News | READY | Não é app de notícias. |
 | Financial features declaration | NEEDS OWNER INPUT | Declarar app de finanças pessoais, sem banco, sem movimentação de dinheiro, sem aconselhamento automatizado. |
 | Data Safety | BLOCKED | Matriz criada e policy pública adicionada; ainda depende de exclusão de conta, logs/backups e terceiros/observabilidade final. |
-| Privacy Policy | READY | Rota pública `/privacy-policy`, sem auth, com link em `Mais` e no disclosure de notificações; usar `https://<web-prd>/privacy-policy` no Play Console após deploy. |
+| Privacy Policy | READY | Rota pública `/privacy-policy`, sem auth, com link em `Mais` e no disclosure de notificações; privacy/support contact `plannerfin.app@gmail.com`; usar `https://<web-prd>/privacy-policy` no Play Console após deploy. |
 | Account deletion | BLOCKED | App cria conta, mas não há fluxo/endpoint permanente de exclusão total. |
 | Sensitive access: notification listener | READY | Disclosure técnico existe e aponta para `/privacy-policy`; reviewer ainda precisa de roteiro/test account. |
 | Store listing | NEEDS OWNER INPUT | Texto inicial proposto em `STORE-LISTING-PT-BR.md`; assets reais faltam. |

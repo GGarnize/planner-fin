@@ -10,7 +10,8 @@
       <h2>Responsável e contato</h2>
       <p>
         Esta política descreve como o PlannerFin trata dados no aplicativo web e Android. O contato de
-        privacidade ainda depende de definição do proprietário: <strong>[informar e-mail de privacidade]</strong>.
+        privacidade é
+        <a href="mailto:plannerfin.app@gmail.com">plannerfin.app@gmail.com</a>.
       </p>
     </section>
 
@@ -131,7 +132,7 @@
       </p>
       <p>
         Como a exclusão permanente de conta ainda não está disponível no app, solicitações de exclusão
-        dependem do contato de privacidade informado pelo proprietário.
+        dependem do contato de privacidade informado nesta política.
       </p>
     </section>
 
