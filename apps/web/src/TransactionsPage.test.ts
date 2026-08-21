@@ -18,11 +18,20 @@ const response = (data: unknown, ok = true, status = ok ? 200 : 400) =>
   Promise.resolve({ ok, status, json: () => Promise.resolve(data) } as Response);
 const empty = { data: [], page: { limit: 20, nextCursor: null } };
 const account = { id: accountId, name: 'Banco', archivedAt: null };
-const expenseCategory = { id: categoryId, name: 'Moradia', type: 'EXPENSE', archivedAt: null };
+const expenseCategory = {
+  id: categoryId,
+  name: 'Moradia',
+  type: 'EXPENSE',
+  color: '#336699',
+  icon: 'HOME',
+  archivedAt: null,
+};
 const incomeCategory = {
   id: '33333333-3333-4333-8333-333333333333',
   name: 'Salário',
   type: 'INCOME',
+  color: null,
+  icon: null,
   archivedAt: null,
 };
 
@@ -260,6 +269,23 @@ describe('tela de lançamentos (API mockada)', () => {
     expect(paidCard.get('.entry-amount').text()).toBe('- R$ 12,00');
     expect(pendingCard.get('.status-badge').text()).toBe('Pendente');
     expect(pendingCard.get('.entry-amount').text()).toBe('- R$ 10,00');
+  });
+
+  it('mostra o ícone da categoria no lançamento quando a categoria existe', async () => {
+    const { entry } = makeTx();
+    mockPage({ data: [entry], page: { limit: 20, nextCursor: null } });
+    const wrapper = await mountPage();
+    const category = wrapper.get('.entry-category');
+    expect(category.text()).toContain('Moradia');
+    expect(category.get('.material-icons').text()).toBe('home');
+  });
+
+  it('mantém a listagem sem categoria quando a categoria está ausente', async () => {
+    const { entry } = makeTx({ description: 'Sem categoria resolvida' });
+    mockPage({ data: [{ ...entry, categoryId: 'missing' }], page: { limit: 20, nextCursor: null } });
+    const wrapper = await mountPage();
+    expect(wrapper.text()).toContain('Sem categoria resolvida');
+    expect(wrapper.find('.entry-category').exists()).toBe(false);
   });
 
   it('cria PENDING com payload exatamente aderente ao contrato e recarrega a lista', async () => {

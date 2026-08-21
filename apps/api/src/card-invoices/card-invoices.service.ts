@@ -22,13 +22,28 @@ const missing = () =>
   new NotFoundException({ code: 'NOT_FOUND', message: 'Fatura não encontrada.' });
 type Tx = Prisma.TransactionClient;
 type InvoiceWithDetails = Prisma.CardInvoiceGetPayload<{ include: typeof include }>;
+type InvoiceCursorBucket = 'filtered' | 'unpaid' | 'paid';
 const include = {
   installments: {
-    include: { purchase: { select: { description: true } } },
+    include: { purchase: { select: { description: true, categoryId: true } } },
     orderBy: { installmentNumber: 'asc' },
   },
   payment: true,
 } as const;
+const cursorKey = (bucket: InvoiceCursorBucket, dueDate: Date) =>
+  `${bucket}:${civilString(dueDate)}`;
+const parseCursorKey = (key: string) => {
+  const [bucket, dueDate, extra] = key.split(':');
+  if (
+    extra ||
+    !bucket ||
+    !['filtered', 'unpaid', 'paid'].includes(bucket) ||
+    !dueDate ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(dueDate)
+  )
+    throw new BadRequestException({ code: 'INVALID_CURSOR', message: 'Reinicie a paginação.' });
+  return { bucket: bucket as InvoiceCursorBucket, dueDate };
+};
 @Injectable()
 export class CardInvoicesService {
   constructor(
@@ -44,30 +59,37 @@ export class CardInvoicesService {
       fingerprint = paginationFingerprint(q, limit),
       cursor = q.cursor ? readCardCursor(q.cursor, this.config.jwtSecret, fingerprint) : undefined;
     if (q.cycleFrom && q.cycleTo && q.cycleFrom > q.cycleTo) throw this.invalid('cycleFrom');
+    const baseWhere: Prisma.CardInvoiceWhereInput = {
+      userId,
+      ...(q.cardId ? { cardId: q.cardId } : {}),
+      ...(q.cycleFrom || q.cycleTo
+        ? {
+            referenceMonth: {
+              ...(q.cycleFrom ? { gte: q.cycleFrom } : {}),
+              ...(q.cycleTo ? { lte: q.cycleTo } : {}),
+            },
+          }
+        : {}),
+    };
+    if (!q.status) return this.listPrioritized(baseWhere, cursor, limit, fingerprint);
+    const parsed = cursor ? parseCursorKey(cursor.key) : undefined;
+    if (parsed && parsed.bucket !== 'filtered')
+      throw new BadRequestException({ code: 'INVALID_CURSOR', message: 'Reinicie a paginação.' });
     const rows = await this.prisma.cardInvoice.findMany({
       where: {
-        userId,
-        ...(q.cardId ? { cardId: q.cardId } : {}),
-        ...(q.status ? { status: q.status } : {}),
-        ...(q.cycleFrom || q.cycleTo
-          ? {
-              referenceMonth: {
-                ...(q.cycleFrom ? { gte: q.cycleFrom } : {}),
-                ...(q.cycleTo ? { lte: q.cycleTo } : {}),
-              },
-            }
-          : {}),
-        ...(cursor
+        ...baseWhere,
+        status: q.status,
+        ...(parsed
           ? {
               OR: [
-                { referenceMonth: { lt: cursor.key } },
-                { referenceMonth: cursor.key, id: { lt: cursor.id } },
+                { dueDate: { gt: civilDate(parsed.dueDate) } },
+                { dueDate: civilDate(parsed.dueDate), id: { gt: cursor!.id } },
               ],
             }
           : {}),
       },
       include,
-      orderBy: [{ referenceMonth: 'desc' }, { id: 'desc' }],
+      orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
       take: limit + 1,
     });
     const data = rows.slice(0, limit),
@@ -77,7 +99,78 @@ export class CardInvoicesService {
       nextCursor:
         rows.length > limit && last
           ? createCardCursor(
-              { key: last.referenceMonth, id: last.id, fingerprint },
+              { key: cursorKey('filtered', last.dueDate), id: last.id, fingerprint },
+              this.config.jwtSecret,
+            )
+          : null,
+    };
+  }
+  private async listPrioritized(
+    baseWhere: Prisma.CardInvoiceWhereInput,
+    cursor:
+      | {
+          key: string;
+          id: string;
+          fingerprint: string;
+        }
+      | undefined,
+    limit: number,
+    fingerprint: string,
+  ) {
+    const parsed = cursor ? parseCursorKey(cursor.key) : undefined;
+    if (parsed?.bucket === 'filtered')
+      throw new BadRequestException({ code: 'INVALID_CURSOR', message: 'Reinicie a paginação.' });
+    const rows: InvoiceWithDetails[] = [];
+    if (!parsed || parsed.bucket === 'unpaid') {
+      rows.push(
+        ...(await this.prisma.cardInvoice.findMany({
+          where: {
+            ...baseWhere,
+            status: { in: ['OPEN', 'CLOSED'] },
+            ...(parsed
+              ? {
+                  OR: [
+                    { dueDate: { gt: civilDate(parsed.dueDate) } },
+                    { dueDate: civilDate(parsed.dueDate), id: { gt: cursor!.id } },
+                  ],
+                }
+              : {}),
+          },
+          include,
+          orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+          take: limit + 1,
+        })),
+      );
+    }
+    if (rows.length <= limit) {
+      rows.push(
+        ...(await this.prisma.cardInvoice.findMany({
+          where: {
+            ...baseWhere,
+            status: 'PAID',
+            ...(parsed?.bucket === 'paid'
+              ? {
+                  OR: [
+                    { dueDate: { lt: civilDate(parsed.dueDate) } },
+                    { dueDate: civilDate(parsed.dueDate), id: { lt: cursor!.id } },
+                  ],
+                }
+              : {}),
+          },
+          include,
+          orderBy: [{ dueDate: 'desc' }, { id: 'desc' }],
+          take: limit + 1 - rows.length,
+        })),
+      );
+    }
+    const data = rows.slice(0, limit),
+      last = data.at(-1);
+    return {
+      items: data.map((x) => this.public(x)),
+      nextCursor:
+        rows.length > limit && last
+          ? createCardCursor(
+              { key: cursorKey(last.status === 'PAID' ? 'paid' : 'unpaid', last.dueDate), id: last.id, fingerprint },
               this.config.jwtSecret,
             )
           : null,
@@ -180,7 +273,9 @@ export class CardInvoicesService {
       referenceMonth: i.referenceMonth,
       invoiceId: i.invoiceId,
       createdAt: i.createdAt.toISOString(),
+      purchaseId: i.purchaseId,
       purchaseDescription: i.purchase.description,
+      categoryId: i.purchase.categoryId,
     }));
     return {
       id: x.id,

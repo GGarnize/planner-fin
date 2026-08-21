@@ -11,7 +11,10 @@ import type {
   UpdateCardPurchaseRequest,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import { safeApiErrorMessage } from '../api-error';
 import { normalizeMoney } from '../transaction-template';
+import CategoryIcon from '../components/CategoryIcon.vue';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
 import KebabMenu, { type KebabMenuAction } from '../components/KebabMenu.vue';
 const cards = ref<PublicFinancialCreditCard[]>([]),
   purchases = ref<PaginatedCardPurchasesResponse['items']>([]),
@@ -24,7 +27,14 @@ const cards = ref<PublicFinancialCreditCard[]>([]),
   loadingInvoices = ref(false),
   purchaseCursor = ref<string | null>(null),
   invoiceCursor = ref<string | null>(null),
+  expandedInvoiceId = ref(''),
   error = ref('');
+const showCardForm = ref(false);
+const showPurchaseForm = ref(false);
+const payingInvoiceId = ref('');
+const deletingPurchase = ref<PaginatedCardPurchasesResponse['items'][number] | null>(null);
+const deletingPurchaseBusy = ref(false);
+const deletePurchaseError = ref('');
 const route = useRoute();
 const contextualCardId = computed(() =>
   typeof route.params.id === 'string' ? route.params.id : '',
@@ -68,6 +78,8 @@ const editPurchase = reactive({
   installmentCount: 1,
 });
 const activeCards = computed(() => cards.value.filter((x) => !x.archivedAt)),
+  cardNameById = computed(() => new Map(cards.value.map((item) => [item.id, item.name]))),
+  categoryById = computed(() => new Map(categories.value.map((item) => [item.id, item]))),
   editablePurchaseCards = computed(() =>
     cards.value.filter((x) => !x.archivedAt || x.id === originalPurchase.value?.cardId),
   ),
@@ -138,20 +150,13 @@ async function createCard() {
     error.value = 'Informe um limite válido, ex.: 5000 ou 5000,00.';
     return;
   }
-  await mutate('/cards', {
+  const ok = await mutate('/cards', {
     ...card,
     issuer: card.issuer || null,
     last4: card.last4 || null,
     creditLimit: card.creditLimit ? normalizeMoney(card.creditLimit) : null,
   });
-  Object.assign(card, {
-    name: '',
-    issuer: '',
-    last4: '',
-    creditLimit: '',
-    closingDay: 10,
-    dueDay: 17,
-  });
+  if (ok) cancelCardForm();
 }
 async function createPurchase() {
   const totalAmount = normalizeMoney(purchase.totalAmount);
@@ -159,13 +164,13 @@ async function createPurchase() {
     error.value = 'Informe um valor total válido, ex.: 150 ou 150,00.';
     return;
   }
-  await mutate('/card-purchases', {
+  const ok = await mutate('/card-purchases', {
     ...purchase,
     totalAmount,
     notes: purchase.notes || null,
     installmentCount: Number(purchase.installmentCount),
   });
-  Object.assign(purchase, { description: '', notes: '', totalAmount: '', installmentCount: 1 });
+  if (ok) cancelPurchaseForm();
 }
 async function mutate(path: string, body?: object) {
   saving.value = true;
@@ -177,8 +182,10 @@ async function mutate(path: string, body?: object) {
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     await load();
+    return true;
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Falha na operação.';
+    return false;
   } finally {
     saving.value = false;
   }
@@ -192,11 +199,13 @@ async function patch(path: string, body: object) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    editingCardId.value = '';
-    editingPurchaseId.value = '';
+    cancelCardEdit();
+    cancelPurchaseEdit();
     await load();
+    return true;
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Falha na edição.';
+    return false;
   } finally {
     saving.value = false;
   }
@@ -211,7 +220,91 @@ function cardActionsFor(item: PublicFinancialCreditCard): KebabMenuAction[] {
     },
   ];
 }
+function purchaseActionsFor(item: (typeof purchases.value)[number]): KebabMenuAction[] {
+  return [
+    { label: 'Editar compra', onSelect: () => startPurchaseEdit(item) },
+    {
+      label: 'Excluir compra',
+      danger: true,
+      onSelect: () => openPurchaseDelete(item),
+    },
+  ];
+}
+function resetCardForm() {
+  Object.assign(card, {
+    name: '',
+    issuer: '',
+    last4: '',
+    creditLimit: '',
+    closingDay: 10,
+    dueDay: 17,
+  });
+}
+function resetPurchaseForm() {
+  Object.assign(purchase, {
+    cardId: contextualCardId.value || '',
+    categoryId: '',
+    description: '',
+    notes: '',
+    purchaseDate: new Date().toISOString().slice(0, 10),
+    totalAmount: '',
+    installmentCount: 1,
+  });
+}
+function closeInlineFlows() {
+  cancelCardEdit();
+  cancelPurchaseEdit();
+  cancelInvoicePayment();
+  expandedInvoiceId.value = '';
+}
+function openCardForm() {
+  closeInlineFlows();
+  showPurchaseForm.value = false;
+  showCardForm.value = true;
+}
+function cancelCardForm() {
+  showCardForm.value = false;
+  resetCardForm();
+}
+function openPurchaseForm() {
+  closeInlineFlows();
+  showCardForm.value = false;
+  purchase.cardId = contextualCardId.value || purchase.cardId;
+  showPurchaseForm.value = true;
+}
+function cancelPurchaseForm() {
+  showPurchaseForm.value = false;
+  resetPurchaseForm();
+}
+function cancelCardEdit() {
+  editingCardId.value = '';
+  Object.assign(editCard, {
+    name: '',
+    issuer: '',
+    last4: '',
+    creditLimit: '',
+    closingDay: 1,
+    dueDay: 1,
+  });
+}
+function cancelPurchaseEdit() {
+  editingPurchaseId.value = '';
+  originalPurchase.value = null;
+  Object.assign(editPurchase, {
+    cardId: '',
+    categoryId: '',
+    description: '',
+    notes: '',
+    purchaseDate: '',
+    totalAmount: '',
+    installmentCount: 1,
+  });
+}
 function startCardEdit(item: PublicFinancialCreditCard) {
+  showCardForm.value = false;
+  showPurchaseForm.value = false;
+  cancelPurchaseEdit();
+  cancelInvoicePayment();
   editingCardId.value = item.id;
   Object.assign(editCard, {
     name: item.name,
@@ -235,6 +328,10 @@ function saveCardEdit() {
   });
 }
 function startPurchaseEdit(item: (typeof purchases.value)[number]) {
+  showCardForm.value = false;
+  showPurchaseForm.value = false;
+  cancelCardEdit();
+  cancelInvoicePayment();
   editingPurchaseId.value = item.id;
   originalPurchase.value = item;
   Object.assign(editPurchase, {
@@ -270,8 +367,7 @@ function savePurchaseEdit() {
   if (installmentCount !== original.installmentCount) delta.installmentCount = installmentCount;
 
   if (!Object.keys(delta).length) {
-    editingPurchaseId.value = '';
-    originalPurchase.value = null;
+    cancelPurchaseEdit();
     return;
   }
   return patch(`/card-purchases/${editingPurchaseId.value}`, delta);
@@ -279,18 +375,141 @@ function savePurchaseEdit() {
 async function toggle(item: PublicFinancialCreditCard) {
   await mutate(`/cards/${item.id}/${item.archivedAt ? 'restore' : 'archive'}`);
 }
-function pay(invoice: PublicCardInvoice) {
+function startInvoicePayment(invoice: PublicCardInvoice) {
+  closeInlineFlows();
   const data = payment[invoice.id] ?? {
     accountId: '',
     paymentDate: new Date().toISOString().slice(0, 10),
   };
   payment[invoice.id] = data;
-  return mutate(`/card-invoices/${invoice.id}/pay`, data);
+  payingInvoiceId.value = invoice.id;
+}
+function cancelInvoicePayment() {
+  payingInvoiceId.value = '';
+}
+async function pay(invoice: PublicCardInvoice) {
+  const data = payment[invoice.id] ?? {
+    accountId: '',
+    paymentDate: new Date().toISOString().slice(0, 10),
+  };
+  payment[invoice.id] = data;
+  const ok = await mutate(`/card-invoices/${invoice.id}/pay`, data);
+  if (ok) cancelInvoicePayment();
+}
+function openPurchaseDelete(item: (typeof purchases.value)[number]) {
+  closeInlineFlows();
+  deletePurchaseError.value = '';
+  deletingPurchase.value = item;
+}
+function cancelPurchaseDelete() {
+  deletePurchaseError.value = '';
+  deletingPurchase.value = null;
+}
+async function confirmPurchaseDelete() {
+  if (!deletingPurchase.value || deletingPurchaseBusy.value) return;
+  deletingPurchaseBusy.value = true;
+  deletePurchaseError.value = '';
+  const fallback = 'Não foi possível excluir a compra.';
+  try {
+    const response = await authenticatedFetch(`/card-purchases/${deletingPurchase.value.id}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(safeApiErrorMessage(body, fallback));
+    }
+    deletingPurchase.value = null;
+    await load();
+  } catch (e) {
+    deletePurchaseError.value = e instanceof Error ? e.message : fallback;
+  } finally {
+    deletingPurchaseBusy.value = false;
+  }
 }
 const money = (v: string | null) =>
   v
     ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(v))
     : '—';
+function purchaseInstallmentSummary(item: (typeof purchases.value)[number]) {
+  if (item.installmentCount <= 1) return 'À vista';
+  const firstAmount = item.installments[0]?.amount;
+  return firstAmount
+    ? `${item.installmentCount}x de ${money(firstAmount)}`
+    : `${item.installmentCount}x`;
+}
+function shortDate(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return value;
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  })
+    .format(new Date(Date.UTC(year, month - 1, day)))
+    .replace('.', '');
+}
+function purchaseMeta(item: (typeof purchases.value)[number]) {
+  return [
+    shortDate(item.purchaseDate),
+    cardNameById.value.get(item.cardId) ?? 'Cartão não encontrado',
+    purchaseInstallmentSummary(item),
+  ].join(' · ');
+}
+function categoryFor(categoryId: string) {
+  return categoryById.value.get(categoryId) ?? null;
+}
+const invoiceStatusLabel: Record<PublicCardInvoice['status'], string> = {
+  OPEN: 'Aberta',
+  CLOSED: 'Fechada',
+  PAID: 'Paga',
+};
+function invoiceTitle(referenceMonth: string) {
+  const [year, month] = referenceMonth.split('-').map(Number);
+  if (!year || !month) return referenceMonth;
+  const label = new Intl.DateTimeFormat('pt-BR', {
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+    .format(new Date(Date.UTC(year, month - 1, 1)))
+    .replace('.', '');
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+function invoiceMeta(invoice: PublicCardInvoice) {
+  const count = invoice.installments.length;
+  return [
+    cardNameById.value.get(invoice.cardId) ?? 'Cartão não encontrado',
+    `vence ${shortDate(invoice.dueDate)}`,
+    invoiceStatusLabel[invoice.status],
+    count === 1 ? '1 lançamento' : `${count} lançamentos`,
+  ].join(' · ');
+}
+function toggleInvoiceDetail(invoice: PublicCardInvoice) {
+  if (!invoice.installments.length) return;
+  expandedInvoiceId.value = expandedInvoiceId.value === invoice.id ? '' : invoice.id;
+}
+function installmentDetailLabel(installment: PublicCardInvoice['installments'][number]) {
+  const position =
+    installment.installmentCount > 1
+      ? `${installment.installmentNumber}/${installment.installmentCount}`
+      : 'À vista';
+  return `${installment.purchaseDescription} · ${position}`;
+}
+function invoiceActionsFor(invoice: PublicCardInvoice): KebabMenuAction[] {
+  if (invoice.status === 'OPEN')
+    return [
+      {
+        label: 'Fechar fatura',
+        onSelect: () => {
+          expandedInvoiceId.value = '';
+          mutate(`/card-invoices/${invoice.id}/close`);
+        },
+      },
+    ];
+  if (invoice.status === 'CLOSED')
+    return [{ label: 'Pagar fatura', onSelect: () => startInvoicePayment(invoice) }];
+  return [];
+}
 onMounted(load);
 </script>
 <template>
@@ -305,7 +524,13 @@ onMounted(load);
     </p>
     <p v-if="loading">Carregando cartões e faturas…</p>
     <template v-else
-      ><section class="panel">
+      ><div class="section-toolbar">
+        <button type="button" @click="openCardForm">
+          <span class="material-icons" aria-hidden="true">add</span>
+          Novo cartão
+        </button>
+      </div>
+      <section v-if="showCardForm" class="panel form-panel">
         <h2>Novo cartão</h2>
         <form @submit.prevent="createCard">
           <div class="grid">
@@ -338,13 +563,18 @@ onMounted(load);
                 required
             /></label>
           </div>
-          <button :disabled="saving">Cadastrar cartão</button>
+          <div class="actions">
+            <button :disabled="saving">Cadastrar cartão</button>
+            <button type="button" class="secondary" :disabled="saving" @click="cancelCardForm">
+              Cancelar
+            </button>
+          </div>
         </form>
       </section>
       <section>
         <h2>Seus cartões</h2>
         <p v-if="!cards.length" class="empty">
-          Nenhum cartão cadastrado. Cadastre o primeiro acima.
+          Nenhum cartão cadastrado. Use Novo cartão para cadastrar o primeiro.
         </p>
         <div class="tiles">
           <article v-for="item in cards" :key="item.id" :class="{ archived: item.archivedAt }">
@@ -398,12 +628,18 @@ onMounted(load);
                 não são recalculados.
               </p>
               <button :disabled="saving">Salvar edição</button>
-              <button type="button" class="secondary" @click="editingCardId = ''">Cancelar</button>
+              <button type="button" class="secondary" @click="cancelCardEdit">Cancelar</button>
             </form>
           </article>
         </div>
       </section>
-      <section class="panel">
+      <div class="section-toolbar">
+        <button type="button" @click="openPurchaseForm">
+          <span class="material-icons" aria-hidden="true">add</span>
+          Nova compra
+        </button>
+      </div>
+      <section v-if="showPurchaseForm" class="panel form-panel">
         <h2>Nova compra</h2>
         <form @submit.prevent="createPurchase">
           <div class="grid">
@@ -437,22 +673,42 @@ onMounted(load);
                 required /></label
             ><label class="wide">Notas<textarea v-model="purchase.notes" maxlength="2000" /></label>
           </div>
-          <button :disabled="saving">Lançar compra</button>
+          <div class="actions">
+            <button :disabled="saving">Lançar compra</button>
+            <button type="button" class="secondary" :disabled="saving" @click="cancelPurchaseForm">
+              Cancelar
+            </button>
+          </div>
         </form>
       </section>
       <section>
         <h2>Compras e parcelas futuras</h2>
         <p v-if="!purchases.length" class="empty">Nenhuma compra no cartão.</p>
-        <article v-for="x in purchases" :key="x.id">
-          <h3>{{ x.description }} · {{ money(x.totalAmount) }}</h3>
-          <p>{{ x.installmentCount }}x · compra em {{ x.purchaseDate }}</p>
-          <ul>
-            <li v-for="i in x.installments" :key="i.id">
-              {{ i.installmentNumber }}/{{ i.installmentCount }} — {{ money(i.amount) }} — fatura
-              {{ i.referenceMonth }}
-            </li>
-          </ul>
-          <button class="secondary" @click="startPurchaseEdit(x)">Editar compra</button>
+        <article
+          v-for="x in purchases"
+          :key="x.id"
+          class="purchase-card"
+        >
+          <div class="purchase-card__summary">
+            <div class="purchase-card__main">
+              <div class="purchase-card__title">
+                <CategoryIcon
+                  v-if="categoryFor(x.categoryId)"
+                  :icon="categoryFor(x.categoryId)?.icon"
+                  :color="categoryFor(x.categoryId)?.color"
+                  :label="categoryFor(x.categoryId)?.name"
+                />
+                <h3>{{ x.description }}</h3>
+              </div>
+              <strong>{{ money(x.totalAmount) }}</strong>
+            </div>
+            <p>{{ purchaseMeta(x) }}</p>
+          </div>
+          <KebabMenu
+            :label="`Ações da compra ${x.description}`"
+            :actions="purchaseActionsFor(x)"
+            @click.stop
+          />
           <form v-if="editingPurchaseId === x.id" @submit.prevent="savePurchaseEdit">
             <div class="grid">
               <label
@@ -490,7 +746,7 @@ onMounted(load);
             </div>
             <p>A edição só é concluída enquanto todas as faturas relacionadas estiverem abertas.</p>
             <button :disabled="saving">Salvar compra</button>
-            <button type="button" class="secondary" @click="editingPurchaseId = ''">
+            <button type="button" class="secondary" @click="cancelPurchaseEdit">
               Cancelar
             </button>
           </form>
@@ -502,19 +758,58 @@ onMounted(load);
       <section>
         <h2>Faturas</h2>
         <p v-if="!invoices.length" class="empty">Nenhuma fatura materializada.</p>
-        <article v-for="x in invoices" :key="x.id">
-          <span class="badge">{{ x.status }}</span>
-          <h3>{{ x.referenceMonth }} · {{ money(x.total) }}</h3>
-          <p>Fecha {{ x.closingDate }} · vence {{ x.dueDate }}</p>
-          <ul>
-            <li v-for="i in x.installments" :key="i.id">
-              {{ i.purchaseDescription }} — {{ money(i.amount) }}
-            </li>
-          </ul>
-          <button v-if="x.status === 'OPEN'" @click="mutate(`/card-invoices/${x.id}/close`)">
-            Fechar fatura
-          </button>
-          <div v-if="x.status === 'CLOSED'" class="pay">
+        <article v-for="x in invoices" :key="x.id" class="invoice-card">
+          <div
+            class="invoice-card__summary"
+            role="button"
+            tabindex="0"
+            :aria-expanded="expandedInvoiceId === x.id"
+            :aria-controls="x.installments.length ? `invoice-detail-${x.id}` : undefined"
+            @click="toggleInvoiceDetail(x)"
+            @keydown.enter.prevent="toggleInvoiceDetail(x)"
+            @keydown.space.prevent="toggleInvoiceDetail(x)"
+          >
+            <div class="invoice-card__main">
+              <h3>{{ invoiceTitle(x.referenceMonth) }}</h3>
+              <strong>{{ money(x.total) }}</strong>
+            </div>
+            <p>
+              {{ invoiceMeta(x) }}
+              <span
+                v-if="x.installments.length"
+                class="material-icons invoice-card__chevron"
+                aria-hidden="true"
+                >{{ expandedInvoiceId === x.id ? 'expand_less' : 'expand_more' }}</span
+              >
+            </p>
+          </div>
+          <KebabMenu
+            v-if="invoiceActionsFor(x).length"
+            :label="`Ações da fatura ${invoiceTitle(x.referenceMonth)}`"
+            :actions="invoiceActionsFor(x)"
+            @click.stop
+          />
+          <div
+            v-if="expandedInvoiceId === x.id && x.installments.length"
+            :id="`invoice-detail-${x.id}`"
+            class="invoice-detail"
+            role="region"
+            :aria-label="`Composição da fatura ${invoiceTitle(x.referenceMonth)}`"
+          >
+            <div v-for="i in x.installments" :key="i.id" class="invoice-detail__row">
+              <div class="invoice-detail__desc">
+                <CategoryIcon
+                  v-if="categoryFor(i.categoryId)"
+                  :icon="categoryFor(i.categoryId)?.icon"
+                  :color="categoryFor(i.categoryId)?.color"
+                  :label="categoryFor(i.categoryId)?.name"
+                />
+                <span>{{ installmentDetailLabel(i) }}</span>
+              </div>
+              <strong>{{ money(i.amount) }}</strong>
+            </div>
+          </div>
+          <div v-if="payingInvoiceId === x.id" class="pay" @click.stop>
             <p>
               <strong>O pagamento reduz o saldo da conta e não registra uma nova despesa.</strong>
             </p>
@@ -537,12 +832,17 @@ onMounted(load);
                   }}
                 </option>
               </select></label
-            ><label>Data<input v-model="payment[x.id]!.paymentDate" type="date" /></label
-            ><button :disabled="!payment[x.id]?.accountId" @click="pay(x)">
-              Pagar integralmente
-            </button>
+            ><label>Data<input v-model="payment[x.id]!.paymentDate" type="date" /></label>
+            <div class="actions">
+              <button :disabled="!payment[x.id]?.accountId" @click="pay(x)">
+                Pagar integralmente
+              </button>
+              <button type="button" class="secondary" @click="cancelInvoicePayment">
+                Cancelar
+              </button>
+            </div>
           </div>
-          <p v-if="x.status === 'PAID'">
+          <p v-if="x.status === 'PAID'" class="invoice-note">
             Paga em {{ x.payment?.paymentDate }} pela conta selecionada.
           </p>
         </article>
@@ -551,6 +851,18 @@ onMounted(load);
         </button>
       </section></template
     >
+    <ConfirmDialog
+      :open="!!deletingPurchase"
+      :title="`Excluir a compra ${deletingPurchase?.description ?? ''}?`"
+      :message="
+        deletePurchaseError ||
+        'Isso remove a compra e todas as suas parcelas das faturas abertas.'
+      "
+      confirm-label="Excluir"
+      :busy="deletingPurchaseBusy"
+      @confirm="confirmPurchaseDelete"
+      @cancel="cancelPurchaseDelete"
+    />
   </main>
 </template>
 <style scoped>
@@ -558,14 +870,35 @@ onMounted(load);
   width: min(100%, 75rem);
   padding: 1rem;
 }
+.section-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 1rem 0 0.5rem;
+}
+.section-toolbar button,
+.actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
 .panel,
 article,
 .empty {
   background: var(--color-surface);
-  border-radius: 1rem;
+  border-radius: 0.75rem;
   padding: 1.25rem;
   margin: 1rem 0;
   box-shadow: var(--shadow-surface);
+}
+.form-panel {
+  margin-top: 0.5rem;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 0.85rem;
 }
 .grid,
 .tiles {
@@ -592,6 +925,134 @@ article,
 }
 .tile-info h3 {
   margin: 0;
+}
+.purchase-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+}
+.purchase-card form {
+  flex-basis: 100%;
+  cursor: auto;
+}
+.purchase-card__summary {
+  min-width: 0;
+  flex: 1;
+}
+.purchase-card__main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.purchase-card__title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.purchase-card__title :deep(.category-icon) {
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 0.4rem;
+}
+.purchase-card__title :deep(.material-icons) {
+  font-size: 0.95rem;
+}
+.purchase-card__main h3,
+.purchase-card__summary p {
+  margin: 0;
+}
+.purchase-card__main h3 {
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.purchase-card__main strong {
+  white-space: nowrap;
+}
+.purchase-card__summary p {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+.invoice-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+}
+.invoice-card__summary {
+  min-width: 0;
+  flex: 1;
+  cursor: pointer;
+  border-radius: 0.5rem;
+}
+.invoice-card__summary:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.invoice-card__chevron {
+  vertical-align: middle;
+  font-size: 1.1rem;
+  color: var(--color-accent);
+}
+.invoice-detail {
+  flex-basis: 100%;
+  display: grid;
+  gap: 0.4rem;
+  border-top: 1px solid var(--color-border);
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+}
+.invoice-detail__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+.invoice-detail__desc {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  overflow-wrap: anywhere;
+}
+.invoice-detail__row strong {
+  white-space: nowrap;
+}
+.invoice-card__main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.invoice-card__main h3,
+.invoice-card__summary p,
+.invoice-note {
+  margin: 0;
+}
+.invoice-card__main h3 {
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+.invoice-card__main strong {
+  white-space: nowrap;
+}
+.invoice-card__summary p,
+.invoice-note {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+.invoice-card .pay {
+  flex-basis: 100%;
 }
 .badge {
   font-weight: 700;
@@ -623,6 +1084,20 @@ textarea {
   }
   .grid {
     grid-template-columns: 1fr;
+  }
+  .purchase-card {
+    padding: 0.75rem;
+  }
+  .purchase-card,
+  .purchase-card__main,
+  .invoice-card,
+  .invoice-card__main {
+    align-items: stretch;
+  }
+  .purchase-card__main,
+  .invoice-card__main {
+    flex-direction: column;
+    gap: 0.15rem;
   }
 }
 </style>

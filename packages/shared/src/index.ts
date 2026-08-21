@@ -752,7 +752,9 @@ export interface PublicCardInvoice {
   closedAt: string | null;
   paidAt: string | null;
   total: string;
-  installments: Array<PublicCardInstallment & { purchaseDescription: string }>;
+  installments: Array<
+    PublicCardInstallment & { purchaseId: string; purchaseDescription: string; categoryId: string }
+  >;
   payment: PublicCardInvoicePayment | null;
   createdAt: string;
   updatedAt: string;

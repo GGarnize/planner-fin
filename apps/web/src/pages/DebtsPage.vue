@@ -9,6 +9,7 @@ import type {
   PublicFinancialDebt,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import { normalizeMoney } from '../transaction-template';
 const route = useRoute(),
   router = useRouter(),
   items = ref<PublicFinancialDebt[]>([]),
@@ -34,8 +35,8 @@ const form = reactive<any>({
       installmentNumber: 1,
       dueDate: '',
       principalAmount: '',
-      interestAmount: '0.00',
-      feeAmount: '0.00',
+      interestAmount: '',
+      feeAmount: '',
     },
   ],
   funding: { accountId: '', amount: '', fundingDate: '' },
@@ -95,17 +96,55 @@ function resize() {
         installmentNumber: i + 1,
         dueDate: '',
         principalAmount: '',
-        interestAmount: '0.00',
-        feeAmount: '0.00',
+        interestAmount: '',
+        feeAmount: '',
       },
   ).map((x: any, i: number) => ({ ...x, installmentNumber: i + 1 }));
+}
+function normalizeOptionalZeroMoney(value: string) {
+  return value.trim() ? normalizeMoney(value, { allowZero: true }) : '0.00';
+}
+function canonicalInstallments() {
+  return form.installments.map((item: any) => {
+    const principalAmount = normalizeMoney(item.principalAmount);
+    const interestAmount = normalizeOptionalZeroMoney(item.interestAmount);
+    const feeAmount = normalizeOptionalZeroMoney(item.feeAmount);
+    if (!principalAmount || !interestAmount || !feeAmount) return null;
+    return {
+      ...item,
+      principalAmount,
+      interestAmount,
+      feeAmount,
+    };
+  });
+}
+function canonicalDebtBody() {
+  const originalPrincipal = normalizeMoney(form.originalPrincipal);
+  if (!originalPrincipal)
+    throw new Error('Informe um valor principal válido, ex.: 1000 ou 1.000,50.');
+  const installments = canonicalInstallments();
+  if (installments.some((item: unknown) => !item))
+    throw new Error('Revise os valores das parcelas. Use exemplos como 1000, 1000,50 ou 0,00.');
+  const body: any = {
+    ...form,
+    originalPrincipal,
+    installmentCount: Number(form.installmentCount),
+    installments,
+    description: form.description,
+    notes: form.notes || null,
+  };
+  if (body.type === 'LOAN') {
+    const amount = normalizeMoney(form.funding.amount);
+    if (!amount) throw new Error('Informe um valor de funding válido, ex.: 1000 ou 1.000,50.');
+    body.funding = { ...form.funding, amount };
+  } else delete body.funding;
+  return body;
 }
 async function create() {
   busy.value = true;
   error.value = '';
   try {
-    const body: any = { ...form, description: form.description, notes: form.notes || null };
-    if (body.type !== 'LOAN') delete body.funding;
+    const body = canonicalDebtBody();
     await json('/debts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -143,8 +182,8 @@ function beginEdit() {
       installmentNumber: x.installmentNumber,
       dueDate: x.dueDate,
       principalAmount: x.principalAmount,
-      interestAmount: x.interestAmount,
-      feeAmount: x.feeAmount,
+      interestAmount: x.interestAmount === '0.00' ? '' : x.interestAmount,
+      feeAmount: x.feeAmount === '0.00' ? '' : x.feeAmount,
     })),
     funding: d.funding
       ? {
@@ -168,14 +207,15 @@ async function saveEdit() {
       notes: form.notes || null,
     };
     if (!detail.value.payments.length) {
+      const aggregate = canonicalDebtBody();
       Object.assign(body, {
-        type: form.type,
-        originalPrincipal: form.originalPrincipal,
-        startDate: form.startDate,
-        installmentCount: form.installmentCount,
-        installments: form.installments,
+        type: aggregate.type,
+        originalPrincipal: aggregate.originalPrincipal,
+        startDate: aggregate.startDate,
+        installmentCount: aggregate.installmentCount,
+        installments: aggregate.installments,
       });
-      if (form.type === 'LOAN') body.funding = form.funding;
+      if (aggregate.type === 'LOAN') body.funding = aggregate.funding;
     }
     detail.value = await json(`/debts/${detail.value.id}`, {
       method: 'PATCH',
@@ -251,7 +291,7 @@ onMounted(async () => {
               v-model="form.originalPrincipal"
               inputmode="decimal"
               required
-              placeholder="1000.00" /></label
+              placeholder="1.000,50" /></label
           ><label>Data inicial<input v-model="form.startDate" type="date" required /></label
           ><label
             >Quantidade<input
@@ -279,24 +319,34 @@ onMounted(async () => {
                   }}
                 </option>
               </select></label
-            ><label>Valor<input v-model="form.funding.amount" inputmode="decimal" required /></label
+            ><label
+              >Valor<input
+                v-model="form.funding.amount"
+                inputmode="decimal"
+                placeholder="0,00"
+                required /></label
             ><label>Data<input v-model="form.funding.fundingDate" type="date" required /></label>
           </div>
         </fieldset>
         <h3>Parcelas</h3>
         <div v-for="x in form.installments" :key="x.installmentNumber" class="installment">
-          <b>Parcela {{ x.installmentNumber }}</b
-          ><input v-model="x.dueDate" type="date" aria-label="Vencimento" required /><input
-            v-model="x.principalAmount"
-            inputmode="decimal"
-            placeholder="Amortização"
-            required
-          /><input
-            v-model="x.interestAmount"
-            inputmode="decimal"
-            placeholder="Juros"
-            required
-          /><input v-model="x.feeAmount" inputmode="decimal" placeholder="Tarifa" required />
+          <b>Parcela {{ x.installmentNumber }}</b>
+          <label class="installment-field"
+            >Vencimento<input v-model="x.dueDate" type="date" required
+          /></label>
+          <label class="installment-field"
+            >Amortização<input
+              v-model="x.principalAmount"
+              inputmode="decimal"
+              placeholder="0,00"
+              required
+          /></label>
+          <label class="installment-field"
+            >Juros<input v-model="x.interestAmount" inputmode="decimal" placeholder="0,00"
+          /></label>
+          <label class="installment-field"
+            >Tarifa<input v-model="x.feeAmount" inputmode="decimal" placeholder="0,00"
+          /></label>
         </div>
         <p v-if="form.type === 'FINANCING'" class="notice">
           O ativo ou bem financiado e sua despesa não são reconhecidos automaticamente.
@@ -428,7 +478,13 @@ onMounted(async () => {
                   <option value="OTHER">Outra</option>
                 </select></label
               >
-              <label>Valor principal<input v-model="form.originalPrincipal" required /></label>
+              <label
+                >Valor principal<input
+                  v-model="form.originalPrincipal"
+                  inputmode="decimal"
+                  placeholder="1.000,50"
+                  required
+              /></label>
               <label>Data inicial<input v-model="form.startDate" type="date" required /></label>
               <label
                 >Quantidade<input
@@ -446,7 +502,13 @@ onMounted(async () => {
                 <option value="">Conta</option>
                 <option v-for="a in activeAccounts" :key="a.id" :value="a.id">{{ a.name }}</option>
               </select>
-              <input v-model="form.funding.amount" aria-label="Valor do funding" required />
+              <input
+                v-model="form.funding.amount"
+                aria-label="Valor do funding"
+                inputmode="decimal"
+                placeholder="0,00"
+                required
+              />
               <input
                 v-model="form.funding.fundingDate"
                 aria-label="Data do funding"
@@ -455,27 +517,23 @@ onMounted(async () => {
               />
             </fieldset>
             <div v-for="x in form.installments" :key="x.installmentNumber" class="installment">
-              <b>Parcela {{ x.installmentNumber }}</b
-              ><input
-                v-model="x.dueDate"
-                type="date"
-                aria-label="Vencimento"
-                required /><input
-                v-model="x.principalAmount"
-                aria-label="Amortização"
-                placeholder="Amortização"
-                required
-              /><input
-                v-model="x.interestAmount"
-                aria-label="Juros"
-                placeholder="Juros"
-                required
-              /><input
-                v-model="x.feeAmount"
-                aria-label="Tarifa"
-                placeholder="Tarifa"
-                required
-              />
+              <b>Parcela {{ x.installmentNumber }}</b>
+              <label class="installment-field"
+                >Vencimento<input v-model="x.dueDate" type="date" required
+              /></label>
+              <label class="installment-field"
+                >Amortização<input
+                  v-model="x.principalAmount"
+                  inputmode="decimal"
+                  placeholder="0,00"
+                  required
+              /></label>
+              <label class="installment-field"
+                >Juros<input v-model="x.interestAmount" inputmode="decimal" placeholder="0,00"
+              /></label>
+              <label class="installment-field"
+                >Tarifa<input v-model="x.feeAmount" inputmode="decimal" placeholder="0,00"
+              /></label>
             </div>
           </template>
           <p v-else class="notice">
@@ -539,7 +597,7 @@ onMounted(async () => {
 .debts {
   width: min(1100px, 100%);
   padding: 2rem;
-  color: #172033;
+  color: var(--color-text);
 }
 header,
 .debt,
@@ -550,18 +608,19 @@ header,
   gap: 1rem;
 }
 .eyebrow {
-  color: #155eef;
+  color: var(--color-accent);
   font-weight: 700;
   font-size: 0.75rem;
 }
 .panel,
 .debt,
 .empty {
-  background: white;
-  border: 1px solid #dbe3ef;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 14px;
   padding: 1.25rem;
   margin: 1rem 0;
+  box-shadow: var(--shadow-surface);
 }
 .grid,
 .metrics {
@@ -571,9 +630,18 @@ header,
 }
 .installment {
   display: grid;
-  grid-template-columns: 45px repeat(4, 1fr);
+  grid-template-columns: 5rem repeat(4, minmax(0, 1fr));
+  align-items: end;
   gap: 0.5rem;
   margin: 0.5rem 0;
+}
+.installment-field {
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+.installment-field input {
+  width: 100%;
 }
 .filters {
   display: flex;
@@ -585,8 +653,10 @@ select,
 textarea {
   font: inherit;
   padding: 0.75rem;
-  border: 1px solid #94a3b8;
+  border: 1px solid var(--color-border);
   border-radius: 0.5rem;
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 .debt strong,
 .metrics strong {
@@ -596,22 +666,25 @@ textarea {
 .badge {
   padding: 0.3rem 0.6rem;
   border-radius: 99px;
-  background: #fff0c2;
+  background: var(--color-warning-container);
+  color: var(--color-warning);
 }
 .badge.PAID_OFF {
-  background: #d7f5df;
+  background: var(--color-success-container);
+  color: var(--color-success);
 }
 .secondary {
-  background: #e8efff;
-  color: #1549a3;
+  background: var(--color-accent-container);
+  color: var(--color-on-accent-container);
 }
 .notice {
-  background: #eef4ff;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
   padding: 1rem;
   border-radius: 0.5rem;
 }
 .schedule {
-  border-top: 1px solid #e5eaf1;
+  border-top: 1px solid var(--color-border);
   padding: 1rem 0;
   flex-wrap: wrap;
 }
@@ -622,13 +695,13 @@ textarea {
 }
 .link {
   background: none;
-  color: #b42318;
+  color: var(--color-error);
   text-decoration: underline;
   padding: 0;
 }
 a {
   cursor: pointer;
-  color: #1549a3;
+  color: var(--color-accent);
 }
 @media (max-width: 650px) {
   header,
