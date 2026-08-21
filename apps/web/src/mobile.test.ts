@@ -43,6 +43,16 @@ describe('runtime Android', () => {
     expect(isAndroidNative()).toBe(true);
   });
 
+  it('mantem accept restrito no browser e inclui MIME generico somente no Android', async () => {
+    const { importStatementFileAccept } = await import('./mobile');
+    expect(importStatementFileAccept()).toBe('.ofx,.csv,text/csv,application/x-ofx');
+    mocked.native = true;
+    mocked.platform = 'android';
+    expect(importStatementFileAccept()).toBe(
+      '.ofx,.csv,text/csv,application/x-ofx,text/plain,application/octet-stream',
+    );
+  });
+
   it('não instala listener de Back no browser', async () => {
     const { installAndroidBackHandler } = await import('./mobile');
     installAndroidBackHandler({} as never);

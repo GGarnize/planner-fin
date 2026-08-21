@@ -12,6 +12,11 @@ export function isAndroidNative(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
 }
 
+export function importStatementFileAccept(): string {
+  if (!isAndroidNative()) return '.ofx,.csv,text/csv,application/x-ofx';
+  return '.ofx,.csv,text/csv,application/x-ofx,text/plain,application/octet-stream';
+}
+
 export async function flushAndroidCookies(): Promise<void> {
   if (!isAndroidNative()) return;
   await plannerFinCookies.flush();

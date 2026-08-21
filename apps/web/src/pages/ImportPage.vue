@@ -12,6 +12,7 @@ import type {
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 import { importApi, ImportApiError, type ImportFilter } from '../import-api';
+import { importStatementFileAccept } from '../mobile';
 
 const route = useRoute();
 const router = useRouter();
@@ -33,6 +34,7 @@ const cancelOpen = ref(false);
 const editDialog = ref<HTMLElement | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 let confirmationKey: string | null = null;
+const statementFileAccept = importStatementFileAccept();
 
 const mapping = reactive({
   delimiter: ',',
@@ -404,7 +406,7 @@ onBeforeUnmount(() => {
           ref="fileInput"
           class="visually-hidden"
           type="file"
-          accept=".ofx,.csv,text/csv,application/x-ofx"
+          :accept="statementFileAccept"
           @change="chooseFile"
         />
         <button class="file-button secondary" @click="fileInput?.click()">
