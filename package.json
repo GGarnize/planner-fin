@@ -9,6 +9,7 @@
   },
   "packageManager": "pnpm@10.28.1",
   "scripts": {
+    "doctor": "node scripts/doctor.mjs",
     "dev": "pnpm --parallel --filter @planner-fin/api --filter @planner-fin/web dev",
     "dev:api": "pnpm --filter @planner-fin/api dev",
     "dev:web": "pnpm --filter @planner-fin/web dev",
@@ -29,7 +30,7 @@
     "format:check": "prettier --check .",
     "typecheck": "pnpm --filter @planner-fin/shared build && pnpm --filter @planner-fin/config build && pnpm -r typecheck",
     "test": "pnpm test:dx && pnpm --filter @planner-fin/shared build && pnpm -r test",
-    "test:dx": "node --test scripts/android/*.test.mjs apps/api/scripts/*.test.mjs apps/web/scripts/*.test.mjs",
+    "test:dx": "node --test scripts/doctor.test.mjs scripts/android/*.test.mjs apps/api/scripts/*.test.mjs apps/web/scripts/*.test.mjs",
     "test:unit": "pnpm --filter @planner-fin/shared build && pnpm -r test:unit",
     "test:e2e": "pnpm --filter @planner-fin/web test:e2e",
     "test:android:notifications": "node scripts/android/test-notifications.mjs",

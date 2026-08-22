@@ -1,5 +1,7 @@
 # Desenvolvimento local Android e celular
 
+> Primeira vez nesta máquina? Siga primeiro [Bootstrap do PlannerFin no Windows](WINDOWS-BOOTSTRAP.md).
+
 ## Comandos
 
 | Comando | Uso |
