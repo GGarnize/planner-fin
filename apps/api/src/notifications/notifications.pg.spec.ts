@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service';
+import { CardPurchasesService } from '../card-purchases/card-purchases.service';
 import { NotificationsService } from './notifications.service';
 
 const databaseUrl = process.env.SPEC022_DATABASE_URL;
@@ -16,6 +17,7 @@ const otherPackageName = 'com.plannerfin.notificationother';
 const keyA = '33333333-3333-4333-8333-333333333322';
 const keyB = '44444444-4444-4444-8444-444444444422';
 const accountId = '66666666-6666-4666-8666-666666666622';
+const cardId = '99999999-9999-4999-8999-999999999922';
 const expenseCategoryId = '77777777-7777-4777-8777-777777777722';
 const incomeCategoryId = '88888888-8888-4888-8888-888888888822';
 
@@ -42,14 +44,25 @@ async function assertSafeDatabase(prisma: PrismaClient) {
 }
 
 function service(prisma: PrismaClient) {
-  return new NotificationsService(prisma as unknown as PrismaService);
+  return new NotificationsService(
+    prisma as unknown as PrismaService,
+    new CardPurchasesService(prisma as unknown as PrismaService, { jwtSecret: 'secret' } as never),
+  );
 }
 
 async function seed(prisma: PrismaClient) {
-  await prisma.notificationIngestConfirmation.deleteMany({ where: { userId: { in: [userA, userB] } } });
+  await prisma.notificationIngestConfirmation.deleteMany({
+    where: { userId: { in: [userA, userB] } },
+  });
   await prisma.capturedNotification.deleteMany({ where: { userId: { in: [userA, userB] } } });
   await prisma.notificationDevice.deleteMany({ where: { userId: { in: [userA, userB] } } });
   await prisma.financialTransaction.deleteMany({ where: { userId: { in: [userA, userB] } } });
+  await prisma.cardInstallment.deleteMany({
+    where: { purchase: { userId: { in: [userA, userB] } } },
+  });
+  await prisma.cardInvoice.deleteMany({ where: { userId: { in: [userA, userB] } } });
+  await prisma.cardPurchase.deleteMany({ where: { userId: { in: [userA, userB] } } });
+  await prisma.financialCreditCard.deleteMany({ where: { userId: { in: [userA, userB] } } });
   await prisma.financialCategory.deleteMany({ where: { userId: { in: [userA, userB] } } });
   await prisma.financialAccount.deleteMany({ where: { userId: { in: [userA, userB] } } });
   await prisma.userPreferences.deleteMany({ where: { userId: { in: [userA, userB] } } });
@@ -120,6 +133,16 @@ async function seedAccountAndCategory(prisma: PrismaClient, userId: string) {
         type: 'INCOME',
       },
     ],
+  });
+  await prisma.financialCreditCard.create({
+    data: {
+      id: cardId,
+      userId,
+      name: 'Nubank Mastercard',
+      last4: '1234',
+      closingDay: 10,
+      dueDay: 17,
+    },
   });
 }
 
@@ -212,7 +235,11 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
       captureEnabled: true,
       monitoredPackages: [packageName],
     });
-    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
 
     await expect(
       svc.ingest(userA, keyA, {
@@ -276,7 +303,11 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
       captureEnabled: true,
       monitoredPackages: [packageName],
     });
-    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
 
     const list = await svc.listCaptured(userA, {});
     expect(list.data).toHaveLength(1);
@@ -323,7 +354,11 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
       captureEnabled: true,
       monitoredPackages: [packageName],
     });
-    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
     const [captured] = (await svc.listCaptured(userA, {})).data;
 
     const confirmDto = {
@@ -339,12 +374,133 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
 
     expect(confirmed.status).toBe('CONFIRMED');
     expect(confirmed.confirmedTransactionId).toBeTruthy();
+    expect(confirmed.confirmedCardPurchaseId).toBeNull();
     expect(confirmedAgain.confirmedTransactionId).toBe(confirmed.confirmedTransactionId);
     expect(
       await prisma.financialTransaction.count({
         where: { userId: userA, description: 'Padaria exemplo' },
       }),
     ).toBe(1);
+    expect(await prisma.cardPurchase.count({ where: { userId: userA } })).toBe(0);
+  });
+
+  it('confirma despesa no cartao criando exatamente uma compra parcelada', async () => {
+    const svc = service(prisma);
+    await seedAccountAndCategory(prisma, userA);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
+    const [captured] = (await svc.listCaptured(userA, {})).data;
+
+    const confirmed = await svc.confirm(userA, captured!.id, {
+      paymentSourceType: 'CARD',
+      cardId,
+      categoryId: expenseCategoryId,
+      type: 'EXPENSE',
+      amount: '42.90',
+      description: 'Padaria exemplo',
+      date: '2026-08-13',
+      installmentCount: 3,
+    });
+    const confirmedAgain = await svc.confirm(userA, captured!.id, {
+      paymentSourceType: 'CARD',
+      cardId,
+      categoryId: expenseCategoryId,
+      type: 'EXPENSE',
+      amount: '42.90',
+      description: 'Padaria exemplo',
+      date: '2026-08-13',
+      installmentCount: 3,
+    });
+
+    expect(confirmed.status).toBe('CONFIRMED');
+    expect(confirmed.confirmedTransactionId).toBeNull();
+    expect(confirmed.confirmedCardPurchaseId).toBeTruthy();
+    expect(confirmedAgain.confirmedCardPurchaseId).toBe(confirmed.confirmedCardPurchaseId);
+    expect(await prisma.financialTransaction.count({ where: { userId: userA } })).toBe(0);
+    expect(await prisma.cardPurchase.count({ where: { userId: userA } })).toBe(1);
+    expect(
+      await prisma.cardInstallment.count({
+        where: { purchaseId: confirmed.confirmedCardPurchaseId! },
+      }),
+    ).toBe(3);
+    expect(
+      await prisma.cardInvoice.count({
+        where: { userId: userA, cardId, referenceMonth: { in: ['2026-09', '2026-10', '2026-11'] } },
+      }),
+    ).toBe(3);
+  });
+
+  it('rejeita entrada com cartao no backend', async () => {
+    const svc = service(prisma);
+    await seedAccountAndCategory(prisma, userA);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
+    const [captured] = (await svc.listCaptured(userA, {})).data;
+
+    await expect(
+      svc.confirm(userA, captured!.id, {
+        paymentSourceType: 'CARD',
+        cardId,
+        categoryId: incomeCategoryId,
+        type: 'INCOME',
+        amount: '42.90',
+        description: 'Pix recebido',
+        date: '2026-08-13',
+        installmentCount: 1,
+      }),
+    ).rejects.toMatchObject({ response: { code: 'PAYMENT_SOURCE_TYPE_MISMATCH' } });
+    expect(await prisma.financialTransaction.count({ where: { userId: userA } })).toBe(0);
+    expect(await prisma.cardPurchase.count({ where: { userId: userA } })).toBe(0);
+  });
+
+  it('rejeita cartao arquivado ao confirmar notificacao', async () => {
+    const svc = service(prisma);
+    await seedAccountAndCategory(prisma, userA);
+    await prisma.financialCreditCard.update({
+      where: { id: cardId },
+      data: { archivedAt: new Date('2026-08-13T20:00:00.000Z') },
+    });
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
+    const [captured] = (await svc.listCaptured(userA, {})).data;
+
+    await expect(
+      svc.confirm(userA, captured!.id, {
+        paymentSourceType: 'CARD',
+        cardId,
+        categoryId: expenseCategoryId,
+        type: 'EXPENSE',
+        amount: '42.90',
+        description: 'Padaria exemplo',
+        date: '2026-08-13',
+        installmentCount: 1,
+      }),
+    ).rejects.toMatchObject({ response: { code: 'RELATED_RESOURCE_ARCHIVED' } });
+    expect(await prisma.cardPurchase.count({ where: { userId: userA } })).toBe(0);
   });
 
   it('confirmacoes concorrentes convergem para exatamente um lancamento', async () => {
@@ -355,7 +511,11 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
       captureEnabled: true,
       monitoredPackages: [packageName],
     });
-    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
     const [captured] = (await svc.listCaptured(userA, {})).data;
 
     const confirmDto = {
@@ -380,6 +540,42 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
     ).toBe(1);
   });
 
+  it('confirmacoes concorrentes com cartao convergem para exatamente uma compra', async () => {
+    const svc = service(prisma);
+    await seedAccountAndCategory(prisma, userA);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
+    const [captured] = (await svc.listCaptured(userA, {})).data;
+
+    const confirmDto = {
+      paymentSourceType: 'CARD' as const,
+      cardId,
+      categoryId: expenseCategoryId,
+      type: 'EXPENSE' as const,
+      amount: '42.90',
+      description: 'Padaria exemplo',
+      date: '2026-08-13',
+      installmentCount: 1,
+    };
+    const [first, second] = await Promise.all([
+      svc.confirm(userA, captured!.id, confirmDto),
+      svc.confirm(userA, captured!.id, confirmDto),
+    ]);
+
+    expect(first.confirmedCardPurchaseId).toBeTruthy();
+    expect(second.confirmedCardPurchaseId).toBe(first.confirmedCardPurchaseId);
+    expect(await prisma.cardPurchase.count({ where: { userId: userA } })).toBe(1);
+    expect(await prisma.financialTransaction.count({ where: { userId: userA } })).toBe(0);
+  });
+
   it('bloqueia confirmacao sem conta/categoria propria ou compativel', async () => {
     const svc = service(prisma);
     await seedAccountAndCategory(prisma, userA);
@@ -388,7 +584,11 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
       captureEnabled: true,
       monitoredPackages: [packageName],
     });
-    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
     const [captured] = (await svc.listCaptured(userA, {})).data;
 
     await expect(
@@ -422,7 +622,11 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
       captureEnabled: true,
       monitoredPackages: [packageName],
     });
-    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
     const [captured] = (await svc.listCaptured(userA, {})).data;
 
     const dismissed = await svc.dismiss(userA, captured!.id);
@@ -448,7 +652,11 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
       captureEnabled: true,
       monitoredPackages: [packageName],
     });
-    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
     const [captured] = (await svc.listCaptured(userA, {})).data;
 
     const marked = await svc.markNonFinancial(userA, captured!.id);
@@ -488,7 +696,9 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
     const result = await svc.purgeAllHistory(userA);
 
     expect(result).toEqual({ purgedCount: 1 });
-    expect(await prisma.capturedNotification.findUnique({ where: { id: confirmable!.id } })).not.toBeNull();
+    expect(
+      await prisma.capturedNotification.findUnique({ where: { id: confirmable!.id } }),
+    ).not.toBeNull();
     expect(await prisma.capturedNotification.findUnique({ where: { id: other!.id } })).toBeNull();
   });
 
@@ -499,7 +709,11 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
       captureEnabled: true,
       monitoredPackages: [packageName],
     });
-    await svc.ingest(userA, keyA, { deviceId, ownerBindingId: device.ownerBindingId, items: [item()] });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
     const [captured] = (await svc.listCaptured(userA, {})).data;
 
     expect((await svc.listCaptured(userB, {})).data).toEqual([]);

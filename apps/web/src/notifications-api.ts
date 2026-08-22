@@ -15,6 +15,7 @@ const messages: Record<string, string> = {
   CATEGORY_TYPE_MISMATCH: 'A categoria não corresponde à natureza do lançamento.',
   NOTIFICATION_ALREADY_CONFIRMED: 'Esta notificação já foi confirmada em um lançamento.',
   NOTIFICATION_ALREADY_DISMISSED: 'Esta notificação já foi descartada.',
+  PAYMENT_SOURCE_TYPE_MISMATCH: 'Entrada deve ser confirmada em uma conta.',
   RATE_LIMITED: 'Muitas tentativas. Aguarde um pouco e tente novamente.',
 };
 

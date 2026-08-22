@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsInt,
   IsIn,
   IsISO8601,
   IsOptional,
@@ -10,7 +11,9 @@ import {
   IsUUID,
   Length,
   Matches,
+  Max,
   MaxLength,
+  Min,
   Validate,
   ValidateNested,
 } from 'class-validator';
@@ -123,8 +126,17 @@ export class IngestCapturedNotificationsDto {
 }
 
 export class ConfirmCapturedNotificationDto {
+  @IsOptional()
+  @IsIn(['ACCOUNT', 'CARD'])
+  paymentSourceType?: 'ACCOUNT' | 'CARD';
+
+  @IsOptional()
   @IsUUID()
-  accountId!: string;
+  accountId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  cardId?: string;
 
   @IsUUID()
   categoryId!: string;
@@ -144,4 +156,11 @@ export class ConfirmCapturedNotificationDto {
   @IsString()
   @Validate(CivilDateConstraint)
   date!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(36)
+  installmentCount?: number;
 }

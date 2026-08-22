@@ -32,7 +32,13 @@ vi.mock('./notifications-api', () => ({
 vi.mock('./auth', () => ({ authenticatedFetch: mocks.fetch }));
 
 const account = { id: 'acc-1', name: 'Conta Corrente', archivedAt: null };
-const expenseCategory = { id: 'cat-expense', name: 'Alimentação', type: 'EXPENSE', archivedAt: null };
+const card = { id: 'card-1', name: 'Nubank Mastercard', last4: '1234', archivedAt: null };
+const expenseCategory = {
+  id: 'cat-expense',
+  name: 'Alimentação',
+  type: 'EXPENSE',
+  archivedAt: null,
+};
 const incomeCategory = { id: 'cat-income', name: 'Salário', type: 'INCOME', archivedAt: null };
 
 function notification(overrides: Partial<Record<string, unknown>> = {}) {
@@ -53,8 +59,10 @@ function notification(overrides: Partial<Record<string, unknown>> = {}) {
     classificationReasons: ['valor_detectado', 'termo_saida:compra de'],
     classifiedAt: '2026-08-13T19:31:05.000Z',
     accountId: null,
+    cardId: null,
     categoryId: null,
     confirmedTransactionId: null,
+    confirmedCardPurchaseId: null,
     confirmedAt: null,
     dismissedAt: null,
     createdAt: '2026-08-13T19:31:05.000Z',
@@ -72,9 +80,16 @@ beforeEach(() => {
   mocks.route.params = {};
   mocks.fetch.mockImplementation((path: string) =>
     Promise.resolve(
-      new Response(JSON.stringify(path === '/accounts' ? [account] : [expenseCategory, incomeCategory]), {
-        status: 200,
-      }),
+      new Response(
+        JSON.stringify(
+          path === '/accounts'
+            ? [account]
+            : path === '/cards'
+              ? { items: [card] }
+              : [expenseCategory, incomeCategory],
+        ),
+        { status: 200 },
+      ),
     ),
   );
 });
@@ -131,13 +146,15 @@ describe('NotificationsInboxPage — detalhe', () => {
 
   it('confirma somente após conta e categoria compatível serem escolhidas', async () => {
     mocks.get.mockResolvedValue(notification());
-    mocks.confirm.mockResolvedValue(notification({ status: 'CONFIRMED', confirmedTransactionId: 't1' }));
+    mocks.confirm.mockResolvedValue(
+      notification({ status: 'CONFIRMED', confirmedTransactionId: 't1' }),
+    );
     const wrapper = mountPage();
     await flushPromises();
 
     await wrapper.find('select').setValue('EXPENSE');
     const selects = wrapper.findAll('select');
-    await selects[1]!.setValue('acc-1');
+    await selects[1]!.setValue('account:acc-1');
     await selects[2]!.setValue('cat-expense');
     await flushPromises();
 
@@ -147,6 +164,7 @@ describe('NotificationsInboxPage — detalhe', () => {
     await flushPromises();
 
     expect(mocks.confirm).toHaveBeenCalledWith('n1', {
+      paymentSourceType: 'ACCOUNT',
       accountId: 'acc-1',
       categoryId: 'cat-expense',
       type: 'EXPENSE',
@@ -154,6 +172,49 @@ describe('NotificationsInboxPage — detalhe', () => {
       description: 'Compra aprovada',
       date: '2026-08-13',
     });
+  });
+
+  it('confirma despesa com cartao e parcelas sem enviar conta', async () => {
+    mocks.get.mockResolvedValue(notification());
+    mocks.confirm.mockResolvedValue(
+      notification({ status: 'CONFIRMED', confirmedCardPurchaseId: 'purchase-1' }),
+    );
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const selects = wrapper.findAll('select');
+    await selects[1]!.setValue('card:card-1');
+    await wrapper.get('input[type="number"]').setValue(3);
+    await selects[2]!.setValue('cat-expense');
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(mocks.confirm).toHaveBeenCalledWith('n1', {
+      paymentSourceType: 'CARD',
+      cardId: 'card-1',
+      installmentCount: 3,
+      categoryId: 'cat-expense',
+      type: 'EXPENSE',
+      amount: '42.90',
+      description: 'Compra aprovada',
+      date: '2026-08-13',
+    });
+    expect(mocks.confirm.mock.calls[0]![1]).not.toHaveProperty('accountId');
+  });
+
+  it('para entrada mostra somente conta e remove cartao selecionado', async () => {
+    mocks.get.mockResolvedValue(notification());
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.findAll('select')[1]!.setValue('card:card-1');
+    expect(wrapper.find('input[type="number"]').exists()).toBe(true);
+    await wrapper.findAll('select')[0]!.setValue('INCOME');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Conta');
+    expect(wrapper.text()).not.toContain('CartÃµes de crÃ©dito');
+    expect(wrapper.find('input[type="number"]').exists()).toBe(false);
   });
 
   it('descartar não confirma nem cria lançamento', async () => {

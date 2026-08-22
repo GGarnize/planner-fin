@@ -209,6 +209,22 @@ describe('DashboardPage', () => {
     expect(withoutPending.find('a[href="/notifications/inbox"]').exists()).toBe(false);
     withoutPending.unmount();
   });
+  it('mostra singular quando ha uma notificacao aguardando revisao', async () => {
+    vi.mocked(authenticatedFetch).mockReturnValue(
+      response({
+        ...data,
+        counters: { ...data.counters, pendingNotificationReviews: 1 },
+      }),
+    );
+    const wrapper = mount(DashboardPage, {
+      global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } },
+    });
+    await flushPromises();
+
+    expect(wrapper.get('a[href="/notifications/inbox"]').text()).toContain(
+      '1 movimentação aguardando revisão',
+    );
+  });
   it('mostra ausência de contas e limpa o snapshot anterior durante nova carga com erro', async () => {
     let reject!: () => void;
     const pending = new Promise<Response>((_, failure) => {

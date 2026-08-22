@@ -6,5 +6,6 @@ import { CardPurchasesService } from './card-purchases.service';
   imports: [AuthModule],
   controllers: [CardPurchasesController],
   providers: [CardPurchasesService],
+  exports: [CardPurchasesService],
 })
 export class CardPurchasesModule {}

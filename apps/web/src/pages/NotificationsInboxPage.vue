@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import type { PublicFinancialAccount, PublicFinancialCategory } from '@planner-fin/shared';
+import type {
+  PublicFinancialAccount,
+  PublicFinancialCategory,
+  PublicFinancialCreditCard,
+} from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 import { safeApiErrorMessage } from '../api-error';
 import { catalogLabelFor } from '../notification-app-catalog';
@@ -32,6 +36,7 @@ const submitting = ref(false);
 
 const accounts = ref<PublicFinancialAccount[]>([]);
 const categories = ref<PublicFinancialCategory[]>([]);
+const cards = ref<PublicFinancialCreditCard[]>([]);
 
 const id = computed(() => (Array.isArray(route.params.id) ? route.params.id[0] : route.params.id));
 
@@ -41,6 +46,8 @@ const form = reactive({
   description: '',
   date: '',
   accountId: '',
+  cardId: '',
+  installmentCount: 1,
   categoryId: '',
 });
 
@@ -74,7 +81,7 @@ async function loadDetail(notificationId: string) {
   detailError.value = '';
   actionError.value = '';
   try {
-    const [notification, accountList, categoryList] = await Promise.all([
+    const [notification, accountList, categoryList, cardList] = await Promise.all([
       notificationsApi.get(notificationId),
       accounts.value.length
         ? Promise.resolve(accounts.value)
@@ -82,15 +89,23 @@ async function loadDetail(notificationId: string) {
       categories.value.length
         ? Promise.resolve(categories.value)
         : fetchJson<PublicFinancialCategory[]>('/categories'),
+      cards.value.length
+        ? Promise.resolve(cards.value)
+        : fetchJson<{ items: PublicFinancialCreditCard[] }>('/cards').then(
+            (response) => response.items,
+          ),
     ]);
     detail.value = notification;
     accounts.value = accountList;
     categories.value = categoryList;
+    cards.value = cardList;
     form.type = notification.parsedType ?? 'EXPENSE';
     form.amount = notification.parsedAmount ?? '';
     form.description = notification.parsedDescription ?? '';
     form.date = notification.postedAt.slice(0, 10);
     form.accountId = notification.accountId ?? '';
+    form.cardId = notification.cardId ?? '';
+    form.installmentCount = 1;
     form.categoryId = notification.categoryId ?? '';
   } catch {
     detailError.value = 'Não foi possível carregar esta notificação agora.';
@@ -113,13 +128,39 @@ watch(
 );
 
 const activeAccounts = computed(() => accounts.value.filter((account) => !account.archivedAt));
+const activeCards = computed(() => cards.value.filter((card) => !card.archivedAt));
+const isCardPayment = computed(() => form.type === 'EXPENSE' && !!form.cardId);
+const paymentMethod = computed({
+  get: () =>
+    form.cardId ? `card:${form.cardId}` : form.accountId ? `account:${form.accountId}` : '',
+  set: (value: string) => {
+    if (value.startsWith('card:')) {
+      form.cardId = value.slice('card:'.length);
+      form.accountId = '';
+      return;
+    }
+    if (value.startsWith('account:')) {
+      form.accountId = value.slice('account:'.length);
+      form.cardId = '';
+      return;
+    }
+    form.accountId = '';
+    form.cardId = '';
+  },
+});
 const compatibleCategories = computed(() =>
   categories.value.filter((category) => !category.archivedAt && category.type === form.type),
 );
 const canConfirm = computed(
   () =>
-    !!form.accountId &&
+    (form.type === 'EXPENSE'
+      ? !!form.accountId || !!form.cardId
+      : !!form.accountId && !form.cardId) &&
     !!form.categoryId &&
+    (!isCardPayment.value ||
+      (Number.isInteger(form.installmentCount) &&
+        form.installmentCount >= 1 &&
+        form.installmentCount <= 36)) &&
     /^(0|[1-9][0-9]{0,16})\.[0-9]{1,2}$/.test(form.amount) &&
     !!form.date &&
     !!form.description.trim() &&
@@ -133,7 +174,10 @@ async function confirm() {
   actionError.value = '';
   try {
     detail.value = await notificationsApi.confirm(id.value, {
-      accountId: form.accountId,
+      paymentSourceType: isCardPayment.value ? 'CARD' : 'ACCOUNT',
+      ...(isCardPayment.value
+        ? { cardId: form.cardId, installmentCount: Number(form.installmentCount) }
+        : { accountId: form.accountId }),
       categoryId: form.categoryId,
       type: form.type,
       amount: form.amount,
@@ -177,6 +221,15 @@ async function markNonFinancial() {
 function backToList() {
   router.push('/notifications/inbox');
 }
+
+watch(
+  () => form.type,
+  () => {
+    if (form.type === 'INCOME') form.cardId = '';
+    if (!compatibleCategories.value.some((category) => category.id === form.categoryId))
+      form.categoryId = '';
+  },
+);
 </script>
 
 <template>
@@ -204,12 +257,13 @@ function backToList() {
               <strong>{{ appLabel(item.packageName) }}</strong>
               <span class="badge" :data-status="item.status">{{ STATUS_LABELS[item.status] }}</span>
             </div>
-            <p class="card-description">{{ item.parsedDescription || item.title || 'Sem descrição' }}</p>
+            <p class="card-description">
+              {{ item.parsedDescription || item.title || 'Sem descrição' }}
+            </p>
             <div class="card-bottom">
-              <span v-if="item.parsedAmount">{{
-                item.parsedType === 'INCOME' ? '+' : '-'
-              }}
-                R$ {{ item.parsedAmount }}</span>
+              <span v-if="item.parsedAmount"
+                >{{ item.parsedType === 'INCOME' ? '+' : '-' }} R$ {{ item.parsedAmount }}</span
+              >
               <time>{{ new Date(item.postedAt).toLocaleString('pt-BR') }}</time>
             </div>
           </router-link>
@@ -242,7 +296,9 @@ function backToList() {
         <section class="panel">
           <h2>Interpretação sugerida</h2>
           <p>
-            <span class="badge" :data-status="detail.status">{{ STATUS_LABELS[detail.status] }}</span>
+            <span class="badge" :data-status="detail.status">{{
+              STATUS_LABELS[detail.status]
+            }}</span>
           </p>
           <p v-if="detail.classificationReasons.length" class="fine-print">
             Motivos: {{ detail.classificationReasons.join(', ') }}
@@ -277,7 +333,27 @@ function backToList() {
                 Data
                 <input v-model="form.date" type="date" />
               </label>
-              <label>
+              <label v-if="form.type === 'EXPENSE'">
+                Pago com
+                <select v-model="paymentMethod">
+                  <option value="" disabled>Selecione</option>
+                  <optgroup label="Contas">
+                    <option
+                      v-for="account in activeAccounts"
+                      :key="account.id"
+                      :value="`account:${account.id}`"
+                    >
+                      {{ account.name }}
+                    </option>
+                  </optgroup>
+                  <optgroup v-if="activeCards.length" label="CartÃµes de crÃ©dito">
+                    <option v-for="card in activeCards" :key="card.id" :value="`card:${card.id}`">
+                      {{ card.name }}{{ card.last4 ? ` â€¢â€¢â€¢â€¢ ${card.last4}` : '' }}
+                    </option>
+                  </optgroup>
+                </select>
+              </label>
+              <label v-else>
                 Conta
                 <select v-model="form.accountId">
                   <option value="" disabled>Selecione</option>
@@ -286,11 +362,19 @@ function backToList() {
                   </option>
                 </select>
               </label>
+              <label v-if="isCardPayment">
+                Parcelas
+                <input v-model.number="form.installmentCount" type="number" min="1" max="36" />
+              </label>
               <label>
                 Categoria
                 <select v-model="form.categoryId">
                   <option value="" disabled>Selecione</option>
-                  <option v-for="category in compatibleCategories" :key="category.id" :value="category.id">
+                  <option
+                    v-for="category in compatibleCategories"
+                    :key="category.id"
+                    :value="category.id"
+                  >
                     {{ category.name }}
                   </option>
                 </select>
@@ -303,7 +387,12 @@ function backToList() {
                 <button type="button" class="secondary" :disabled="submitting" @click="dismiss">
                   Descartar
                 </button>
-                <button type="button" class="secondary" :disabled="submitting" @click="markNonFinancial">
+                <button
+                  type="button"
+                  class="secondary"
+                  :disabled="submitting"
+                  @click="markNonFinancial"
+                >
                   Marcar como não financeira
                 </button>
               </div>

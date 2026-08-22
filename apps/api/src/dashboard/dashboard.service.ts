@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import type { DashboardResponse } from '@planner-fin/shared';
 import { monthDateBounds, projectMonthlyExpenses, totals } from '../budgets/budget-finance';
 import { civilDate, civilString, currentCivilDate, installmentTotal } from '../debts/debt-finance';
+import { PENDING_NOTIFICATION_REVIEW_STATUSES } from '../notifications/notification-statuses';
 import { PrismaService } from '../prisma/prisma.service';
 import { addCivilDays, cashPosition, money, zero } from './dashboard-finance';
 
@@ -150,7 +151,7 @@ export class DashboardService {
         },
       }),
       tx.capturedNotification.count({
-        where: { userId, status: { in: ['UNCLASSIFIED', 'FINANCIAL_CANDIDATE', 'AMBIGUOUS'] } },
+        where: { userId, status: { in: [...PENDING_NOTIFICATION_REVIEW_STATUSES] } },
       }),
     ]);
 
