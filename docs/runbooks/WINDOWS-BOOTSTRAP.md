@@ -2,7 +2,7 @@
 
 Este runbook prepara uma máquina Windows nova para desenvolvimento Web/API, build Android, emulador e celular físico. Ele parte de uma instalação limpa, não usa produção como atalho e não pressupõe Docker, JDK, Android Studio ou SDK já configurados.
 
-`pnpm doctor` é estritamente diagnóstico: lê versões, caminhos e arquivos locais, mas não instala software, não inicia o Docker Desktop, não cria AVD, não altera variáveis, não aceita licenças, não abre firewall e não exige execução como administrador.
+`pnpm env:doctor` é estritamente diagnóstico: lê versões, caminhos e arquivos locais, mas não instala software, não inicia o Docker Desktop, não cria AVD, não altera variáveis, não aceita licenças, não abre firewall e não exige execução como administrador.
 
 ## 1. Pré-requisitos
 
@@ -35,14 +35,14 @@ Android Studio é o caminho mais simples, mas não é requisito conceitual: JDK 
    winget --version
    ```
 
-2. Instale somente o que `pnpm doctor` indicar nas seções seguintes. Os IDs abaixo foram confirmados com `winget search -e --id <ID>` em 2026-08-21.
+2. Instale somente o que `pnpm env:doctor` indicar nas seções seguintes. Os IDs abaixo foram confirmados com `winget search -e --id <ID>` em 2026-08-21.
 3. Feche e abra o terminal depois de instalações que alterem o `PATH`.
 4. No repositório:
 
    ```powershell
    Copy-Item .env.example .env
    pnpm install --frozen-lockfile
-   pnpm doctor
+   pnpm env:doctor
    pnpm db:up
    pnpm db:migrate
    pnpm dev:android
@@ -132,7 +132,7 @@ wsl --status
 systeminfo | Select-String 'Virtualization|Hyper-V'
 ```
 
-Se WSL 2, virtualização de firmware ou Hyper-V/WHPX estiverem indisponíveis, interrompa e peça autorização ao proprietário/administrador da máquina. Habilitar recursos pode exigir elevação e reboot; este projeto e `pnpm doctor` não fazem isso automaticamente.
+Se WSL 2, virtualização de firmware ou Hyper-V/WHPX estiverem indisponíveis, interrompa e peça autorização ao proprietário/administrador da máquina. Habilitar recursos pode exigir elevação e reboot; este projeto e `pnpm env:doctor` não fazem isso automaticamente.
 
 O banco local usa `postgres:16-alpine` e o Compose vincula a porta somente a `127.0.0.1:5432`. Não crie regra de firewall para `5432` e não encaminhe essa porta no roteador. A aplicação deve usar `localhost:5432`; produção nunca deve ser usada para contornar a ausência do Docker local.
 
@@ -329,6 +329,8 @@ Crie o arquivo ignorado pelo Git:
 Copy-Item .env.example .env
 ```
 
+O monorepo usa somente esse `.env` na raiz. Não crie `apps/api/.env` ou `apps/web/.env`: os aliases oficiais carregam a raiz antes de iniciar Prisma, API e Web. Variáveis já presentes no processo, como as injetadas pelo Railway, têm prioridade e nunca são sobrescritas pelo arquivo local.
+
 O `.env.example` contém somente valores sintéticos para desenvolvimento local:
 
 - `DATABASE_URL` aponta para PostgreSQL local;
@@ -344,11 +346,12 @@ Não versione `.env`, keystore, senha, token, certificado privado, `rootCA-key.p
 Com Docker Desktop já aberto e `docker info` respondendo:
 
 ```powershell
+Copy-Item .env.example .env
 pnpm db:up
 pnpm db:migrate
 ```
 
-O primeiro comando sobe apenas o serviço `postgres` do Compose, com bind de `5432` restrito ao loopback; o segundo aplica migrations versionadas. Para parar:
+Em um clone novo, essa sequência usa o `.env` da raiz sem exportar `DATABASE_URL` manualmente. `db:up` sobe apenas o serviço `postgres` do Compose, com bind de `5432` restrito ao loopback; `db:migrate` aplica migrations versionadas. Para parar:
 
 ```powershell
 pnpm db:down
@@ -356,10 +359,10 @@ pnpm db:down
 
 Não edite migrations já aplicadas, não exponha a porta 5432 e não aponte `DATABASE_URL` para PRD.
 
-## 14. `pnpm doctor`
+## 14. `pnpm env:doctor`
 
 ```powershell
-pnpm doctor
+pnpm env:doctor
 ```
 
 O relatório diferencia:
@@ -471,5 +474,5 @@ Se o Windows perguntar sobre firewall, não crie regra automaticamente. Avalie e
 Depois de qualquer correção, rode novamente:
 
 ```powershell
-pnpm doctor
+pnpm env:doctor
 ```

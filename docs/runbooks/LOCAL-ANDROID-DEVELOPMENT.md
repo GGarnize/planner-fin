@@ -2,6 +2,19 @@
 
 > Primeira vez nesta máquina? Siga primeiro [Bootstrap do PlannerFin no Windows](WINDOWS-BOOTSTRAP.md).
 
+## Configuração única de ambiente
+
+O desenvolvimento local usa somente o `.env` da raiz do monorepo. Não crie arquivos `.env` em `apps/api` ou `apps/web`; variáveis já existentes no processo têm prioridade sobre o arquivo local.
+
+Em um clone novo, a preparação de banco e a validação funcionam sem exportar `DATABASE_URL` manualmente:
+
+```powershell
+Copy-Item .env.example .env
+pnpm db:up
+pnpm db:migrate
+pnpm env:doctor
+```
+
 ## Comandos
 
 | Comando | Uso |

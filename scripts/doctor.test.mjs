@@ -9,6 +9,7 @@ import {
   diagnose,
   parseLocalPropertiesSdk,
   parseVersion,
+  renderReport,
 } from './doctor-lib.mjs';
 
 const ok = (output) => ({ ok: true, output });
@@ -73,6 +74,13 @@ function readyFacts() {
       'PLANNER_FIN_KEY_ALIAS',
       'PLANNER_FIN_KEY_PASSWORD',
     ],
+    rootEnv: {
+      path: '.env',
+      exists: true,
+      parseError: false,
+      databaseUrl: 'postgresql://local:local@localhost:5432/planner_fin_local',
+      databaseUrlSource: 'arquivo .env raiz',
+    },
   };
 }
 
@@ -194,6 +202,58 @@ test('readiness final diferencia trilhas', () => {
   assert.equal(report.readiness['Android emulator'].status, 'READY');
   assert.equal(report.readiness['Release signing'].status, 'READY');
   assert.equal(check(report, 'Database', 'Docker state').status, 'READY');
+  assert.equal(check(report, 'Database', 'DATABASE_URL').status, 'OK');
+});
+
+test('.env raiz ausente e sem DATABASE_URL deixa API/Database NOT READY', () => {
+  const facts = readyFacts();
+  facts.present.envFile = false;
+  facts.rootEnv = {
+    path: '.env',
+    exists: false,
+    parseError: false,
+    databaseUrl: undefined,
+    databaseUrlSource: null,
+  };
+
+  const report = diagnose(facts);
+
+  assert.equal(check(report, 'Project', '.env raiz').status, 'MISSING');
+  assert.equal(check(report, 'Database', 'DATABASE_URL').status, 'MISSING');
+  assert.equal(report.readiness['API/Database'].status, 'NOT READY');
+});
+
+test('.env raiz sem DATABASE_URL não produz falso READY com Docker disponível', () => {
+  const facts = readyFacts();
+  facts.rootEnv.databaseUrl = undefined;
+  facts.rootEnv.databaseUrlSource = null;
+
+  const report = diagnose(facts);
+
+  assert.equal(check(report, 'Database', 'Docker state').status, 'READY');
+  assert.equal(check(report, 'Database', 'DATABASE_URL').status, 'MISSING');
+  assert.equal(report.readiness['API/Database'].status, 'NOT READY');
+});
+
+test('DATABASE_URL inválida ou não PostgreSQL deixa API/Database NOT READY', () => {
+  for (const value of ['url-inválida', 'mysql://local:local@localhost:3306/planner_fin']) {
+    const facts = readyFacts();
+    facts.rootEnv.databaseUrl = value;
+    const report = diagnose(facts);
+    assert.equal(check(report, 'Database', 'DATABASE_URL').status, 'INVALID');
+    assert.equal(report.readiness['API/Database'].status, 'NOT READY');
+  }
+});
+
+test('doctor sanitiza DATABASE_URL e nunca imprime senha ou secrets', () => {
+  const facts = readyFacts();
+  facts.rootEnv.databaseUrl =
+    'postgresql://usuario:senha-super-secreta@localhost:5432/planner_fin?schema=public';
+
+  const output = renderReport(diagnose(facts));
+
+  assert.match(output, /\[OK\] DATABASE_URL — PostgreSQL local em localhost:5432/);
+  assert.doesNotMatch(output, /senha-super-secreta|usuario|planner_fin\?schema|JWT_SECRET/i);
 });
 
 test('parseia sdk.dir escapado do Gradle', () => {

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { inspectRootEnv } from './root-env.mjs';
 
 export const DOCTOR_REQUIREMENTS = Object.freeze({
   nodeMin: '22.0.0',
@@ -171,6 +172,11 @@ export function collectFacts(root, options = {}) {
         join(buildToolsRoot, platform === 'win32' ? 'apksigner.bat' : 'apksigner'),
       ]
     : [];
+  const rootEnv = inspectRootEnv(root, {
+    env,
+    exists: runtime.exists,
+    readFile: runtime.readFile,
+  });
 
   return {
     root,
@@ -243,6 +249,7 @@ export function collectFacts(root, options = {}) {
       'PLANNER_FIN_KEY_ALIAS',
       'PLANNER_FIN_KEY_PASSWORD',
     ].filter((name) => Boolean(env[name])),
+    rootEnv,
   };
 }
 
@@ -270,9 +277,50 @@ function readiness(status, detail) {
   return { status, detail };
 }
 
+function databaseUrlCheck(rootEnv) {
+  if (rootEnv.parseError) {
+    return {
+      label: 'DATABASE_URL',
+      status: 'INVALID',
+      detail: 'o arquivo .env raiz não pôde ser interpretado',
+    };
+  }
+  if (typeof rootEnv.databaseUrl !== 'string' || rootEnv.databaseUrl.trim() === '') {
+    return {
+      label: 'DATABASE_URL',
+      status: 'MISSING',
+      detail: 'não definida em process.env nem no arquivo .env raiz',
+    };
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(rootEnv.databaseUrl);
+  } catch {
+    return { label: 'DATABASE_URL', status: 'INVALID', detail: 'URL inválida' };
+  }
+
+  if (!['postgres:', 'postgresql:'].includes(parsed.protocol) || !parsed.hostname) {
+    return {
+      label: 'DATABASE_URL',
+      status: 'INVALID',
+      detail: 'deve usar PostgreSQL e informar host válido',
+    };
+  }
+
+  const host = parsed.hostname;
+  const port = parsed.port || '5432';
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(host.toLowerCase());
+  return {
+    label: 'DATABASE_URL',
+    status: 'OK',
+    detail: `PostgreSQL ${local ? 'local ' : ''}em ${host}:${port} (${rootEnv.databaseUrlSource})`,
+  };
+}
+
 export function diagnose(facts) {
   const groups = { Core: [], Database: [], Android: [], Environment: [], Project: [] };
-  const { commands, present, paths } = facts;
+  const { commands, present, paths, rootEnv } = facts;
 
   const git = add(groups, 'Core', toolCheck(commands.git, 'Git'));
   const node = add(groups, 'Core', toolCheck(commands.node, 'Node', { minimum: DOCTOR_REQUIREMENTS.nodeMin }));
@@ -311,6 +359,7 @@ export function diagnose(facts) {
         : engineStatus.detail,
   });
   add(groups, 'Database', { label: 'PostgreSQL', status: 'INFO', detail: 'postgres:16-alpine via docker-compose.yml; 127.0.0.1:5432' });
+  const databaseUrl = add(groups, 'Database', databaseUrlCheck(rootEnv));
 
   const java = add(groups, 'Android', toolCheck(commands.java, 'Java', { major: DOCTOR_REQUIREMENTS.jdkMajor }));
   const javac = add(groups, 'Android', toolCheck(commands.javac, 'javac', { major: DOCTOR_REQUIREMENTS.jdkMajor }));
@@ -383,19 +432,32 @@ export function diagnose(facts) {
 
   add(groups, 'Project', { label: 'pnpm-lock.yaml', status: present.lockfile ? 'OK' : 'MISSING', detail: paths.lockfile });
   add(groups, 'Project', { label: 'node_modules', status: present.nodeModules ? 'OK' : 'MISSING', detail: present.nodeModules ? paths.nodeModules : 'rode pnpm install --frozen-lockfile' });
-  add(groups, 'Project', { label: '.env local', status: present.envFile ? 'OK' : 'MISSING', detail: present.envFile ? paths.envFile : 'copie .env.example para .env e mantenha fora do Git' });
+  add(groups, 'Project', {
+    label: '.env raiz',
+    status: rootEnv.parseError ? 'INVALID' : rootEnv.exists ? 'OK' : 'MISSING',
+    detail: rootEnv.parseError
+      ? 'arquivo existe, mas não pôde ser interpretado'
+      : rootEnv.exists
+        ? paths.envFile
+        : 'copie .env.example para .env e mantenha fora do Git',
+  });
   add(groups, 'Project', { label: 'Gradle wrapper', status: present.gradleWrapper ? 'OK' : 'MISSING', detail: paths.gradleWrapper });
   add(groups, 'Project', { label: 'Certificado HTTPS local', status: present.certs ? 'OK' : 'WARN', detail: present.certs ? 'certificado e chave presentes em .tools/certs' : 'necessário para dev:android/dev:phone; gere localmente e não versione' });
 
   const coreReady = [git, node, pnpm, powershell].every((item) => item.status === 'OK') && present.lockfile && present.nodeModules;
-  const databaseReady = coreReady && dockerCli.status === 'OK' && engineStatus.status === 'OK' && compose.status === 'OK' && present.envFile;
+  const databaseReady =
+    coreReady &&
+    dockerCli.status === 'OK' &&
+    engineStatus.status === 'OK' &&
+    compose.status === 'OK' &&
+    databaseUrl.status === 'OK';
   const androidBuildReady = coreReady && java.status === 'OK' && javac.status === 'OK' && Boolean(paths.sdk) && present.platform && present.buildTools && present.gradleWrapper;
   const emulatorReady = androidBuildReady && adb.status === 'OK' && emulator.status === 'OK' && present.systemImage && avdFound && virtualizationState !== 'WARN';
   const signingReady = androidBuildReady && facts.releaseSigningVariables.length === 4 && present.releaseKeystore;
 
   const readinessSummary = {
     'Core/Web': readiness(coreReady ? 'READY' : 'NOT READY', coreReady ? 'dependências principais disponíveis' : 'corrija Core e execute pnpm install'),
-    'API/Database': readiness(databaseReady ? 'READY' : 'NOT READY', databaseReady ? 'Docker/PostgreSQL e configuração local disponíveis' : 'exige Core, .env e Docker engine/compose'),
+    'API/Database': readiness(databaseReady ? 'READY' : 'NOT READY', databaseReady ? 'Docker/PostgreSQL e configuração utilizável disponíveis' : 'exige Core, DATABASE_URL PostgreSQL válida e Docker engine/compose'),
     'Android build': readiness(androidBuildReady ? 'READY' : 'NOT READY', androidBuildReady ? 'JDK, SDK e build-tools disponíveis' : 'exige Core, JDK 21, SDK 36 e build-tools 35.0.0'),
     'Android emulator': readiness(emulatorReady ? 'READY' : 'NOT READY', emulatorReady ? `AVD ${DOCTOR_REQUIREMENTS.avd} disponível` : 'exige Android build, adb, emulator, system image, AVD e virtualização'),
     'Release signing': readiness(signingReady ? 'READY' : 'OPTIONAL / NOT CONFIGURED', signingReady ? 'quatro variáveis e keystore disponíveis' : 'configure separadamente somente quando for gerar release assinada'),
@@ -405,13 +467,18 @@ export function diagnose(facts) {
   if (!commands.pnpm.ok && commands.corepack.ok) nextSteps.push(`Ative o Corepack e o pnpm ${DOCTOR_REQUIREMENTS.pnpm}: corepack enable; corepack install --global pnpm@${DOCTOR_REQUIREMENTS.pnpm}`);
   else if (pnpm.status !== 'OK') nextSteps.push(`Instale/ative exatamente pnpm ${DOCTOR_REQUIREMENTS.pnpm}.`);
   if (!present.nodeModules && commands.pnpm.ok) nextSteps.push('Instale dependências: pnpm install --frozen-lockfile');
-  if (!present.envFile) nextSteps.push('Crie a configuração local: Copy-Item .env.example .env');
+  if (!rootEnv.exists && rootEnv.databaseUrlSource !== 'process.env') {
+    nextSteps.push('Crie a configuração local: Copy-Item .env.example .env');
+  }
+  if (databaseUrl.status !== 'OK') {
+    nextSteps.push('Defina uma DATABASE_URL PostgreSQL válida em process.env ou no .env raiz.');
+  }
   if (engineStatus.status !== 'OK') nextSteps.push('Instale ou abra manualmente o Docker Desktop e confirme com docker info.');
   if (java.status !== 'OK' || javac.status !== 'OK') nextSteps.push('Instale o Eclipse Temurin JDK 21 e configure JAVA_HOME.');
   if (!paths.sdk || !present.platform || !present.buildTools) nextSteps.push('Instale o Android SDK e os componentes exatos descritos no runbook.');
   if (!avdFound) nextSteps.push(`Crie manualmente o AVD ${DOCTOR_REQUIREMENTS.avd}.`);
   if (!present.certs) nextSteps.push('Antes de dev:android/dev:phone, gere e confie o certificado TLS local conforme o runbook.');
-  nextSteps.push('Rode novamente: pnpm doctor');
+  nextSteps.push('Rode novamente: pnpm env:doctor');
 
   return { groups, readiness: readinessSummary, nextSteps };
 }
