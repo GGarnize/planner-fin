@@ -17,6 +17,7 @@ export interface NotificationParseResult {
   parsedType?: 'INCOME' | 'EXPENSE';
   parsedAmount?: string;
   parsedDescription?: string;
+  parsedCardLast4?: string;
   reasons: string[];
 }
 

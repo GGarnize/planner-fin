@@ -417,6 +417,8 @@ Não há dúvida funcional, de privacidade ou de produto aberta. As incertezas e
 | 2026-08-13 | Retenção 30/90/30 dias e fila 7 dias/500/10 MiB | Solicitante via autorização para fechar SPEC | Minimização verificável |
 | 2026-08-13 | Catálogo + observação sem conteúdo; sem acesso amplo | Solicitante | `QUERY_ALL_PACKAGES` proibido na V1 |
 | 2026-08-13 | Auth não será contornada | SPEC-002/012 e solicitante | Falha de binding exige nova decisão |
+| 2026-08-22 | Parser genérico passa a reconhecer valor por contexto (`R$`, `valor de/valor:`, `compra ... de`) além de `R$ X,XX`, e a extrair `cardLast4` de "cartão terminado/finalizado em/final NNNN"; nenhum número solto (ex.: últimos 4 dígitos) é tratado como valor | Solicitante, após teste real via Telegram | Mantém o princípio determinístico/explicável/revisável; sem confirmação automática |
+| 2026-08-22 | Data sugerida no formulário de revisão usa o timezone local do dispositivo/browser a partir do `postedAt` (UTC armazenado); servidor continua em UTC | Solicitante, após bug observado em aparelho físico | Nunca usar `.toISOString().slice(0,10)` para essa apresentação |
 
 ## 25. Definition of Done específica e histórico
 
@@ -430,4 +432,5 @@ Não há dúvida funcional, de privacidade ou de produto aberta. As incertezas e
 | Data | Alteração | Motivo | Autor | Aprovador |
 |---|---|---|---|---|
 | 2026-08-13 | Criação e aprovação da SPEC-022 | Contrato documental solicitado | Equipe PlannerFin | Solicitante da tarefa |
+| 2026-08-22 | Correções pós-teste real em aparelho físico: parser genérico ganha extração de valor por contexto e de `cardLast4`; sugestão automática de cartão na revisão quando há exatamente um cartão ativo com o mesmo last4 (nunca com múltiplos matches ou cartão arquivado); data sugerida passa a usar timezone local; correção de mojibake no rótulo "Cartões de crédito"/"•••• NNNN" na revisão; hierarquia dos botões da revisão (`Confirmar lançamento` primário full-width, ações secundárias abaixo) | Achados de teste real (Telegram + APK LAN) | Equipe PlannerFin | Solicitante da tarefa |
 | 2026-08-22 | Revisão mínima da fonte de pagamento na revisão de notificações | Reconciliar SPEC-022 com o domínio de cartões da SPEC-008 | Codex | Tarefa atual do solicitante |

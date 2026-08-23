@@ -103,6 +103,8 @@ Para compatibilizar cross-site sem persistir token:
 5. o token CSRF fica apenas em memória e segue no header `X-CSRF-Token`; refresh/logout exigem cookie, header e `Origin: https://localhost` na allowlist;
 6. refresh gira a sessão/cookies como na SPEC-002; reuse detection, prazos, logout e erros permanecem iguais.
 
+Na implementação, a origem só recebe `SameSite=None; Secure` quando está presente simultaneamente em `API_CORS_ORIGINS` e `API_CROSS_SITE_ORIGINS` (ver `apps/api/src/config/env.ts`); fora dessa interseção o cookie continua `SameSite=Lax`. `API_CROSS_SITE_ORIGINS` tem default `https://localhost` quando ausente, mas todo ambiente (local, PRD) deve declarar `https://localhost` explicitamente em ambas as variáveis para que a sessão do app Android sobreviva a `am force-stop`/reabertura — sem isso, o cookie de refresh não é enviado como cross-site e o usuário volta à tela de login.
+
 O endpoint bootstrap não expõe sessão, não renova credenciais e deve ter resposta não cacheável e rate limit razoável. Um atacante cross-origin pode provocar a emissão, mas não ler o corpo por CORS e não satisfaz cookie/header/origem. A implementação é bloqueada antes do merge se Android WebView não aceitar/enviar os cookies neste fluxo; é proibido contornar com localStorage, desativar CSRF, remover HttpOnly/Secure ou abrir CORS. Nesse caso, revisão humana da SPEC deverá aprovar alternativa oficial segura.
 
 No resume não há serviço nem refresh permanente: a SPA é reaproveitada; a primeira operação que receber 401 executa bootstrap/refresh uma vez e repete uma vez, ou volta ao login.
@@ -808,3 +810,4 @@ Não há dúvida funcional aberta. A compatibilidade de cookies é uma condiçã
 | Data | Alteração | Motivo | Autor | Aprovador |
 |---|---|---|---|---|
 | 2026-08-10 | Criação aprovada da SPEC-012. | Fechar entrega Android interna do MVP com segurança e custo zero. | Codex Cloud | Tarefa atual |
+| 2026-08-22 | Documenta que `https://localhost` deve constar em `API_CORS_ORIGINS` e `API_CROSS_SITE_ORIGINS` (ambas) em todo ambiente, incluindo local, para a sessão Android sobreviver a reinício do app. | Investigação de bug real de sessão não persistindo em aparelho físico; config já cobria o caso por default, mas ficava implícita. | Equipe PlannerFin | Solicitante da tarefa |

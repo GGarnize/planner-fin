@@ -99,6 +99,7 @@ model CapturedNotification {
   parsedType              FinancialTransactionType?
   parsedAmount            Decimal?                   @db.Decimal(19, 2)
   parsedDescription       String?                    @db.VarChar(300)
+  parsedCardLast4         String?                    @db.VarChar(4)
   classificationReasons   Json                       @default("[]")
   classifiedAt            DateTime?                  @db.Timestamptz(3)
   accountId               String?                    @db.Uuid

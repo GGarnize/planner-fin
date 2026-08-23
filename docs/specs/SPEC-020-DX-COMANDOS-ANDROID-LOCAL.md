@@ -242,3 +242,4 @@ Nao ha duvidas abertas.
 | 2026-08-13 | Criacao aprovada da SPEC-020. | Registrar a unidade DX Android local. | Codex | Prompt da tarefa |
 | 2026-08-21 | Ampliacao aprovada para bootstrap Windows e doctor somente diagnostico. | Tornar primeira configuracao reproduzivel em maquina nova. | Codex | Prompt da tarefa |
 | 2026-08-22 | Ajuste aprovado do alias e carregamento do `.env` raiz. | Remover colisao do pnpm e falso READY de API/Database. | Codex | Prompt de fechamento do PR #109 |
+| 2026-08-22 | `env:doctor` passa a checar `https://localhost` em `API_CORS_ORIGINS` e `API_CROSS_SITE_ORIGINS`; `.env.example` e `dev-android.ps1` declaram `API_CROSS_SITE_ORIGINS` explicitamente. | Evitar regressao de sessao Android nao persistindo apos reinicio do app em novos ambientes. | Equipe PlannerFin | Solicitante da tarefa |

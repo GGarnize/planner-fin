@@ -1,8 +1,11 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { scan as scanLib, scanStorage as scanStorageLib } from './validate-android-lib.mjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const scan = (dir, pattern, matches = []) => scanLib(root, dir, pattern, matches);
+const scanStorage = (dir, pattern, matches = []) => scanStorageLib(root, dir, pattern, matches);
 const read = (path) => readFileSync(join(root, path), 'utf8');
 const fail = (message) => {
   throw new Error(`android:validate: ${message}`);
@@ -77,33 +80,25 @@ for (const pattern of ['*.apk', '*.aab', '*.jks', '*.keystore', 'artifacts/']) {
   if (!gitignore.includes(pattern)) fail(`.gitignore deve conter ${pattern}.`);
 }
 
-function scan(dir, pattern, matches = []) {
-  for (const entry of readdirSync(join(root, dir))) {
-    const path = join(dir, entry);
-    const full = join(root, path);
-    const stat = statSync(full);
-    if (stat.isDirectory()) scan(path, pattern, matches);
-    else if (pattern.test(readFileSync(full, 'utf8'))) matches.push(path);
-  }
-  return matches;
-}
-const forbiddenStorageMatches = scan('src', /sessionStorage|indexedDB/);
-if (forbiddenStorageMatches.length)
+const forbiddenStorageMatches = scanStorage('src', /sessionStorage|indexedDB/);
+if (forbiddenStorageMatches.length) {
   fail(`storage JS proibido encontrado em ${forbiddenStorageMatches.join(', ')}.`);
+}
 
 const visualCacheAllowlist = new Set(['src/appearance.ts', 'src/appearance.test.ts']);
-const localStorageMatches = scan('src', /localStorage/).filter(
+const localStorageMatches = scanStorage('src', /localStorage/).filter(
   (path) => !visualCacheAllowlist.has(path.replaceAll('\\', '/')),
 );
-if (localStorageMatches.length)
+if (localStorageMatches.length) {
   fail(`localStorage fora do cache visual aprovado: ${localStorageMatches.join(', ')}.`);
+}
 
 const networkSecurityMatches = scan('android/app/src', /certificates\s+src="user"/);
 const nonDebugTrustMatches = networkSecurityMatches.filter(
   (path) => !path.replaceAll('\\', '/').startsWith('android/app/src/debug/'),
 );
 if (nonDebugTrustMatches.length) {
-  fail(`CA de usuÃ¡rio sÃ³ pode ser confiada em debug: ${nonDebugTrustMatches.join(', ')}.`);
+  fail(`CA de usuário só pode ser confiada em debug: ${nonDebugTrustMatches.join(', ')}.`);
 }
 
 console.log(`Android validado: PlannerFin ${webPackage.version} (${versionCode}).`);

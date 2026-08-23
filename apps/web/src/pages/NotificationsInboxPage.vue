@@ -55,6 +55,15 @@ function appLabel(packageName: string) {
   return catalogLabelFor(packageName) ?? packageName;
 }
 
+/** new Date(iso) getters read the runtime's local timezone; toISOString() would revert to UTC. */
+function toLocalDateInputValue(iso: string): string {
+  const date = new Date(iso);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 async function loadList() {
   loading.value = true;
   error.value = '';
@@ -102,11 +111,17 @@ async function loadDetail(notificationId: string) {
     form.type = notification.parsedType ?? 'EXPENSE';
     form.amount = notification.parsedAmount ?? '';
     form.description = notification.parsedDescription ?? '';
-    form.date = notification.postedAt.slice(0, 10);
+    form.date = toLocalDateInputValue(notification.postedAt);
     form.accountId = notification.accountId ?? '';
     form.cardId = notification.cardId ?? '';
     form.installmentCount = 1;
     form.categoryId = notification.categoryId ?? '';
+    if (!form.accountId && !form.cardId && form.type === 'EXPENSE' && notification.parsedCardLast4) {
+      const matches = cardList.filter(
+        (candidate) => !candidate.archivedAt && candidate.last4 === notification.parsedCardLast4,
+      );
+      if (matches.length === 1) form.cardId = matches[0]!.id;
+    }
   } catch {
     detailError.value = 'Não foi possível carregar esta notificação agora.';
   } finally {
@@ -346,9 +361,9 @@ watch(
                       {{ account.name }}
                     </option>
                   </optgroup>
-                  <optgroup v-if="activeCards.length" label="CartÃµes de crÃ©dito">
+                  <optgroup v-if="activeCards.length" label="Cartões de crédito">
                     <option v-for="card in activeCards" :key="card.id" :value="`card:${card.id}`">
-                      {{ card.name }}{{ card.last4 ? ` â€¢â€¢â€¢â€¢ ${card.last4}` : '' }}
+                      {{ card.name }}{{ card.last4 ? ` •••• ${card.last4}` : '' }}
                     </option>
                   </optgroup>
                 </select>
@@ -382,19 +397,21 @@ watch(
 
               <div class="actions">
                 <button type="submit" class="primary" :disabled="!canConfirm || submitting">
-                  Confirmar
+                  Confirmar lançamento
                 </button>
-                <button type="button" class="secondary" :disabled="submitting" @click="dismiss">
-                  Descartar
-                </button>
-                <button
-                  type="button"
-                  class="secondary"
-                  :disabled="submitting"
-                  @click="markNonFinancial"
-                >
-                  Marcar como não financeira
-                </button>
+                <div class="secondary-actions">
+                  <button type="button" class="secondary" :disabled="submitting" @click="dismiss">
+                    Descartar
+                  </button>
+                  <button
+                    type="button"
+                    class="secondary"
+                    :disabled="submitting"
+                    @click="markNonFinancial"
+                  >
+                    Marcar como não financeira
+                  </button>
+                </div>
               </div>
             </form>
           </template>
@@ -507,8 +524,21 @@ watch(
 }
 .actions {
   display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.actions .primary {
+  width: 100%;
+  font-weight: 700;
+}
+.secondary-actions {
+  display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+.secondary-actions button {
+  flex: 1 1 auto;
 }
 button,
 .link-button {

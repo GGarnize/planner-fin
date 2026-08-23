@@ -319,6 +319,34 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
     expect(list.data[0]!.classificationReasons.length).toBeGreaterThan(0);
   });
 
+  it('extrai valor sem R$ e ultimos 4 digitos do cartao a partir do texto real do Telegram', async () => {
+    const svc = service(prisma);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [
+        {
+          ...item(),
+          title: null,
+          text: 'Compra aprovada no valor de 3500 no cartão terminado em 6654',
+        },
+      ],
+    });
+
+    const list = await svc.listCaptured(userA, {});
+    expect(list.data[0]).toMatchObject({
+      status: 'FINANCIAL_CANDIDATE',
+      parsedType: 'EXPENSE',
+      parsedAmount: '3500.00',
+      parsedCardLast4: '6654',
+    });
+  });
+
   it('lista "para revisar" exclui estados historicos por padrao, mas aceita filtro explicito', async () => {
     const svc = service(prisma);
     await seedAccountAndCategory(prisma, userA);

@@ -207,6 +207,7 @@ export interface PublicCapturedNotification {
   parsedType: 'INCOME' | 'EXPENSE' | null;
   parsedAmount: string | null;
   parsedDescription: string | null;
+  parsedCardLast4: string | null;
   classificationReasons: string[];
   classifiedAt: string | null;
   accountId: string | null;

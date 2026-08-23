@@ -257,6 +257,7 @@ export class NotificationsService {
                         ? new Prisma.Decimal(classification.parsedAmount)
                         : null,
                     parsedDescription: classification.parsedDescription ?? null,
+                    parsedCardLast4: classification.parsedCardLast4 ?? null,
                     classificationReasons: classification.reasons,
                     classifiedAt: new Date(),
                     expiresAt,
@@ -548,6 +549,7 @@ function toPublicCapturedNotification(row: CapturedNotification): PublicCaptured
     parsedType: row.parsedType,
     parsedAmount: row.parsedAmount?.toFixed(2) ?? null,
     parsedDescription: row.parsedDescription,
+    parsedCardLast4: row.parsedCardLast4,
     classificationReasons: toPackageList(row.classificationReasons),
     classifiedAt: row.classifiedAt?.toISOString() ?? null,
     accountId: row.accountId,
