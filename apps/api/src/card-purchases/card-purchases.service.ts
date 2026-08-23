@@ -46,64 +46,64 @@ export class CardPurchasesService {
     @Inject(API_CONFIG) private readonly config: ApiConfig,
   ) {}
   async create(userId: string, dto: CreateCardPurchaseDto) {
-    return this.prisma.$transaction(
-      async (tx) => {
-        const { card } = await this.relations(tx, userId, dto.cardId, dto.categoryId);
-        const amounts = this.amounts(dto.totalAmount, dto.installmentCount);
-        const start = await this.openCycle(
-          tx,
-          userId,
-          card.id,
-          initialCycle(dto.purchaseDate, card.closingDay),
-          card.closingDay,
-          card.dueDay,
-        );
-        const purchase = await tx.cardPurchase.create({
-          data: {
-            userId,
-            cardId: card.id,
-            categoryId: dto.categoryId,
-            description: dto.description,
-            notes: normalizeOptional(dto.notes),
-            purchaseDate: civilDate(dto.purchaseDate),
-            totalAmount: new Prisma.Decimal(dto.totalAmount),
-            installmentCount: dto.installmentCount,
-          },
-        });
-        for (let i = 0; i < amounts.length; i++) {
-          const cycle = addMonths(start, i),
-            dates = invoiceDates(cycle, card.closingDay, card.dueDay);
-          const invoice = await tx.cardInvoice.upsert({
-            where: { cardId_referenceMonth: { cardId: card.id, referenceMonth: cycle } },
-            create: {
-              userId,
-              cardId: card.id,
-              referenceMonth: cycle,
-              closingDate: civilDate(dates.closingDate),
-              dueDate: civilDate(dates.dueDate),
-            },
-            update: {},
-          });
-          if (invoice.status !== 'OPEN')
-            throw new ConflictException({
-              code: 'CONCURRENT_MODIFICATION',
-              message: 'A fatura foi fechada durante a compra.',
-            });
-          await tx.cardInstallment.create({
-            data: {
-              purchaseId: purchase.id,
-              installmentNumber: i + 1,
-              installmentCount: amounts.length,
-              amount: new Prisma.Decimal(amounts[i]!),
-              referenceMonth: cycle,
-              invoiceId: invoice.id,
-            },
-          });
-        }
-        return this.getTx(tx, userId, purchase.id);
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    return this.prisma.$transaction(async (tx) => this.createTx(tx, userId, dto), {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    });
+  }
+  async createTx(tx: Tx, userId: string, dto: CreateCardPurchaseDto) {
+    const { card } = await this.relations(tx, userId, dto.cardId, dto.categoryId);
+    const amounts = this.amounts(dto.totalAmount, dto.installmentCount);
+    const start = await this.openCycle(
+      tx,
+      userId,
+      card.id,
+      initialCycle(dto.purchaseDate, card.closingDay),
+      card.closingDay,
+      card.dueDay,
     );
+    const purchase = await tx.cardPurchase.create({
+      data: {
+        userId,
+        cardId: card.id,
+        categoryId: dto.categoryId,
+        description: dto.description,
+        notes: normalizeOptional(dto.notes),
+        purchaseDate: civilDate(dto.purchaseDate),
+        totalAmount: new Prisma.Decimal(dto.totalAmount),
+        installmentCount: dto.installmentCount,
+      },
+    });
+    for (let i = 0; i < amounts.length; i++) {
+      const cycle = addMonths(start, i),
+        dates = invoiceDates(cycle, card.closingDay, card.dueDay);
+      const invoice = await tx.cardInvoice.upsert({
+        where: { cardId_referenceMonth: { cardId: card.id, referenceMonth: cycle } },
+        create: {
+          userId,
+          cardId: card.id,
+          referenceMonth: cycle,
+          closingDate: civilDate(dates.closingDate),
+          dueDate: civilDate(dates.dueDate),
+        },
+        update: {},
+      });
+      if (invoice.status !== 'OPEN')
+        throw new ConflictException({
+          code: 'CONCURRENT_MODIFICATION',
+          message: 'A fatura foi fechada durante a compra.',
+        });
+      await tx.cardInstallment.create({
+        data: {
+          purchaseId: purchase.id,
+          installmentNumber: i + 1,
+          installmentCount: amounts.length,
+          amount: new Prisma.Decimal(amounts[i]!),
+          referenceMonth: cycle,
+          invoiceId: invoice.id,
+        },
+      });
+    }
+    return this.getTx(tx, userId, purchase.id);
   }
   async get(userId: string, id: string) {
     return this.getTx(this.prisma, userId, id);

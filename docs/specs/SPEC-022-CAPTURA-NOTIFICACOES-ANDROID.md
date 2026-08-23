@@ -10,9 +10,9 @@
 | Título | Captura assistida de movimentações por notificações Android |
 | Responsável | Equipe PlannerFin |
 | Data de criação | 2026-08-13 |
-| Última atualização | 2026-08-13 |
+| Última atualização | 2026-08-22 |
 | Tarefa relacionada | Prompt SPEC-022 no Codex Cloud |
-| Documentos relacionados | SPEC-002, SPEC-005–007, SPEC-012–014, SPEC-017, SPEC-021; ADR-002; `schema.prisma`; políticas e documentação Android referenciadas na seção 3 |
+| Documentos relacionados | SPEC-002, SPEC-005–008, SPEC-012–014, SPEC-017, SPEC-021; ADR-002; `schema.prisma`; políticas e documentação Android referenciadas na seção 3 |
 
 ## 2. Status
 
@@ -134,17 +134,17 @@ Arquitetura futura: interface `NotificationParser`, implementações específica
 
 Reprocessamento grava nova classificação/versão sem alterar o bruto nem duplicar candidato/lançamento. `CONFIRMED` nunca cria outro lançamento; no máximo atualiza interpretação histórica não financeira sem mudar o lançamento. Fingerprints/versionamento tornam o resultado auditável.
 
-### 9.5 Revisão e conta
+### 9.5 Revisão e fonte de pagamento
 
 Fluxo: `capturada → classificada → Para revisar → abrir original + interpretação → editar → confirmar ou descartar`.
 
-A tela permite corrigir tipo, valor decimal exato, descrição, data, conta e categoria; marcar não financeira; descartar; e ver original ao lado da interpretação. “Ignorar semelhantes” só existirá quando uma futura SPEC definir regra explícita. Nada é criado por captura, parser, reprocessamento, timeout ou navegação.
+A tela permite corrigir tipo, valor decimal exato, descrição, data, fonte de pagamento compatível e categoria; marcar não financeira; descartar; e ver original ao lado da interpretação. Para `INCOME`, a fonte de pagamento é uma conta financeira ativa. Para `EXPENSE`, a fonte de pagamento pode ser uma conta financeira ativa ou um cartão de crédito ativo; quando for cartão, a revisão também permite informar parcelas conforme os limites da SPEC-008. “Ignorar semelhantes” só existirá quando uma futura SPEC definir regra explícita. Nada é criado por captura, parser, reprocessamento, timeout ou navegação.
 
-V1 permite uma conta PlannerFin padrão por `packageName + owner + device`, escolhida explicitamente; ela é sugestão, não prova. O mesmo pacote pode ter associações diferentes em dispositivos. O modelo conceitual não impede múltiplas contas futuras. Sem associação, candidato é capturado/revisável, mas confirmação exige escolha de conta própria ativa e categoria própria ativa compatível.
+V1 permite uma conta PlannerFin padrão por `packageName + owner + device`, escolhida explicitamente; ela é sugestão, não prova. O mesmo pacote pode ter associações diferentes em dispositivos. O modelo conceitual evolui para fonte de pagamento padrão em implementação futura (`ACCOUNT` ou `CARD`) sem exigir migration ampla nesta revisão. Sem associação, candidato é capturado/revisável, mas confirmação exige escolha de fonte própria ativa compatível com o tipo e categoria própria ativa compatível.
 
 ### 9.6 Origem, linhagem e deduplicação
 
-Não se adiciona agora enum `MANUAL/RECURRENCE/NOTIFICATION/OFX/CSV` a `FinancialTransaction`. A implementação futura deve preferir uma linhagem extensível própria (`TransactionSourceLink` conceitual), pois imports já têm entidade/fingerprint e recorrências têm relação própria. Linhagem registra tipo de fonte, ID estável, owner e metadados mínimos; constraints impedem uma fonte de confirmar duas vezes.
+Não se adiciona agora enum `MANUAL/RECURRENCE/NOTIFICATION/OFX/CSV` a `FinancialTransaction`. A implementação futura deve preferir uma linhagem extensível própria (`TransactionSourceLink` conceitual), pois imports já têm entidade/fingerprint e recorrências têm relação própria. Enquanto essa abstração não existir, a linhagem da notificação deve apontar para exatamente um destino financeiro confirmado: `FinancialTransaction` quando a revisão usar conta, ou `CardPurchase` quando a revisão usar cartão. Linhagem registra tipo de fonte, ID estável, owner e metadados mínimos; constraints impedem uma fonte de confirmar duas vezes.
 
 Antes de confirmar e ao importar OFX/CSV, o backend sinaliza correspondência usando owner, conta, tipo, magnitude decimal, data/hora quando disponível, descrição normalizada e janela temporal. External ID/fingerprint forte tem prioridade. Uma notificação confirmada e linha importada podem ser ligadas como fontes do mesmo lançamento somente após decisão explícita do usuário. Não há auto-merge, exclusão ou alteração destrutiva. Possível duplicado cross-device usa os mesmos critérios e nunca texto isolado.
 
@@ -230,7 +230,7 @@ Nenhum nome autoriza schema nesta unidade.
 | `ObservedPackage` | owner/device, packageName, label opcional, lastSeenAt; sem conteúdo; TTL 30 dias. |
 | `CapturedNotification` | owner, deviceId, packageName, appLabel opcional, notificationKeyHash/fingerprint/version, postedAt/receivedAt/capturedAt, title/text e bigText/subText somente quando necessários, channel/category allowlisted, classificação atual, parserVersion, timestamps/TTL; sem payload Android completo. |
 | `NotificationClassification` | capturedId, parser/rules versionados, classe financeira ou não, parsedAmount como decimal/string, parsedType, parsedDescription, qualidade/confiança apenas explicável, razões, processedAt; histórico de reprocessamento. |
-| `NotificationCandidate` | capturedId único, status de revisão, edits, accountId/categoryId opcionais até confirmar, transactionId opcional após confirmação, dismissedAt/confirmedAt. |
+| `NotificationCandidate` | capturedId único, status de revisão, edits, paymentSourceType/accountId/cardId/categoryId opcionais até confirmar, transactionId ou cardPurchaseId opcional após confirmação, dismissedAt/confirmedAt. |
 | `NotificationParserRule` | packageName, versão, padrões determinísticos e status; regras aprendidas não integram V1. |
 | `TransactionSourceLink` | owner, transactionId, sourceKind extensível, sourceId/fingerprint; unicidade/idempotência e suporte a múltiplas evidências sem enum rígido no lançamento. |
 
@@ -248,7 +248,7 @@ Todos usam HTTPS, `Cache-Control: no-store`, validação/limites/rate limit, own
 | Caixa | listar detalhe próprio e original permitido | cursor estável; `404` cross-owner; `no-store` |
 | Reclassificar | solicitar parser vigente para item/histórico elegível | não duplica candidato/lançamento; versão explícita |
 | Revisar/descartar | editar candidato, marcar não financeiro ou `DISMISSED` | concorrência otimista e resultado repetível |
-| Confirmar | candidato + conta + categoria + campos revisados + chave | transação atômica, vínculo de origem único, dedup revalidado; `409` conflito |
+| Confirmar | candidato + fonte de pagamento compatível + categoria + campos revisados + chave | transação atômica, vínculo de origem único para `FinancialTransaction` ou `CardPurchase`, dedup revalidado; `409` conflito |
 | Excluir/purge | item, pacote ou histórico; job por TTL | repetível; bruto some, linhagem mínima confirmada permanece |
 
 ## 15. Validações e permissões
@@ -259,7 +259,7 @@ Todos usam HTTPS, `Cache-Control: no-store`, validação/limites/rate limit, own
 | Monitorar pacote | packageName válido do catálogo/observado, escolha explícita e device próprio. |
 | Ingerir | sessão/binding válido, device próprio, pacote monitorado no instante capturado, tamanho/campos allowlisted. |
 | Conteúdo | filtro de segredo antes da fila; limites e sanitização; HTML nunca executado. |
-| Confirmar | candidato próprio pendente, conta/categoria próprias ativas e compatíveis, decimal/data/tipo válidos e dedup revisto. |
+| Confirmar | candidato próprio pendente, fonte de pagamento/categoria próprias ativas e compatíveis (`INCOME` → conta; `EXPENSE` → conta ou cartão), decimal/data/tipo/parcelas válidos e dedup revisto. |
 | Excluir/desvincular | recurso próprio; cross-owner responde como inexistente. |
 
 ## 16. Segurança, privacidade, Google Play e disclosure
@@ -338,8 +338,8 @@ Rollback: desligar ingestão/flag, interromper serviço/sync, preservar ou purga
 | CA-39 | parser v1 classificou item | parser v2 reprocessa | versão muda sem duplicar candidato/lançamento |
 | CA-40 | parser desconhece padrão | item é processado | permanece revisável UNCLASSIFIED/AMBIGUOUS |
 | CA-41 | candidato aberto | usuário revisa | original permitido e interpretação aparecem lado a lado |
-| CA-42 | candidato sem conta padrão | usuário tenta confirmar | confirmação bloqueia até escolher conta própria ativa |
-| CA-43 | candidato válido | usuário edita tipo/valor/descrição/conta/categoria e confirma | exatamente um lançamento é criado e vinculado |
+| CA-42 | candidato sem fonte padrão | usuário tenta confirmar | confirmação bloqueia até escolher fonte própria ativa compatível com o tipo |
+| CA-43 | candidato válido | usuário edita tipo/valor/descrição/fonte/categoria e confirma | exatamente um destino financeiro é criado e vinculado: `FinancialTransaction` para conta ou `CardPurchase` para cartão |
 | CA-44 | confirmação perde resposta | usuário repete mesma chave/payload | recebe mesmo resultado sem segundo lançamento |
 | CA-45 | candidato pendente | usuário descarta | vira DISMISSED e não cria lançamento |
 | CA-46 | candidato | usuário marca não financeira | vira NON_FINANCIAL sem efeito financeiro |
@@ -417,6 +417,8 @@ Não há dúvida funcional, de privacidade ou de produto aberta. As incertezas e
 | 2026-08-13 | Retenção 30/90/30 dias e fila 7 dias/500/10 MiB | Solicitante via autorização para fechar SPEC | Minimização verificável |
 | 2026-08-13 | Catálogo + observação sem conteúdo; sem acesso amplo | Solicitante | `QUERY_ALL_PACKAGES` proibido na V1 |
 | 2026-08-13 | Auth não será contornada | SPEC-002/012 e solicitante | Falha de binding exige nova decisão |
+| 2026-08-22 | Parser genérico passa a reconhecer valor por contexto (`R$`, `valor de/valor:`, `compra ... de`) além de `R$ X,XX`, e a extrair `cardLast4` de "cartão terminado/finalizado em/final NNNN"; nenhum número solto (ex.: últimos 4 dígitos) é tratado como valor | Solicitante, após teste real via Telegram | Mantém o princípio determinístico/explicável/revisável; sem confirmação automática |
+| 2026-08-22 | Data sugerida no formulário de revisão usa o timezone local do dispositivo/browser a partir do `postedAt` (UTC armazenado); servidor continua em UTC | Solicitante, após bug observado em aparelho físico | Nunca usar `.toISOString().slice(0,10)` para essa apresentação |
 
 ## 25. Definition of Done específica e histórico
 
@@ -430,3 +432,5 @@ Não há dúvida funcional, de privacidade ou de produto aberta. As incertezas e
 | Data | Alteração | Motivo | Autor | Aprovador |
 |---|---|---|---|---|
 | 2026-08-13 | Criação e aprovação da SPEC-022 | Contrato documental solicitado | Equipe PlannerFin | Solicitante da tarefa |
+| 2026-08-22 | Correções pós-teste real em aparelho físico: parser genérico ganha extração de valor por contexto e de `cardLast4`; sugestão automática de cartão na revisão quando há exatamente um cartão ativo com o mesmo last4 (nunca com múltiplos matches ou cartão arquivado); data sugerida passa a usar timezone local; correção de mojibake no rótulo "Cartões de crédito"/"•••• NNNN" na revisão; hierarquia dos botões da revisão (`Confirmar lançamento` primário full-width, ações secundárias abaixo) | Achados de teste real (Telegram + APK LAN) | Equipe PlannerFin | Solicitante da tarefa |
+| 2026-08-22 | Revisão mínima da fonte de pagamento na revisão de notificações | Reconciliar SPEC-022 com o domínio de cartões da SPEC-008 | Codex | Tarefa atual do solicitante |

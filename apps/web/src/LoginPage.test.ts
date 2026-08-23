@@ -35,4 +35,20 @@ describe('LoginPage', () => {
     await submit('/cards/card-id');
     expect(mocked.push).toHaveBeenCalledWith('/cards/card-id');
   });
+
+  it('alterna a visibilidade da senha preservando o valor digitado', async () => {
+    const wrapper = mount(LoginPage, { global: { stubs: ['RouterLink'] } });
+    const passwordInput = wrapper.get('input[autocomplete="current-password"]');
+    await passwordInput.setValue('senha-ficticia');
+    expect(passwordInput.attributes('type')).toBe('password');
+
+    const toggle = wrapper.get('.toggle-password');
+    await toggle.trigger('click');
+    expect(passwordInput.attributes('type')).toBe('text');
+    expect((passwordInput.element as HTMLInputElement).value).toBe('senha-ficticia');
+
+    await toggle.trigger('click');
+    expect(passwordInput.attributes('type')).toBe('password');
+    expect((passwordInput.element as HTMLInputElement).value).toBe('senha-ficticia');
+  });
 });

@@ -20,6 +20,14 @@ function readRootEnv(root, options = {}) {
   }
 }
 
+function resolveOrigins(name, env, rootEnvValues, fallback) {
+  const raw = hasOwn(env, name) ? env[name] : hasOwn(rootEnvValues, name) ? rootEnvValues[name] : fallback;
+  return raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
 export function inspectRootEnv(root, options = {}) {
   const env = options.env ?? process.env;
   const rootEnv = readRootEnv(root, options);
@@ -40,6 +48,9 @@ export function inspectRootEnv(root, options = {}) {
       : fileDatabaseUrl
         ? 'arquivo .env raiz'
         : null,
+    // Mesmos defaults de apps/api/src/config/env.ts — mantém doctor e API descrevendo a mesma política.
+    corsOrigins: resolveOrigins('API_CORS_ORIGINS', env, rootEnv.values, 'http://localhost:9000'),
+    crossSiteOrigins: resolveOrigins('API_CROSS_SITE_ORIGINS', env, rootEnv.values, 'https://localhost'),
   };
 }
 

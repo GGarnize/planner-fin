@@ -207,11 +207,14 @@ export interface PublicCapturedNotification {
   parsedType: 'INCOME' | 'EXPENSE' | null;
   parsedAmount: string | null;
   parsedDescription: string | null;
+  parsedCardLast4: string | null;
   classificationReasons: string[];
   classifiedAt: string | null;
   accountId: string | null;
+  cardId: string | null;
   categoryId: string | null;
   confirmedTransactionId: string | null;
+  confirmedCardPurchaseId: string | null;
   confirmedAt: string | null;
   dismissedAt: string | null;
   createdAt: string;
@@ -227,12 +230,15 @@ export interface ListCapturedNotificationsResponse {
   page: { limit: number; offset: number; filteredCount: number };
 }
 export interface ConfirmCapturedNotificationRequest {
-  accountId: string;
+  paymentSourceType?: 'ACCOUNT' | 'CARD';
+  accountId?: string;
+  cardId?: string;
   categoryId: string;
   type: 'INCOME' | 'EXPENSE';
   amount: string;
   description: string;
   date: string;
+  installmentCount?: number;
 }
 export type NotificationReviewErrorCode =
   | 'VALIDATION_ERROR'

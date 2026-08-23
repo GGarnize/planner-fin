@@ -54,3 +54,26 @@ test('não inventa configuração quando o .env raiz está ausente', () => {
   assert.deepEqual(loadRootEnv(root, options).loadedKeys, []);
   assert.equal(inspectRootEnv(root, options).databaseUrl, undefined);
 });
+
+test('A01: sem API_CROSS_SITE_ORIGINS no .env, assume o mesmo default de apps/api/src/config/env.ts', () => {
+  const fixture = rootEnvFixture('API_CORS_ORIGINS="http://localhost:9000,https://localhost"\n');
+
+  const result = inspectRootEnv(fixture.root, fixture.options);
+
+  assert.deepEqual(result.corsOrigins, ['http://localhost:9000', 'https://localhost']);
+  assert.deepEqual(result.crossSiteOrigins, ['https://localhost']);
+});
+
+test('API_CROSS_SITE_ORIGINS explícito no .env é respeitado', () => {
+  const fixture = rootEnvFixture(
+    'API_CORS_ORIGINS="https://web-planner-fin.up.railway.app,https://localhost"\n' +
+      'API_CROSS_SITE_ORIGINS="https://web-planner-fin.up.railway.app,https://localhost"\n',
+  );
+
+  const result = inspectRootEnv(fixture.root, fixture.options);
+
+  assert.deepEqual(result.crossSiteOrigins, [
+    'https://web-planner-fin.up.railway.app',
+    'https://localhost',
+  ]);
+});

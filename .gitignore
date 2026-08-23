@@ -22,3 +22,4 @@ tools/android/**/local.properties
 *.aab
 
 *.tsbuildinfo
+apps/web/android/.idea/

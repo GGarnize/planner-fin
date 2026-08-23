@@ -17,9 +17,11 @@ import type {
   PublicCapturedNotification,
   UpdateNotificationDevicePreferencesRequest,
 } from '@planner-fin/shared';
+import { CardPurchasesService } from '../card-purchases/card-purchases.service';
 import { civilDate } from '../transactions/transactions.helpers';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ConfirmCapturedNotificationDto, IngestCapturedNotificationsDto } from './dto';
+import { PENDING_NOTIFICATION_REVIEW_STATUSES } from './notification-statuses';
 import { classifyNotification } from './parsers/notification-classifier';
 
 const MAX_TEXT_BYTES = 256 * 1024;
@@ -33,15 +35,16 @@ const CAPTURED_STATUSES = [
   'DISMISSED',
   'CONFIRMED',
 ] as const;
-/** "Para revisar" — o que ainda não teve uma decisão humana. */
-const PENDING_STATUSES = ['UNCLASSIFIED', 'FINANCIAL_CANDIDATE', 'AMBIGUOUS'] as const;
 const isUuid = (value: string) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const isSerializableConflict = (error: unknown) =>
   (error as { code?: string }).code === 'P2034' ||
   (error instanceof Error && /write conflict|transaction.*closed|serializ/i.test(error.message));
 const notFound = () =>
-  new NotFoundException({ code: 'NOTIFICATION_DEVICE_NOT_FOUND', message: 'Dispositivo nao encontrado.' });
+  new NotFoundException({
+    code: 'NOTIFICATION_DEVICE_NOT_FOUND',
+    message: 'Dispositivo nao encontrado.',
+  });
 const notFoundNotification = () =>
   new NotFoundException({ code: 'NOT_FOUND', message: 'Notificação não encontrada.' });
 const invalidQuery = (field: string) =>
@@ -53,7 +56,10 @@ const invalidQuery = (field: string) =>
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cardPurchases?: CardPurchasesService,
+  ) {}
 
   async bind(
     userId: string,
@@ -195,7 +201,10 @@ export class NotificationsService {
               return previous.result as unknown as IngestCapturedNotificationsResponse;
             }
             const monitored = new Set(toPackageList(device.monitoredPackages));
-            if (!device.captureEnabled || dto.items.some((item) => !monitored.has(item.packageName)))
+            if (
+              !device.captureEnabled ||
+              dto.items.some((item) => !monitored.has(item.packageName))
+            )
               throw new UnprocessableEntityException({
                 code: 'NOTIFICATION_PACKAGE_NOT_MONITORED',
                 message: 'Pacote nao monitorado para este dispositivo.',
@@ -248,6 +257,7 @@ export class NotificationsService {
                         ? new Prisma.Decimal(classification.parsedAmount)
                         : null,
                     parsedDescription: classification.parsedDescription ?? null,
+                    parsedCardLast4: classification.parsedCardLast4 ?? null,
                     classificationReasons: classification.reasons,
                     classifiedAt: new Date(),
                     expiresAt,
@@ -324,7 +334,7 @@ export class NotificationsService {
     if (query.status && !CAPTURED_STATUSES.includes(query.status)) throw invalidQuery('status');
     const where: Prisma.CapturedNotificationWhereInput = {
       userId,
-      status: query.status ? query.status : { in: [...PENDING_STATUSES] },
+      status: query.status ? query.status : { in: [...PENDING_NOTIFICATION_REVIEW_STATUSES] },
     };
     const [rows, filteredCount] = await Promise.all([
       this.prisma.capturedNotification.findMany({
@@ -390,43 +400,67 @@ export class NotificationsService {
                 code: 'NOTIFICATION_ALREADY_DISMISSED',
                 message: 'Notificação já foi descartada.',
               });
-            const [account, category] = await Promise.all([
-              tx.financialAccount.findFirst({ where: { id: dto.accountId, userId } }),
-              tx.financialCategory.findFirst({ where: { id: dto.categoryId, userId } }),
-            ]);
-            if (!account || !category) throw notFoundNotification();
-            if (account.archivedAt || category.archivedAt)
-              throw new ConflictException({
-                code: 'RELATED_RESOURCE_ARCHIVED',
-                message: 'Selecione uma conta e categoria ativas.',
+            const paymentSourceType = dto.paymentSourceType ?? (dto.cardId ? 'CARD' : 'ACCOUNT');
+            let confirmation: {
+              transactionId: string | null;
+              cardPurchaseId: string | null;
+              accountId: string | null;
+              cardId: string | null;
+            };
+            if (paymentSourceType === 'CARD') {
+              confirmation = await this.confirmCardPurchase(tx, userId, dto);
+            } else {
+              if (!dto.accountId)
+                throw new BadRequestException({
+                  code: 'VALIDATION_ERROR',
+                  message: 'Selecione uma conta ativa para confirmar esta notificacao.',
+                });
+              const [account, category] = await Promise.all([
+                tx.financialAccount.findFirst({ where: { id: dto.accountId, userId } }),
+                tx.financialCategory.findFirst({ where: { id: dto.categoryId, userId } }),
+              ]);
+              if (!account || !category) throw notFoundNotification();
+              if (account.archivedAt || category.archivedAt)
+                throw new ConflictException({
+                  code: 'RELATED_RESOURCE_ARCHIVED',
+                  message: 'Selecione uma conta e categoria ativas.',
+                });
+              if (category.type !== dto.type)
+                throw new ConflictException({
+                  code: 'CATEGORY_TYPE_MISMATCH',
+                  message: 'A categoria não corresponde à natureza do lançamento.',
+                });
+              const amount = new Prisma.Decimal(dto.amount);
+              const transaction = await tx.financialTransaction.create({
+                data: {
+                  userId,
+                  accountId: dto.accountId,
+                  categoryId: dto.categoryId,
+                  type: dto.type,
+                  status: 'PAID',
+                  description: dto.description,
+                  plannedAmount: amount,
+                  actualAmount: amount,
+                  dueDate: civilDate(dto.date),
+                  paidAt: civilDate(dto.date),
+                },
               });
-            if (category.type !== dto.type)
-              throw new ConflictException({
-                code: 'CATEGORY_TYPE_MISMATCH',
-                message: 'A categoria não corresponde à natureza do lançamento.',
-              });
-            const amount = new Prisma.Decimal(dto.amount);
-            const transaction = await tx.financialTransaction.create({
-              data: {
-                userId,
+              confirmation = {
+                transactionId: transaction.id,
+                cardPurchaseId: null,
                 accountId: dto.accountId,
-                categoryId: dto.categoryId,
-                type: dto.type,
-                status: 'PAID',
-                description: dto.description,
-                plannedAmount: amount,
-                actualAmount: amount,
-                dueDate: civilDate(dto.date),
-                paidAt: civilDate(dto.date),
-              },
-            });
+                cardId: null,
+              };
+            }
             const changed = await tx.capturedNotification.updateMany({
               where: { id, userId, status: { notIn: ['CONFIRMED', 'DISMISSED'] } },
               data: {
                 status: 'CONFIRMED',
-                confirmedTransactionId: transaction.id,
+                confirmedTransactionId: confirmation.transactionId,
+                confirmedCardPurchaseId: confirmation.cardPurchaseId,
                 confirmedAt: new Date(),
-                accountId: dto.accountId,
+                accountId: confirmation.accountId,
+                cardId: confirmation.cardId,
                 categoryId: dto.categoryId,
               },
             });
@@ -457,6 +491,37 @@ export class NotificationsService {
     if (!row) throw notFoundNotification();
     return row;
   }
+
+  private async confirmCardPurchase(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    dto: ConfirmCapturedNotificationDto,
+  ) {
+    if (dto.type !== 'EXPENSE')
+      throw new BadRequestException({
+        code: 'PAYMENT_SOURCE_TYPE_MISMATCH',
+        message: 'Entrada deve ser confirmada em uma conta.',
+      });
+    if (!dto.cardId || !this.cardPurchases)
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Selecione um cartao ativo para confirmar esta notificacao.',
+      });
+    const purchase = await this.cardPurchases.createTx(tx, userId, {
+      cardId: dto.cardId,
+      categoryId: dto.categoryId,
+      description: dto.description,
+      purchaseDate: dto.date,
+      totalAmount: dto.amount,
+      installmentCount: dto.installmentCount ?? 1,
+    });
+    return {
+      transactionId: null,
+      cardPurchaseId: purchase.id,
+      accountId: null,
+      cardId: dto.cardId,
+    };
+  }
 }
 
 function sanitizePackages(packages: string[]): string[] {
@@ -464,7 +529,9 @@ function sanitizePackages(packages: string[]): string[] {
 }
 
 function toPackageList(value: Prisma.JsonValue): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 function toPublicCapturedNotification(row: CapturedNotification): PublicCapturedNotification {
@@ -482,11 +549,14 @@ function toPublicCapturedNotification(row: CapturedNotification): PublicCaptured
     parsedType: row.parsedType,
     parsedAmount: row.parsedAmount?.toFixed(2) ?? null,
     parsedDescription: row.parsedDescription,
+    parsedCardLast4: row.parsedCardLast4,
     classificationReasons: toPackageList(row.classificationReasons),
     classifiedAt: row.classifiedAt?.toISOString() ?? null,
     accountId: row.accountId,
+    cardId: row.cardId,
     categoryId: row.categoryId,
     confirmedTransactionId: row.confirmedTransactionId,
+    confirmedCardPurchaseId: row.confirmedCardPurchaseId,
     confirmedAt: row.confirmedAt?.toISOString() ?? null,
     dismissedAt: row.dismissedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),

@@ -245,6 +245,22 @@ test('DATABASE_URL inválida ou não PostgreSQL deixa API/Database NOT READY', (
   }
 });
 
+test('sessão Android exige https://localhost em CORS e cross-site', () => {
+  const facts = readyFacts();
+  facts.rootEnv.corsOrigins = ['http://localhost:9000', 'https://localhost'];
+  facts.rootEnv.crossSiteOrigins = ['https://localhost'];
+  const report = diagnose(facts);
+  assert.equal(check(report, 'Project', 'Sessão Android (CORS/cross-site)').status, 'OK');
+});
+
+test('sessão Android fica WARN sem https://localhost em ambos', () => {
+  const facts = readyFacts();
+  facts.rootEnv.corsOrigins = ['http://localhost:9000'];
+  facts.rootEnv.crossSiteOrigins = [];
+  const report = diagnose(facts);
+  assert.equal(check(report, 'Project', 'Sessão Android (CORS/cross-site)').status, 'WARN');
+});
+
 test('doctor sanitiza DATABASE_URL e nunca imprime senha ou secrets', () => {
   const facts = readyFacts();
   facts.rootEnv.databaseUrl =

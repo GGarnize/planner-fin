@@ -17,6 +17,11 @@ $env:API_PORT = '3000'
 if (-not $env:API_CORS_ORIGINS) {
   $env:API_CORS_ORIGINS = 'http://localhost:9000,https://localhost'
 }
+if (-not $env:API_CROSS_SITE_ORIGINS) {
+  # https://localhost e a origem fixa do WebView Android; sem ela aqui e em API_CORS_ORIGINS a
+  # sessao do app nao sobrevive a um reinicio (SameSite=None/Secure nao e aplicado ao cookie).
+  $env:API_CROSS_SITE_ORIGINS = 'https://localhost'
+}
 
 Invoke-RepoCommand 'docker compose up -d postgres'
 Invoke-RepoCommand 'pnpm db:migrate'

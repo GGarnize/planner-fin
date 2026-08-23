@@ -8,36 +8,36 @@ datasource db {
 }
 
 model User {
-  id                    String                 @id @default(uuid()) @db.Uuid
-  name                  String                 @db.VarChar(120)
-  email                 String                 @unique @db.VarChar(254)
-  normalizedEmail       String                 @unique @db.VarChar(254)
-  passwordHash          String
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  sessions              Session[]
-  financialAccounts     FinancialAccount[]
-  financialCategories   FinancialCategory[]
-  financialTransactions FinancialTransaction[]
-  financialTransfers    FinancialTransfer[]
-  recurrenceRules       RecurrenceRule[]
-  creditCards           FinancialCreditCard[]
-  cardPurchases         CardPurchase[]
-  cardInvoices          CardInvoice[]
-  cardInvoicePayments   CardInvoicePayment[]
-  financialDebts        FinancialDebt[]
-  debtFundings          DebtFunding[]
-  debtPayments          DebtPayment[]
-  monthlyBudgets        MonthlyBudget[]
-  transactionTemplates  TransactionTemplate[]
-  preferences           UserPreferences?
-  initialSetup          UserInitialSetup?
-  setupConfirmations    SetupConfirmation[]
-  importSessions        ImportSession[]
-  importRows            ImportRow[]
-  importConfirmations   ImportConfirmation[]
-  notificationDevices   NotificationDevice[]
-  capturedNotifications CapturedNotification[]
+  id                     String                           @id @default(uuid()) @db.Uuid
+  name                   String                           @db.VarChar(120)
+  email                  String                           @unique @db.VarChar(254)
+  normalizedEmail        String                           @unique @db.VarChar(254)
+  passwordHash           String
+  createdAt              DateTime                         @default(now())
+  updatedAt              DateTime                         @updatedAt
+  sessions               Session[]
+  financialAccounts      FinancialAccount[]
+  financialCategories    FinancialCategory[]
+  financialTransactions  FinancialTransaction[]
+  financialTransfers     FinancialTransfer[]
+  recurrenceRules        RecurrenceRule[]
+  creditCards            FinancialCreditCard[]
+  cardPurchases          CardPurchase[]
+  cardInvoices           CardInvoice[]
+  cardInvoicePayments    CardInvoicePayment[]
+  financialDebts         FinancialDebt[]
+  debtFundings           DebtFunding[]
+  debtPayments           DebtPayment[]
+  monthlyBudgets         MonthlyBudget[]
+  transactionTemplates   TransactionTemplate[]
+  preferences            UserPreferences?
+  initialSetup           UserInitialSetup?
+  setupConfirmations     SetupConfirmation[]
+  importSessions         ImportSession[]
+  importRows             ImportRow[]
+  importConfirmations    ImportConfirmation[]
+  notificationDevices    NotificationDevice[]
+  capturedNotifications  CapturedNotification[]
   notificationIngestions NotificationIngestConfirmation[]
 }
 
@@ -57,19 +57,19 @@ enum CapturedNotificationStatus {
 }
 
 model NotificationDevice {
-  id                String                   @id @default(uuid()) @db.Uuid
-  userId            String                   @db.Uuid
-  deviceId          String                   @db.VarChar(80)
-  ownerBindingId    String                   @unique @db.Uuid
-  name              String?                  @db.VarChar(120)
-  status            NotificationDeviceStatus @default(ACTIVE)
-  captureEnabled    Boolean                  @default(false)
-  monitoredPackages Json                     @default("[]")
-  lastSeenAt        DateTime                 @default(now()) @db.Timestamptz(3)
-  revokedAt         DateTime?                @db.Timestamptz(3)
-  createdAt         DateTime                 @default(now()) @db.Timestamptz(3)
-  updatedAt         DateTime                 @updatedAt @db.Timestamptz(3)
-  user              User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  id                String                           @id @default(uuid()) @db.Uuid
+  userId            String                           @db.Uuid
+  deviceId          String                           @db.VarChar(80)
+  ownerBindingId    String                           @unique @db.Uuid
+  name              String?                          @db.VarChar(120)
+  status            NotificationDeviceStatus         @default(ACTIVE)
+  captureEnabled    Boolean                          @default(false)
+  monitoredPackages Json                             @default("[]")
+  lastSeenAt        DateTime                         @default(now()) @db.Timestamptz(3)
+  revokedAt         DateTime?                        @db.Timestamptz(3)
+  createdAt         DateTime                         @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime                         @updatedAt @db.Timestamptz(3)
+  user              User                             @relation(fields: [userId], references: [id], onDelete: Restrict)
   notifications     CapturedNotification[]
   ingestions        NotificationIngestConfirmation[]
 
@@ -78,42 +78,47 @@ model NotificationDevice {
 }
 
 model CapturedNotification {
-  id                  String                     @id @default(uuid()) @db.Uuid
-  userId              String                     @db.Uuid
-  deviceRecordId      String                     @db.Uuid
-  deviceId            String                     @db.VarChar(80)
-  ownerBindingId      String                     @db.Uuid
-  packageName         String                     @db.VarChar(255)
-  notificationKeyHash String                     @db.Char(64)
-  fingerprintHash     String                     @db.Char(64)
-  fingerprintVersion  Int                        @default(1)
-  postedAt            DateTime                   @db.Timestamptz(3)
-  capturedAt          DateTime                   @db.Timestamptz(3)
-  receivedAt          DateTime                   @default(now()) @db.Timestamptz(3)
-  title               String?                    @db.VarChar(300)
-  text                String?                    @db.VarChar(1000)
-  subText             String?                    @db.VarChar(300)
-  bigText             String?                    @db.VarChar(4000)
-  status              CapturedNotificationStatus @default(UNCLASSIFIED)
-  classifierVersion   Int                        @default(0)
-  parsedType          FinancialTransactionType?
-  parsedAmount        Decimal?                   @db.Decimal(19, 2)
-  parsedDescription   String?                    @db.VarChar(300)
-  classificationReasons Json                     @default("[]")
-  classifiedAt        DateTime?                  @db.Timestamptz(3)
-  accountId           String?                    @db.Uuid
-  categoryId          String?                    @db.Uuid
-  confirmedTransactionId String?                 @unique @db.Uuid
-  confirmedAt         DateTime?                  @db.Timestamptz(3)
-  dismissedAt         DateTime?                  @db.Timestamptz(3)
-  expiresAt           DateTime                   @db.Timestamptz(3)
-  createdAt           DateTime                   @default(now()) @db.Timestamptz(3)
-  updatedAt           DateTime                   @updatedAt @db.Timestamptz(3)
-  user                User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
-  device              NotificationDevice         @relation(fields: [deviceRecordId], references: [id], onDelete: Restrict)
-  account             FinancialAccount?          @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  category            FinancialCategory?         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  confirmedTransaction FinancialTransaction?      @relation(fields: [confirmedTransactionId], references: [id], onDelete: Restrict)
+  id                      String                     @id @default(uuid()) @db.Uuid
+  userId                  String                     @db.Uuid
+  deviceRecordId          String                     @db.Uuid
+  deviceId                String                     @db.VarChar(80)
+  ownerBindingId          String                     @db.Uuid
+  packageName             String                     @db.VarChar(255)
+  notificationKeyHash     String                     @db.Char(64)
+  fingerprintHash         String                     @db.Char(64)
+  fingerprintVersion      Int                        @default(1)
+  postedAt                DateTime                   @db.Timestamptz(3)
+  capturedAt              DateTime                   @db.Timestamptz(3)
+  receivedAt              DateTime                   @default(now()) @db.Timestamptz(3)
+  title                   String?                    @db.VarChar(300)
+  text                    String?                    @db.VarChar(1000)
+  subText                 String?                    @db.VarChar(300)
+  bigText                 String?                    @db.VarChar(4000)
+  status                  CapturedNotificationStatus @default(UNCLASSIFIED)
+  classifierVersion       Int                        @default(0)
+  parsedType              FinancialTransactionType?
+  parsedAmount            Decimal?                   @db.Decimal(19, 2)
+  parsedDescription       String?                    @db.VarChar(300)
+  parsedCardLast4         String?                    @db.VarChar(4)
+  classificationReasons   Json                       @default("[]")
+  classifiedAt            DateTime?                  @db.Timestamptz(3)
+  accountId               String?                    @db.Uuid
+  cardId                  String?                    @db.Uuid
+  categoryId              String?                    @db.Uuid
+  confirmedTransactionId  String?                    @unique @db.Uuid
+  confirmedCardPurchaseId String?                    @unique @db.Uuid
+  confirmedAt             DateTime?                  @db.Timestamptz(3)
+  dismissedAt             DateTime?                  @db.Timestamptz(3)
+  expiresAt               DateTime                   @db.Timestamptz(3)
+  createdAt               DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                   @updatedAt @db.Timestamptz(3)
+  user                    User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  device                  NotificationDevice         @relation(fields: [deviceRecordId], references: [id], onDelete: Restrict)
+  account                 FinancialAccount?          @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  card                    FinancialCreditCard?       @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  category                FinancialCategory?         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  confirmedTransaction    FinancialTransaction?      @relation(fields: [confirmedTransactionId], references: [id], onDelete: Restrict)
+  confirmedCardPurchase   CardPurchase?              @relation(fields: [confirmedCardPurchaseId], references: [id], onDelete: Restrict)
 
   @@unique([userId, deviceId, packageName, notificationKeyHash, postedAt, fingerprintVersion])
   @@index([userId, status, receivedAt(sort: Desc)])
@@ -425,40 +430,42 @@ enum CardInvoiceStatus {
 }
 
 model FinancialCreditCard {
-  id          String         @id @default(uuid()) @db.Uuid
-  userId      String         @db.Uuid
-  name        String         @db.VarChar(120)
-  issuer      String?        @db.VarChar(120)
-  last4       String?        @db.Char(4)
-  creditLimit Decimal?       @db.Decimal(19, 2)
-  closingDay  Int
-  dueDay      Int
-  archivedAt  DateTime?      @db.Timestamptz(3)
-  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
-  user        User           @relation(fields: [userId], references: [id], onDelete: Restrict)
-  purchases   CardPurchase[]
-  invoices    CardInvoice[]
+  id                    String                 @id @default(uuid()) @db.Uuid
+  userId                String                 @db.Uuid
+  name                  String                 @db.VarChar(120)
+  issuer                String?                @db.VarChar(120)
+  last4                 String?                @db.Char(4)
+  creditLimit           Decimal?               @db.Decimal(19, 2)
+  closingDay            Int
+  dueDay                Int
+  archivedAt            DateTime?              @db.Timestamptz(3)
+  createdAt             DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime               @updatedAt @db.Timestamptz(3)
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  purchases             CardPurchase[]
+  invoices              CardInvoice[]
+  capturedNotifications CapturedNotification[]
 
   @@index([userId, archivedAt, name, id])
 }
 
 model CardPurchase {
-  id               String              @id @default(uuid()) @db.Uuid
-  userId           String              @db.Uuid
-  cardId           String              @db.Uuid
-  categoryId       String              @db.Uuid
-  description      String              @db.VarChar(200)
-  notes            String?             @db.VarChar(2000)
-  purchaseDate     DateTime            @db.Date
-  totalAmount      Decimal             @db.Decimal(19, 2)
-  installmentCount Int
-  createdAt        DateTime            @default(now()) @db.Timestamptz(3)
-  updatedAt        DateTime            @updatedAt @db.Timestamptz(3)
-  user             User                @relation(fields: [userId], references: [id], onDelete: Restrict)
-  card             FinancialCreditCard @relation(fields: [cardId], references: [id], onDelete: Restrict)
-  category         FinancialCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  installments     CardInstallment[]
+  id                   String                @id @default(uuid()) @db.Uuid
+  userId               String                @db.Uuid
+  cardId               String                @db.Uuid
+  categoryId           String                @db.Uuid
+  description          String                @db.VarChar(200)
+  notes                String?               @db.VarChar(2000)
+  purchaseDate         DateTime              @db.Date
+  totalAmount          Decimal               @db.Decimal(19, 2)
+  installmentCount     Int
+  createdAt            DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime              @updatedAt @db.Timestamptz(3)
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  card                 FinancialCreditCard   @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  category             FinancialCategory     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  installments         CardInstallment[]
+  capturedNotification CapturedNotification?
 
   @@index([userId, purchaseDate(sort: Desc), createdAt(sort: Desc), id])
   @@index([userId, cardId, purchaseDate])
@@ -531,28 +538,28 @@ enum FinancialTransactionStatus {
 }
 
 model FinancialTransaction {
-  id               String                     @id @default(uuid()) @db.Uuid
-  userId           String                     @db.Uuid
-  accountId        String                     @db.Uuid
-  categoryId       String                     @db.Uuid
-  type             FinancialTransactionType
-  status           FinancialTransactionStatus
-  description      String                     @db.VarChar(200)
-  notes            String?                    @db.VarChar(2000)
-  plannedAmount    Decimal                    @db.Decimal(19, 2)
-  actualAmount     Decimal?                   @db.Decimal(19, 2)
-  dueDate          DateTime                   @db.Date
-  paidAt           DateTime?                  @db.Date
-  recurrenceRuleId String?                    @db.Uuid
-  occurrenceDate   DateTime?                  @db.Date
-  deletedAt        DateTime?                  @db.Timestamptz(3)
-  createdAt        DateTime                   @default(now()) @db.Timestamptz(3)
-  updatedAt        DateTime                   @updatedAt @db.Timestamptz(3)
-  user             User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
-  account          FinancialAccount           @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  category         FinancialCategory          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  recurrenceRule   RecurrenceRule?            @relation(fields: [recurrenceRuleId], references: [id], onDelete: Restrict)
-  importRow        ImportRow?
+  id                   String                     @id @default(uuid()) @db.Uuid
+  userId               String                     @db.Uuid
+  accountId            String                     @db.Uuid
+  categoryId           String                     @db.Uuid
+  type                 FinancialTransactionType
+  status               FinancialTransactionStatus
+  description          String                     @db.VarChar(200)
+  notes                String?                    @db.VarChar(2000)
+  plannedAmount        Decimal                    @db.Decimal(19, 2)
+  actualAmount         Decimal?                   @db.Decimal(19, 2)
+  dueDate              DateTime                   @db.Date
+  paidAt               DateTime?                  @db.Date
+  recurrenceRuleId     String?                    @db.Uuid
+  occurrenceDate       DateTime?                  @db.Date
+  deletedAt            DateTime?                  @db.Timestamptz(3)
+  createdAt            DateTime                   @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime                   @updatedAt @db.Timestamptz(3)
+  user                 User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  account              FinancialAccount           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  category             FinancialCategory          @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  recurrenceRule       RecurrenceRule?            @relation(fields: [recurrenceRuleId], references: [id], onDelete: Restrict)
+  importRow            ImportRow?
   capturedNotification CapturedNotification?
 
   @@unique([recurrenceRuleId, occurrenceDate])

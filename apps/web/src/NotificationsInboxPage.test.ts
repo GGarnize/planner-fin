@@ -32,7 +32,13 @@ vi.mock('./notifications-api', () => ({
 vi.mock('./auth', () => ({ authenticatedFetch: mocks.fetch }));
 
 const account = { id: 'acc-1', name: 'Conta Corrente', archivedAt: null };
-const expenseCategory = { id: 'cat-expense', name: 'Alimentação', type: 'EXPENSE', archivedAt: null };
+const card = { id: 'card-1', name: 'Nubank Mastercard', last4: '1234', archivedAt: null };
+const expenseCategory = {
+  id: 'cat-expense',
+  name: 'Alimentação',
+  type: 'EXPENSE',
+  archivedAt: null,
+};
 const incomeCategory = { id: 'cat-income', name: 'Salário', type: 'INCOME', archivedAt: null };
 
 function notification(overrides: Partial<Record<string, unknown>> = {}) {
@@ -50,11 +56,14 @@ function notification(overrides: Partial<Record<string, unknown>> = {}) {
     parsedType: 'EXPENSE',
     parsedAmount: '42.90',
     parsedDescription: 'Compra aprovada',
+    parsedCardLast4: null,
     classificationReasons: ['valor_detectado', 'termo_saida:compra de'],
     classifiedAt: '2026-08-13T19:31:05.000Z',
     accountId: null,
+    cardId: null,
     categoryId: null,
     confirmedTransactionId: null,
+    confirmedCardPurchaseId: null,
     confirmedAt: null,
     dismissedAt: null,
     createdAt: '2026-08-13T19:31:05.000Z',
@@ -72,9 +81,16 @@ beforeEach(() => {
   mocks.route.params = {};
   mocks.fetch.mockImplementation((path: string) =>
     Promise.resolve(
-      new Response(JSON.stringify(path === '/accounts' ? [account] : [expenseCategory, incomeCategory]), {
-        status: 200,
-      }),
+      new Response(
+        JSON.stringify(
+          path === '/accounts'
+            ? [account]
+            : path === '/cards'
+              ? { items: [card] }
+              : [expenseCategory, incomeCategory],
+        ),
+        { status: 200 },
+      ),
     ),
   );
 });
@@ -124,29 +140,32 @@ describe('NotificationsInboxPage — detalhe', () => {
     const wrapper = mountPage();
     await flushPromises();
 
-    const confirmar = wrapper.findAll('button').find((b) => b.text() === 'Confirmar')!;
+    const confirmar = wrapper.findAll('button').find((b) => b.text() === 'Confirmar lançamento')!;
     expect(confirmar.attributes('disabled')).toBeDefined();
     expect(mocks.confirm).not.toHaveBeenCalled();
   });
 
   it('confirma somente após conta e categoria compatível serem escolhidas', async () => {
     mocks.get.mockResolvedValue(notification());
-    mocks.confirm.mockResolvedValue(notification({ status: 'CONFIRMED', confirmedTransactionId: 't1' }));
+    mocks.confirm.mockResolvedValue(
+      notification({ status: 'CONFIRMED', confirmedTransactionId: 't1' }),
+    );
     const wrapper = mountPage();
     await flushPromises();
 
     await wrapper.find('select').setValue('EXPENSE');
     const selects = wrapper.findAll('select');
-    await selects[1]!.setValue('acc-1');
+    await selects[1]!.setValue('account:acc-1');
     await selects[2]!.setValue('cat-expense');
     await flushPromises();
 
-    const confirmar = wrapper.findAll('button').find((b) => b.text() === 'Confirmar')!;
+    const confirmar = wrapper.findAll('button').find((b) => b.text() === 'Confirmar lançamento')!;
     expect(confirmar.attributes('disabled')).toBeUndefined();
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
     expect(mocks.confirm).toHaveBeenCalledWith('n1', {
+      paymentSourceType: 'ACCOUNT',
       accountId: 'acc-1',
       categoryId: 'cat-expense',
       type: 'EXPENSE',
@@ -154,6 +173,49 @@ describe('NotificationsInboxPage — detalhe', () => {
       description: 'Compra aprovada',
       date: '2026-08-13',
     });
+  });
+
+  it('confirma despesa com cartao e parcelas sem enviar conta', async () => {
+    mocks.get.mockResolvedValue(notification());
+    mocks.confirm.mockResolvedValue(
+      notification({ status: 'CONFIRMED', confirmedCardPurchaseId: 'purchase-1' }),
+    );
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const selects = wrapper.findAll('select');
+    await selects[1]!.setValue('card:card-1');
+    await wrapper.get('input[type="number"]').setValue(3);
+    await selects[2]!.setValue('cat-expense');
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(mocks.confirm).toHaveBeenCalledWith('n1', {
+      paymentSourceType: 'CARD',
+      cardId: 'card-1',
+      installmentCount: 3,
+      categoryId: 'cat-expense',
+      type: 'EXPENSE',
+      amount: '42.90',
+      description: 'Compra aprovada',
+      date: '2026-08-13',
+    });
+    expect(mocks.confirm.mock.calls[0]![1]).not.toHaveProperty('accountId');
+  });
+
+  it('para entrada mostra somente conta e remove cartao selecionado', async () => {
+    mocks.get.mockResolvedValue(notification());
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.findAll('select')[1]!.setValue('card:card-1');
+    expect(wrapper.find('input[type="number"]').exists()).toBe(true);
+    await wrapper.findAll('select')[0]!.setValue('INCOME');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Conta');
+    expect(wrapper.text()).not.toContain('CartÃµes de crÃ©dito');
+    expect(wrapper.find('input[type="number"]').exists()).toBe(false);
   });
 
   it('descartar não confirma nem cria lançamento', async () => {
@@ -182,5 +244,117 @@ describe('NotificationsInboxPage — detalhe', () => {
     expect(html).not.toContain('secretDropped');
     expect(html).not.toContain('otp');
     expect(html).not.toContain('OTP');
+  });
+
+  it('E01/E02: exibe rótulos acentuados e o marcador de cartão sem mojibake', async () => {
+    mocks.get.mockResolvedValue(notification());
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const cardGroup = wrapper
+      .findAll('optgroup')
+      .find((group) => group.attributes('label') === 'Cartões de crédito');
+    expect(cardGroup).toBeTruthy();
+    expect(wrapper.text()).toContain('Nubank Mastercard •••• 1234');
+    expect(wrapper.html()).not.toContain('Ã');
+  });
+
+  it('T01/T02/T03: sugere a data local do aparelho a partir do postedAt em UTC, sem voltar ao dia UTC', async () => {
+    mocks.get.mockResolvedValue(
+      notification({ postedAt: '2026-08-23T01:42:00.000Z' }),
+    );
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const dateInput = wrapper.find('input[type="date"]');
+    const expected = (() => {
+      const date = new Date('2026-08-23T01:42:00.000Z');
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    })();
+    expect((dateInput.element as HTMLInputElement).value).toBe(expected);
+    expect(expected).not.toBe('2026-08-23T01:42:00.000Z'.slice(0, 10));
+  });
+
+  it('C01: pre-seleciona o unico cartao ativo cujos ultimos 4 digitos correspondem', async () => {
+    mocks.get.mockResolvedValue(notification({ parsedCardLast4: '1234', cardId: null, accountId: null }));
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const paymentSelect = wrapper.findAll('select')[1]!;
+    expect((paymentSelect.element as HTMLSelectElement).value).toBe('card:card-1');
+  });
+
+  it('C02: nao seleciona nenhum cartao quando nao ha correspondencia de ultimos 4 digitos', async () => {
+    mocks.get.mockResolvedValue(notification({ parsedCardLast4: '9999', cardId: null, accountId: null }));
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const paymentSelect = wrapper.findAll('select')[1]!;
+    expect((paymentSelect.element as HTMLSelectElement).value).toBe('');
+  });
+
+  it('C03: nao adivinha quando dois cartoes ativos compartilham os mesmos ultimos 4 digitos', async () => {
+    const secondCard = { id: 'card-2', name: 'Nubank Ultravioleta', last4: '1234', archivedAt: null };
+    mocks.fetch.mockImplementation((path: string) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify(
+            path === '/accounts'
+              ? [account]
+              : path === '/cards'
+                ? { items: [card, secondCard] }
+                : [expenseCategory, incomeCategory],
+          ),
+          { status: 200 },
+        ),
+      ),
+    );
+    mocks.get.mockResolvedValue(notification({ parsedCardLast4: '1234', cardId: null, accountId: null }));
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const paymentSelect = wrapper.findAll('select')[1]!;
+    expect((paymentSelect.element as HTMLSelectElement).value).toBe('');
+  });
+
+  it('C04: nao seleciona um cartao arquivado mesmo com ultimos 4 digitos correspondentes', async () => {
+    const archivedCard = { id: 'card-3', name: 'Cartao Antigo', last4: '1234', archivedAt: '2026-01-01T00:00:00.000Z' };
+    mocks.fetch.mockImplementation((path: string) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify(
+            path === '/accounts'
+              ? [account]
+              : path === '/cards'
+                ? { items: [archivedCard] }
+                : [expenseCategory, incomeCategory],
+          ),
+          { status: 200 },
+        ),
+      ),
+    );
+    mocks.get.mockResolvedValue(notification({ parsedCardLast4: '1234', cardId: null, accountId: null }));
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const paymentSelect = wrapper.findAll('select')[1]!;
+    expect((paymentSelect.element as HTMLSelectElement).value).toBe('');
+  });
+
+  it('U01/U02/U03: prioriza "Confirmar lançamento" em largura total e separa as ações secundárias', async () => {
+    mocks.get.mockResolvedValue(notification());
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const confirmar = wrapper.findAll('button').find((b) => b.text() === 'Confirmar lançamento')!;
+    expect(confirmar.classes()).toContain('primary');
+    expect(confirmar.element.parentElement?.className).toBe('actions');
+
+    const secondaryActions = wrapper.find('.secondary-actions');
+    expect(secondaryActions.exists()).toBe(true);
+    expect(secondaryActions.findAll('button')).toHaveLength(2);
   });
 });

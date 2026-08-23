@@ -24,7 +24,13 @@ vi.mock('./notifications-api', () => ({
 vi.mock('./auth', () => ({ authenticatedFetch: mocks.fetch }));
 
 const account = { id: 'acc-1', name: 'Conta Corrente', archivedAt: null };
-const expenseCategory = { id: 'cat-expense', name: 'Alimentação', type: 'EXPENSE', archivedAt: null };
+const card = { id: 'card-1', name: 'Nubank Mastercard', last4: '1234', archivedAt: null };
+const expenseCategory = {
+  id: 'cat-expense',
+  name: 'Alimentação',
+  type: 'EXPENSE',
+  archivedAt: null,
+};
 
 function notification(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -44,8 +50,10 @@ function notification(overrides: Partial<Record<string, unknown>> = {}) {
     classificationReasons: ['valor_detectado'],
     classifiedAt: '2026-08-13T19:31:05.000Z',
     accountId: null,
+    cardId: null,
     categoryId: null,
     confirmedTransactionId: null,
+    confirmedCardPurchaseId: null,
     confirmedAt: null,
     dismissedAt: null,
     createdAt: '2026-08-13T19:31:05.000Z',
@@ -76,9 +84,16 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.fetch.mockImplementation((path: string) =>
     Promise.resolve(
-      new Response(JSON.stringify(path === '/accounts' ? [account] : [expenseCategory]), {
-        status: 200,
-      }),
+      new Response(
+        JSON.stringify(
+          path === '/accounts'
+            ? [account]
+            : path === '/cards'
+              ? { items: [card] }
+              : [expenseCategory],
+        ),
+        { status: 200 },
+      ),
     ),
   );
 });
@@ -87,15 +102,20 @@ describe('NotificationsInboxPage — lista atualiza ao voltar de uma ação', ()
   it('remove o item da lista após confirmar e voltar', async () => {
     const router = makeRouter();
     mocks.get.mockResolvedValue(notification());
-    mocks.confirm.mockResolvedValue(notification({ status: 'CONFIRMED', confirmedTransactionId: 't1' }));
+    mocks.confirm.mockResolvedValue(
+      notification({ status: 'CONFIRMED', confirmedTransactionId: 't1' }),
+    );
     const wrapper = await mountAt(router, '/notifications/inbox/n1');
 
-    await wrapper.findAll('select')[1]!.setValue('acc-1');
+    await wrapper.findAll('select')[1]!.setValue('account:acc-1');
     await wrapper.findAll('select')[2]!.setValue('cat-expense');
     await wrapper.find('form').trigger('submit');
     await flushPromises();
 
-    mocks.list.mockResolvedValueOnce({ data: [], page: { limit: 20, offset: 0, filteredCount: 0 } });
+    mocks.list.mockResolvedValueOnce({
+      data: [],
+      page: { limit: 20, offset: 0, filteredCount: 0 },
+    });
     await router.push('/notifications/inbox');
     await flushPromises();
 
@@ -106,14 +126,19 @@ describe('NotificationsInboxPage — lista atualiza ao voltar de uma ação', ()
   it('remove o item da lista após descartar e voltar', async () => {
     const router = makeRouter();
     mocks.get.mockResolvedValue(notification());
-    mocks.dismiss.mockResolvedValue(notification({ status: 'DISMISSED', dismissedAt: '2026-08-13T20:00:00.000Z' }));
+    mocks.dismiss.mockResolvedValue(
+      notification({ status: 'DISMISSED', dismissedAt: '2026-08-13T20:00:00.000Z' }),
+    );
     const wrapper = await mountAt(router, '/notifications/inbox/n1');
 
     const descartar = wrapper.findAll('button').find((b) => b.text() === 'Descartar')!;
     await descartar.trigger('click');
     await flushPromises();
 
-    mocks.list.mockResolvedValueOnce({ data: [], page: { limit: 20, offset: 0, filteredCount: 0 } });
+    mocks.list.mockResolvedValueOnce({
+      data: [],
+      page: { limit: 20, offset: 0, filteredCount: 0 },
+    });
     await router.push('/notifications/inbox');
     await flushPromises();
 
@@ -127,11 +152,16 @@ describe('NotificationsInboxPage — lista atualiza ao voltar de uma ação', ()
     mocks.markNonFinancial.mockResolvedValue(notification({ status: 'NON_FINANCIAL' }));
     const wrapper = await mountAt(router, '/notifications/inbox/n1');
 
-    const marcar = wrapper.findAll('button').find((b) => b.text() === 'Marcar como não financeira')!;
+    const marcar = wrapper
+      .findAll('button')
+      .find((b) => b.text() === 'Marcar como não financeira')!;
     await marcar.trigger('click');
     await flushPromises();
 
-    mocks.list.mockResolvedValueOnce({ data: [], page: { limit: 20, offset: 0, filteredCount: 0 } });
+    mocks.list.mockResolvedValueOnce({
+      data: [],
+      page: { limit: 20, offset: 0, filteredCount: 0 },
+    });
     await router.push('/notifications/inbox');
     await flushPromises();
 

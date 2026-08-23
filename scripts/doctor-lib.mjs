@@ -441,6 +441,18 @@ export function diagnose(facts) {
         ? paths.envFile
         : 'copie .env.example para .env e mantenha fora do Git',
   });
+  const androidOrigin = 'https://localhost';
+  const corsOrigins = rootEnv.corsOrigins ?? [];
+  const crossSiteOrigins = rootEnv.crossSiteOrigins ?? [];
+  const androidSessionReady =
+    corsOrigins.includes(androidOrigin) && crossSiteOrigins.includes(androidOrigin);
+  add(groups, 'Project', {
+    label: 'Sessão Android (CORS/cross-site)',
+    status: androidSessionReady ? 'OK' : 'WARN',
+    detail: androidSessionReady
+      ? `${androidOrigin} presente em API_CORS_ORIGINS e API_CROSS_SITE_ORIGINS`
+      : `garanta ${androidOrigin} em API_CORS_ORIGINS e API_CROSS_SITE_ORIGINS para a sessão do app Android persistir entre reinícios`,
+  });
   add(groups, 'Project', { label: 'Gradle wrapper', status: present.gradleWrapper ? 'OK' : 'MISSING', detail: paths.gradleWrapper });
   add(groups, 'Project', { label: 'Certificado HTTPS local', status: present.certs ? 'OK' : 'WARN', detail: present.certs ? 'certificado e chave presentes em .tools/certs' : 'necessário para dev:android/dev:phone; gere localmente e não versione' });
 
