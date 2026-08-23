@@ -38,6 +38,8 @@ const showDisableChoice = ref(false);
 const deletingHistory = ref(false);
 const historyDeleted = ref(false);
 const appSearch = ref('');
+const ignoredExpanded = ref(false);
+const catalogExpanded = ref(false);
 
 const isAndroid = computed(() => isNotificationListenerDiagnosticAvailable());
 const monitoredCount = computed(() => captureState.value.monitoredPackages.length);
@@ -399,7 +401,7 @@ async function restoreIgnored(packageName: string) {
           </div>
 
           <div class="app-group">
-            <h3>Observados neste dispositivo</h3>
+            <h3>Observados neste dispositivo ({{ visibleObserved.length }})</h3>
             <p class="fine-print">
               Somente nome do app/pacote e a última vez visto são guardados localmente aqui, até
               você escolher monitorar. O título e o texto da notificação só passam a ser capturados
@@ -408,27 +410,29 @@ async function restoreIgnored(packageName: string) {
             <ul v-if="visibleObserved.length" class="app-list">
               <li v-for="entry in visibleObserved" :key="entry.packageName">
                 <div class="choice observed-choice">
-                  <span>
-                    <strong>{{ entry.label ?? entry.packageName }}</strong>
+                  <div class="entry-info">
+                    <strong>{{ labelForPackage(entry.packageName) }}</strong>
                     <small>{{ entry.packageName }}</small>
                     <small>Visto em {{ formatLastSeen(entry.lastSeenAt) }}</small>
-                  </span>
-                  <button
-                    type="button"
-                    class="secondary"
-                    :disabled="savingApp === entry.packageName"
-                    @click="addToMonitored(entry.packageName)"
-                  >
-                    Monitorar
-                  </button>
-                  <button
-                    type="button"
-                    class="secondary"
-                    :disabled="savingApp === entry.packageName"
-                    @click="ignoreObserved(entry.packageName)"
-                  >
-                    Ignorar
-                  </button>
+                  </div>
+                  <div class="entry-actions">
+                    <button
+                      type="button"
+                      class="secondary"
+                      :disabled="savingApp === entry.packageName"
+                      @click="addToMonitored(entry.packageName)"
+                    >
+                      Monitorar
+                    </button>
+                    <button
+                      type="button"
+                      class="secondary"
+                      :disabled="savingApp === entry.packageName"
+                      @click="ignoreObserved(entry.packageName)"
+                    >
+                      Ignorar
+                    </button>
+                  </div>
                 </div>
               </li>
             </ul>
@@ -439,30 +443,58 @@ async function restoreIgnored(packageName: string) {
           </div>
 
           <div v-if="ignoredObserved.length" class="app-group">
-            <h3>Ignorados ({{ ignoredObserved.length }})</h3>
-            <ul class="app-list">
+            <h3 class="section-header">
+              <button
+                type="button"
+                class="section-toggle"
+                :aria-expanded="ignoredExpanded"
+                aria-controls="ignored-list"
+                @click="ignoredExpanded = !ignoredExpanded"
+              >
+                <span>Ignorados ({{ ignoredObserved.length }})</span>
+                <span class="material-icons" aria-hidden="true">
+                  {{ ignoredExpanded ? 'expand_less' : 'chevron_right' }}
+                </span>
+              </button>
+            </h3>
+            <ul v-if="ignoredExpanded" id="ignored-list" class="app-list">
               <li v-for="entry in ignoredObserved" :key="entry.packageName">
                 <div class="choice observed-choice">
-                  <span>
-                    <strong>{{ entry.label ?? entry.packageName }}</strong>
+                  <div class="entry-info">
+                    <strong>{{ labelForPackage(entry.packageName) }}</strong>
                     <small>{{ entry.packageName }}</small>
-                  </span>
-                  <button
-                    type="button"
-                    class="secondary"
-                    :disabled="savingApp === entry.packageName"
-                    @click="restoreIgnored(entry.packageName)"
-                  >
-                    Voltar a mostrar
-                  </button>
+                  </div>
+                  <div class="entry-actions">
+                    <button
+                      type="button"
+                      class="secondary"
+                      :disabled="savingApp === entry.packageName"
+                      @click="restoreIgnored(entry.packageName)"
+                    >
+                      Voltar a mostrar
+                    </button>
+                  </div>
                 </div>
               </li>
             </ul>
           </div>
 
-          <div class="app-group">
-            <h3>Apps conhecidos</h3>
-            <ul v-if="visibleCatalog.length" class="app-list">
+          <div v-if="visibleCatalog.length" class="app-group">
+            <h3 class="section-header">
+              <button
+                type="button"
+                class="section-toggle"
+                :aria-expanded="catalogExpanded"
+                aria-controls="catalog-list"
+                @click="catalogExpanded = !catalogExpanded"
+              >
+                <span>Apps conhecidos ({{ visibleCatalog.length }})</span>
+                <span class="material-icons" aria-hidden="true">
+                  {{ catalogExpanded ? 'expand_less' : 'chevron_right' }}
+                </span>
+              </button>
+            </h3>
+            <ul v-if="catalogExpanded" id="catalog-list" class="app-list">
               <li v-for="entry in visibleCatalog" :key="entry.packageName">
                 <button
                   type="button"
@@ -479,7 +511,6 @@ async function restoreIgnored(packageName: string) {
                 </button>
               </li>
             </ul>
-            <p v-else class="fine-print">Nenhum app conhecido encontrado.</p>
           </div>
         </section>
       </template>
@@ -589,6 +620,23 @@ dd {
   margin: 0 0 0.4rem;
   font-size: 0.95rem;
 }
+.section-header {
+  margin: 0 0 0.4rem;
+}
+.section-toggle {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.5rem 0;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  text-align: left;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
 .app-list {
   list-style: none;
   margin: 0.5rem 0 0;
@@ -606,9 +654,6 @@ dd {
   padding: 0.65rem;
   text-align: left;
 }
-.observed-choice {
-  grid-template-columns: minmax(0, 1fr) auto auto;
-}
 .choice[aria-pressed='true'] {
   color: var(--color-on-accent-container);
   background: var(--color-accent-container);
@@ -620,6 +665,41 @@ dd {
 }
 .choice small {
   color: var(--color-text-muted);
+}
+.observed-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  grid-template-columns: unset;
+}
+.entry-info {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.entry-info small {
+  overflow-wrap: anywhere;
+}
+.entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.entry-actions button {
+  flex: 1 1 auto;
+}
+@media (min-width: 30rem) {
+  .observed-choice {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .entry-actions {
+    flex: 0 0 auto;
+  }
+  .entry-actions button {
+    flex: 0 0 auto;
+  }
 }
 button:focus-visible,
 .link-button:focus-visible {

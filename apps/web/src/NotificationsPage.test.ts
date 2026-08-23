@@ -249,6 +249,10 @@ describe('NotificationsPage — acesso concedido', () => {
     await gerenciar.trigger('click');
 
     expect(wrapper.find('textarea').exists()).toBe(false);
+    const catalogToggle = wrapper.findAll('button').find((b) => b.text().includes('Apps conhecidos'))!;
+    await catalogToggle.trigger('click');
+    await flushPromises();
+
     const nubankToggle = wrapper.findAll('.choice').find((el) => el.text().includes('Nubank'))!;
     expect(nubankToggle.text()).toContain('com.nu.production');
 
@@ -324,7 +328,7 @@ describe('NotificationsPage — apps observados neste dispositivo', () => {
     });
   });
 
-  it('Ignorar remove o app de Observados e mostra em Ignorados sem monitorar', async () => {
+  it('Ignorar remove o app de Observados e mostra em Ignorados (fechado) sem monitorar', async () => {
     mocks.getObservedPackages.mockResolvedValue([
       { packageName: 'com.example.caju', label: 'Caju', lastSeenAt: Date.now() },
     ]);
@@ -343,10 +347,18 @@ describe('NotificationsPage — apps observados neste dispositivo', () => {
     expect(mocks.pushPreferences).not.toHaveBeenCalled();
     expect(wrapper.findAll('.observed-choice').filter((el) => el.text().includes('Monitorar'))).toHaveLength(0);
     expect(wrapper.text()).toContain('Ignorados (1)');
+    // U03: fechado por padrão — conteúdo não aparece até expandir.
+    expect(wrapper.text()).not.toContain('Voltar a mostrar');
+
+    const toggle = wrapper.findAll('button').find((b) => b.text().includes('Ignorados (1)'))!;
+    await toggle.trigger('click');
+    await flushPromises();
+
+    // U04: expandir revela o conteúdo.
     expect(wrapper.text()).toContain('Voltar a mostrar');
   });
 
-  it('permite voltar a mostrar um app ignorado', async () => {
+  it('permite voltar a mostrar um app ignorado após expandir a seção', async () => {
     mocks.getObservedPackages.mockResolvedValue([
       { packageName: 'com.example.caju', label: 'Caju', lastSeenAt: Date.now(), ignoredAt: Date.now() },
     ]);
@@ -357,6 +369,10 @@ describe('NotificationsPage — apps observados neste dispositivo', () => {
     await flushPromises();
     await openManager(wrapper);
 
+    const toggle = wrapper.findAll('button').find((b) => b.text().includes('Ignorados (1)'))!;
+    await toggle.trigger('click');
+    await flushPromises();
+
     const restaurar = wrapper.findAll('button').find((b) => b.text() === 'Voltar a mostrar')!;
     await restaurar.trigger('click');
     await flushPromises();
@@ -366,6 +382,17 @@ describe('NotificationsPage — apps observados neste dispositivo', () => {
     expect(wrapper.text()).not.toContain('Ignorados (1)');
   });
 
+  it('U05: esconde a seção Ignorados quando não há nenhum ignorado', async () => {
+    mocks.getObservedPackages.mockResolvedValue([
+      { packageName: 'com.example.caju', label: 'Caju', lastSeenAt: Date.now() },
+    ]);
+    const wrapper = mountPage();
+    await flushPromises();
+    await openManager(wrapper);
+
+    expect(wrapper.text()).not.toContain('Ignorados');
+  });
+
   it('app conhecido também observado aparece uma única vez (sem duplicar)', async () => {
     mocks.getObservedPackages.mockResolvedValue([
       { packageName: 'com.nu.production', label: 'Nubank', lastSeenAt: Date.now() },
@@ -373,6 +400,9 @@ describe('NotificationsPage — apps observados neste dispositivo', () => {
     const wrapper = mountPage();
     await flushPromises();
     await openManager(wrapper);
+    const catalogToggle = wrapper.findAll('button').find((b) => b.text().includes('Apps conhecidos'))!;
+    await catalogToggle.trigger('click');
+    await flushPromises();
 
     const nubankEntries = wrapper
       .findAll('.choice, .observed-choice')
@@ -440,5 +470,113 @@ describe('NotificationsPage — apps observados neste dispositivo', () => {
     await openManager(wrapper);
 
     expect(wrapper.findAll('.observed-choice')).toHaveLength(1);
+  });
+});
+
+describe('NotificationsPage — seções colapsáveis e rótulo amigável (SPEC-022 refinamento UX)', () => {
+  beforeEach(() => {
+    mocks.getStatus.mockResolvedValue({ supported: true, granted: true });
+  });
+
+  async function openManager(wrapper: VueWrapper) {
+    const gerenciar = wrapper.findAll('button').find((b) => b.text() === 'Gerenciar apps')!;
+    await gerenciar.trigger('click');
+    await flushPromises();
+  }
+
+  it('U01: Monitorados fica sempre visível, sem accordion, sem interação adicional', async () => {
+    mocks.getCaptureState.mockResolvedValue(
+      emptyCaptureState({ captureEnabled: true, monitoredPackages: ['com.nu.production'] }),
+    );
+    const wrapper = mountPage();
+    await flushPromises();
+    await openManager(wrapper);
+
+    expect(wrapper.text()).toContain('Monitorados');
+    expect(wrapper.text()).toContain('Nubank');
+    const monitoredHeading = wrapper.findAll('h3').find((h) => h.text() === 'Monitorados')!;
+    expect(monitoredHeading.find('button').exists()).toBe(false);
+  });
+
+  it('U02: mostra o contador de Observados neste dispositivo', async () => {
+    mocks.getObservedPackages.mockResolvedValue([
+      { packageName: 'com.example.caju', label: 'Caju', lastSeenAt: Date.now() },
+      { packageName: 'com.example.alelo', label: 'Alelo', lastSeenAt: Date.now() },
+    ]);
+    const wrapper = mountPage();
+    await flushPromises();
+    await openManager(wrapper);
+
+    expect(wrapper.text()).toContain('Observados neste dispositivo (2)');
+  });
+
+  it('U06/U08: Apps conhecidos fica fechado por padrão e some quando todos monitorados', async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    await openManager(wrapper);
+
+    expect(wrapper.text()).toContain('Apps conhecidos (3)');
+    expect(wrapper.text()).not.toContain('Nubank');
+    expect(wrapper.text()).not.toContain('C6 Bank');
+    expect(wrapper.text()).not.toContain('Banrisul');
+  });
+
+  it('U07: expandir Apps conhecidos mostra apenas os apps ainda não monitorados', async () => {
+    mocks.getCaptureState.mockResolvedValue(
+      emptyCaptureState({ captureEnabled: false, monitoredPackages: ['com.nu.production'] }),
+    );
+    const wrapper = mountPage();
+    await flushPromises();
+    await openManager(wrapper);
+
+    const toggle = wrapper.findAll('button').find((b) => b.text().includes('Apps conhecidos'))!;
+    expect(toggle.text()).toContain('Apps conhecidos (2)');
+    await toggle.trigger('click');
+    await flushPromises();
+
+    const catalogList = wrapper.find('#catalog-list');
+    expect(catalogList.text()).toContain('C6 Bank');
+    expect(catalogList.text()).toContain('Banrisul');
+    expect(catalogList.text()).not.toContain('Nubank');
+  });
+
+  it('U08: esconde Apps conhecidos quando todo o catálogo já está monitorado', async () => {
+    mocks.getCaptureState.mockResolvedValue(
+      emptyCaptureState({
+        captureEnabled: false,
+        monitoredPackages: ['com.nu.production', 'com.c6bank.app', 'br.com.banrisul'],
+      }),
+    );
+    const wrapper = mountPage();
+    await flushPromises();
+    await openManager(wrapper);
+
+    expect(wrapper.text()).not.toContain('Apps conhecidos');
+  });
+
+  it('U09: prioriza label amigável e não duplica o packageName como título e subtítulo', async () => {
+    mocks.getObservedPackages.mockResolvedValue([
+      { packageName: 'org.telegram.messenger', label: 'Telegram', lastSeenAt: Date.now() },
+    ]);
+    const wrapper = mountPage();
+    await flushPromises();
+    await openManager(wrapper);
+
+    const item = wrapper.findAll('.observed-choice').find((el) => el.text().includes('org.telegram.messenger'))!;
+    const strong = item.find('strong');
+    expect(strong.text()).toBe('Telegram');
+    expect(strong.text()).not.toBe('org.telegram.messenger');
+  });
+
+  it('U10: sem catálogo e sem label, usa o packageName como fallback', async () => {
+    mocks.getObservedPackages.mockResolvedValue([
+      { packageName: 'com.example.unknown', label: null, lastSeenAt: Date.now() },
+    ]);
+    const wrapper = mountPage();
+    await flushPromises();
+    await openManager(wrapper);
+
+    const item = wrapper.findAll('.observed-choice').find((el) => el.text().includes('com.example.unknown'))!;
+    expect(item.find('strong').text()).toBe('com.example.unknown');
   });
 });

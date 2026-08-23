@@ -204,6 +204,36 @@ Com acesso: status Ativo; apps monitorados com estado; `Gerenciar apps`; `Desati
 
 Estados de permissão, captura e app usam texto/ícone além de cor. Disclosure é legível antes do CTA, acessível por leitor de tela e teclado, com foco previsível, alvos de 44 × 44 CSS px, texto a 200%, contraste e sem timeout. Settings externa é anunciada. Back/“Agora não” preserva escolha e não bloqueia navegação.
 
+### 11.1 Gerenciar apps: seções e prioridade de rótulo
+
+A tela `Gerenciar apps` organiza os pacotes em quatro seções, nesta ordem:
+
+```text
+Monitorados
+[sempre visível, sempre aberta, sem accordion]
+
+Observados neste dispositivo (N)
+[aberta por padrão]
+
+Ignorados (N) ▸
+[accordion, fechado por padrão]
+
+Apps conhecidos (N) ▸
+[accordion, fechado por padrão]
+```
+
+`Ignorados` e `Apps conhecidos` são collapsible: o cabeçalho mostra o contador e um indicador de estado (▸ fechado / ▾ aberto); o conteúdo só é renderizado quando expandido. Cada seção some inteiramente (cabeçalho incluso) quando não há itens — não é exibido `Ignorados (0)` nem `Apps conhecidos (0)` (ex.: catálogo com todos os apps já monitorados).
+
+Cada item observado/ignorado separa claramente o bloco de texto (nome, pacote, "Visto em") do bloco de ações (`Monitorar`/`Ignorar` para observados; `Voltar a mostrar` para ignorados), empilhados em telas estreitas e lado a lado em telas largas, para não sobrepor texto e botão.
+
+Rótulo exibido para um pacote segue sempre a prioridade:
+
+```text
+catalogLabelFor(packageName) ?? observed.label ?? packageName
+```
+
+catálogo local conhecido primeiro, depois a label fornecida pela notificação/Android, e `packageName` como último recurso — nunca duplicando o `packageName` como título e subtítulo quando existir label.
+
 ## 12. Regras de negócio
 
 | ID | Regra |
