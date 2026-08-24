@@ -2,11 +2,27 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import BudgetsPage from './pages/BudgetsPage.vue';
 
+const routerMocks = vi.hoisted(() => ({
+  back: vi.fn(),
+  push: vi.fn(),
+  leaveGuard: undefined as unknown,
+}));
+vi.mock('vue-router', async () => {
+  const actual = await vi.importActual<typeof import('vue-router')>('vue-router');
+  return {
+    ...actual,
+    useRouter: () => ({ back: routerMocks.back, push: routerMocks.push }),
+    onBeforeRouteLeave: (guard: unknown) => {
+      routerMocks.leaveGuard = guard;
+    },
+  };
+});
 vi.mock('./auth', () => ({ authenticatedFetch: vi.fn() }));
 import { authenticatedFetch } from './auth';
 
 const response = (data: unknown, status = 200) =>
   Promise.resolve({ ok: status < 400, status, json: () => Promise.resolve(data) } as Response);
+const mountedWrappers: Array<ReturnType<typeof mount>> = [];
 
 const mercado = '00000000-0000-4000-8000-000000000001';
 const lazer = '00000000-0000-4000-8000-000000000002';
@@ -98,6 +114,7 @@ function mockInitialBudget(data: unknown = projected) {
 
 async function mountPage() {
   const wrapper = mount(BudgetsPage, { attachTo: document.body });
+  mountedWrappers.push(wrapper);
   await flushPromises();
   return wrapper;
 }
@@ -110,8 +127,14 @@ async function startCreate(wrapper: Awaited<ReturnType<typeof mountPage>>) {
 }
 
 describe('tela de orçamento mensal', () => {
-  beforeEach(() => vi.mocked(authenticatedFetch).mockReset());
+  beforeEach(() => {
+    vi.mocked(authenticatedFetch).mockReset();
+    routerMocks.back.mockReset();
+    routerMocks.push.mockReset().mockResolvedValue(undefined);
+    routerMocks.leaveGuard = undefined;
+  });
   afterEach(() => {
+    mountedWrappers.splice(0).forEach((wrapper) => wrapper.unmount());
     vi.useRealTimers();
     delete process.env.TZ;
     document.body.innerHTML = '';
@@ -123,8 +146,7 @@ describe('tela de orçamento mensal', () => {
     vi.setSystemTime(new Date('2026-09-01T00:30:00.000Z'));
     vi.mocked(authenticatedFetch).mockReturnValue(response({ error: {} }, 404));
 
-    mount(BudgetsPage);
-    await flushPromises();
+    await mountPage();
 
     expect(vi.mocked(authenticatedFetch).mock.calls[1]![0]).toBe('/budgets?month=2026-08');
   });
@@ -376,7 +398,7 @@ describe('tela de orçamento mensal', () => {
     expect(wrapper.text().toLowerCase()).not.toContain('saldo');
   });
 
-  it('abre edição, preserva categoria arquivada, remove categoria e cancela', async () => {
+  it('abre edição, preserva categoria arquivada e confirma antes de descartar remoção', async () => {
     mockInitialBudget();
     const wrapper = await mountPage();
 
@@ -388,15 +410,139 @@ describe('tela de orçamento mensal', () => {
     await wrapper.get('button[aria-label="Remover Mercado"]').trigger('click');
     expect(wrapper.findAll('.category-edit')).toHaveLength(1);
 
-    await wrapper.findAll('button').find((button) => button.text() === 'Cancelar')!.trigger('click');
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Voltar')!
+      .trigger('click');
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Descartar alterações');
+    await wrapper
+      .findAll('[role="dialog"] button')
+      .find((button) => button.text() === 'Descartar')!
+      .trigger('click');
     expect(wrapper.find('form.budget-form').exists()).toBe(false);
     expect(wrapper.text()).toContain('Resumo');
+  });
+
+  it('volta sem perguntar quando o formulário não foi alterado', async () => {
+    mockInitialBudget();
+    const wrapper = await mountPage();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Editar orçamento'))!
+      .trigger('click');
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Voltar')!
+      .trigger('click');
+
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+    expect(wrapper.find('form.budget-form').exists()).toBe(false);
+  });
+
+  it('cancelar o descarte mantém todos os valores do formulário sujo', async () => {
+    mockInitialBudget();
+    const wrapper = await mountPage();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Editar orçamento'))!
+      .trigger('click');
+    const total = wrapper.get('input[placeholder="5.000,00"]');
+    await total.setValue('2.345,67');
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Voltar')!
+      .trigger('click');
+    await wrapper
+      .findAll('[role="dialog"] button')
+      .find((button) => button.text() === 'Continuar editando')!
+      .trigger('click');
+
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+    expect((total.element as HTMLInputElement).value).toBe('2.345,67');
+    expect(wrapper.find('form.budget-form').exists()).toBe(true);
+  });
+
+  it('Android Back só é consumido quando há alterações e confirmar volta no histórico', async () => {
+    mockInitialBudget();
+    const wrapper = await mountPage();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Editar orçamento'))!
+      .trigger('click');
+
+    const cleanBack = new Event('plannerfin:android-back', { cancelable: true });
+    window.dispatchEvent(cleanBack);
+    expect(cleanBack.defaultPrevented).toBe(false);
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+
+    await wrapper.get('input[placeholder="5.000,00"]').setValue('2.000,00');
+    const dirtyBack = new Event('plannerfin:android-back', { cancelable: true });
+    window.dispatchEvent(dirtyBack);
+    await wrapper.vm.$nextTick();
+
+    expect(dirtyBack.defaultPrevented).toBe(true);
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Descartar alterações');
+    expect(routerMocks.back).not.toHaveBeenCalled();
+    await wrapper
+      .findAll('[role="dialog"] button')
+      .find((button) => button.text() === 'Descartar')!
+      .trigger('click');
+    expect(routerMocks.back).toHaveBeenCalledOnce();
+  });
+
+  it('protege navegação de rota e segue ao destino somente após confirmar descarte', async () => {
+    mockInitialBudget();
+    const wrapper = await mountPage();
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Editar orçamento'))!
+      .trigger('click');
+    await wrapper.get('input[placeholder="5.000,00"]').setValue('2.000,00');
+    const guard = routerMocks.leaveGuard as (to: { fullPath: string }) => boolean;
+
+    expect(guard({ fullPath: '/dashboard' })).toBe(false);
+    await wrapper.vm.$nextTick();
+    expect(routerMocks.push).not.toHaveBeenCalled();
+    await wrapper
+      .findAll('[role="dialog"] button')
+      .find((button) => button.text() === 'Continuar editando')!
+      .trigger('click');
+    expect((wrapper.get('input[placeholder="5.000,00"]').element as HTMLInputElement).value).toBe(
+      '2.000,00',
+    );
+
+    expect(guard({ fullPath: '/dashboard' })).toBe(false);
+    await wrapper.vm.$nextTick();
+    await wrapper
+      .findAll('[role="dialog"] button')
+      .find((button) => button.text() === 'Descartar')!
+      .trigger('click');
+    expect(routerMocks.push).toHaveBeenCalledWith('/dashboard');
+  });
+
+  it('mantém o CTA Salvar disponível no formulário preenchido', async () => {
+    vi.mocked(authenticatedFetch)
+      .mockReturnValueOnce(response(categories))
+      .mockReturnValueOnce(response({ error: {} }, 404));
+    const wrapper = await mountPage();
+    await startCreate(wrapper);
+    await wrapper.get('input[placeholder="5.000,00"]').setValue('1.000,00');
+
+    const save = wrapper.findAll('button').find((button) => button.text() === 'Salvar')!;
+    expect(save.exists()).toBe(true);
+    expect(save.attributes('disabled')).toBeUndefined();
+    expect(save.attributes('type')).not.toBe('button');
   });
 
   it('salva edição com valor pt-BR sem alterar contrato de PATCH', async () => {
     mockInitialBudget();
     const wrapper = await mountPage();
-    await wrapper.findAll('button').find((button) => button.text().includes('Editar orçamento'))!.trigger('click');
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Editar orçamento'))!
+      .trigger('click');
     await wrapper.get('input[placeholder="5.000,00"]').setValue('2.000,00');
     vi.mocked(authenticatedFetch).mockReturnValueOnce(response({ ...projected, totalLimit: '2000.00' }));
 

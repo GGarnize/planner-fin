@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /* eslint-disable no-undef */
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { onBeforeRouteLeave, useRouter } from 'vue-router';
 import type { PublicFinancialCategory, PublicMonthlyBudget } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 import CategoryIcon from '../components/CategoryIcon.vue';
@@ -9,6 +10,9 @@ import { normalizeMoney } from '../transaction-template';
 
 type BudgetFormLine = { categoryId: string; limitAmount: string };
 type ApiErrorDetail = { field?: string; message?: string };
+type LeaveIntent = 'edit' | 'history' | 'route';
+
+const router = useRouter();
 
 const civilMonth = () => {
   const now = new Date();
@@ -23,6 +27,11 @@ const absent = ref(false);
 const pageError = ref('');
 const formError = ref('');
 const editing = ref(false);
+const dirty = ref(false);
+const discardOpen = ref(false);
+const leaveIntent = ref<LeaveIntent>('edit');
+const pendingRoute = ref('');
+const discardDialog = ref<HTMLElement | null>(null);
 const copyOpen = ref(false);
 const copyMonth = ref('');
 const form = reactive({
@@ -185,18 +194,65 @@ function startEdit() {
     form.notes = '';
     form.categories = [];
   }
+  dirty.value = false;
+  discardOpen.value = false;
+  pendingRoute.value = '';
   editing.value = true;
 }
 function cancelEdit() {
   editing.value = false;
+  dirty.value = false;
+  discardOpen.value = false;
+  pendingRoute.value = '';
   formError.value = '';
   clearFieldErrors();
 }
+function requestLeave(intent: LeaveIntent = 'edit') {
+  if (!dirty.value) {
+    if (intent === 'edit') cancelEdit();
+    else if (intent === 'history') router.back();
+    return;
+  }
+  leaveIntent.value = intent;
+  discardOpen.value = true;
+}
+function cancelDiscard() {
+  discardOpen.value = false;
+  pendingRoute.value = '';
+}
+async function confirmDiscard() {
+  const intent = leaveIntent.value;
+  const route = pendingRoute.value;
+  cancelEdit();
+  if (intent === 'history') router.back();
+  else if (intent === 'route' && route) await router.push(route);
+}
+function onAndroidBack(event: Event) {
+  if (discardOpen.value) {
+    cancelDiscard();
+    event.preventDefault();
+    return;
+  }
+  if (!editing.value || !dirty.value) return;
+  requestLeave('history');
+  event.preventDefault();
+}
+function onKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || !discardOpen.value) return;
+  cancelDiscard();
+  event.preventDefault();
+}
 function addCategory(event: Event) {
   const id = (event.target as HTMLSelectElement).value;
-  if (id && !form.categories.some((line) => line.categoryId === id))
+  if (id && !form.categories.some((line) => line.categoryId === id)) {
     form.categories.push({ categoryId: id, limitAmount: '' });
+    dirty.value = true;
+  }
   (event.target as HTMLSelectElement).value = '';
+}
+function removeCategory(index: number) {
+  form.categories.splice(index, 1);
+  dirty.value = true;
 }
 function validateForm() {
   clearFieldErrors();
@@ -243,6 +299,7 @@ async function save() {
     });
     absent.value = false;
     editing.value = false;
+    dirty.value = false;
     clearFieldErrors();
   } catch (failure) {
     if (failure instanceof ApiRequestError) applyApiDetails(failure.details);
@@ -278,12 +335,29 @@ async function copy() {
   }
 }
 onMounted(async () => {
+  window.addEventListener('keydown', onKeydown);
+  window.addEventListener('plannerfin:android-back', onAndroidBack, true);
   try {
     categories.value = await request('/categories?type=EXPENSE&includeArchived=true');
   } catch {
     categories.value = [];
   }
   await load();
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('plannerfin:android-back', onAndroidBack, true);
+});
+onBeforeRouteLeave((to) => {
+  if (!editing.value || !dirty.value) return true;
+  pendingRoute.value = to.fullPath;
+  requestLeave('route');
+  return false;
+});
+watch(discardOpen, async (visible) => {
+  if (!visible) return;
+  await nextTick();
+  discardDialog.value?.querySelector<HTMLElement>('button')?.focus();
 });
 </script>
 
@@ -313,7 +387,13 @@ onMounted(async () => {
       <button type="button" @click="startEdit">Criar orçamento</button>
     </section>
 
-    <form v-if="editing" class="budget-form" novalidate @submit.prevent="save">
+    <form
+      v-if="editing"
+      class="budget-form"
+      novalidate
+      @submit.prevent="save"
+      @input="dirty = true"
+    >
       <div class="form-head">
         <div>
           <h2>{{ budget ? 'Editar orçamento' : 'Criar orçamento' }}</h2>
@@ -373,17 +453,36 @@ onMounted(async () => {
             type="button"
             class="icon-button"
             :aria-label="`Remover ${categoryName(line.categoryId)}`"
-            @click="form.categories.splice(index, 1)"
+            @click="removeCategory(index)"
           >
             <span class="material-icons" aria-hidden="true">delete</span>
           </button>
         </div>
       </fieldset>
       <div class="form-actions">
+        <button type="button" class="secondary" :disabled="saving" @click="requestLeave()">
+          Voltar
+        </button>
         <button :disabled="saving">{{ saving ? 'Salvando...' : 'Salvar' }}</button>
-        <button type="button" class="secondary" :disabled="saving" @click="cancelEdit">Cancelar</button>
       </div>
     </form>
+
+    <div v-if="discardOpen" class="discard-backdrop" @click.self="cancelDiscard">
+      <section
+        ref="discardDialog"
+        class="discard-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="budget-discard-title"
+      >
+        <h2 id="budget-discard-title">Descartar alterações?</h2>
+        <p>As alterações não salvas serão perdidas.</p>
+        <div>
+          <button type="button" class="secondary" @click="cancelDiscard">Continuar editando</button>
+          <button type="button" @click="confirmDiscard">Descartar</button>
+        </div>
+      </section>
+    </div>
 
     <section v-if="budget && !editing" class="budget-view">
       <section class="summary-panel" :class="{ exceeded: committedExceeded }">
@@ -589,6 +688,15 @@ onMounted(async () => {
   border-radius: 0.75rem;
   padding: 1rem;
 }
+.budget-form {
+  display: grid;
+  gap: 0.75rem;
+}
+.budget-form h2,
+.budget-form p,
+.budget-form fieldset {
+  margin-block: 0;
+}
 .empty-state p,
 .muted,
 .summary-meta,
@@ -713,6 +821,7 @@ label > small {
 }
 .form-actions {
   padding-top: 0.25rem;
+  padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
   background: var(--color-surface);
 }
 .form-actions button {
@@ -723,6 +832,30 @@ label > small {
 }
 .copy-panel label {
   flex: 1 1 12rem;
+}
+.discard-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: var(--color-overlay);
+}
+.discard-dialog {
+  width: min(100%, 28rem);
+  padding: 1rem;
+  border-radius: 1rem;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-overlay);
+}
+.discard-dialog h2 {
+  margin-top: 0;
+}
+.discard-dialog div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
 }
 .section-block {
   display: grid;
@@ -825,7 +958,7 @@ select:focus-visible {
 }
 @media (max-width: 767px) {
   .budgets {
-    padding: 0 0 calc(var(--shell-nav-height, 0px) + 4rem + env(safe-area-inset-bottom));
+    padding: 0;
   }
   .month-nav {
     grid-template-columns: 2.75rem minmax(0, 1fr) 2.75rem;
@@ -846,6 +979,27 @@ select:focus-visible {
   .other-expenses {
     grid-template-columns: 1fr 1fr;
   }
+  .empty-state,
+  .budget-form,
+  .summary-panel,
+  .copy-panel,
+  .section-block {
+    padding: 0.75rem;
+  }
+  .state,
+  .empty-state,
+  .budget-form,
+  .summary-panel,
+  .copy-panel,
+  .section-block {
+    margin-top: 0.65rem;
+  }
+  .section-block {
+    gap: 0.5rem;
+  }
+  fieldset {
+    padding: 0.65rem;
+  }
   .category-edit {
     grid-template-columns: 1.75rem minmax(0, 1fr) 2.75rem;
   }
@@ -858,14 +1012,29 @@ select:focus-visible {
     grid-row: 1;
   }
   .category-row {
-    padding-right: 4rem;
+    padding: 0.55rem 0;
   }
   .category-main strong {
     white-space: normal;
   }
+  .discard-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+  .discard-dialog {
+    width: 100%;
+    padding: 1rem max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom))
+      max(1rem, env(safe-area-inset-left));
+    border-radius: 1rem 1rem 0 0;
+  }
+  :global(.authenticated-shell:has(.budgets) .shell-content) {
+    padding-bottom: calc(var(--shell-nav-height) + 1rem + env(safe-area-inset-bottom));
+  }
+  :global(.authenticated-shell:has(.budgets--editing) .shell-content) {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
 }
 @media (max-width: 390px) {
-  .summary-grid,
   .other-expenses {
     grid-template-columns: 1fr;
   }
