@@ -71,7 +71,9 @@ const committedAriaText = (value: string, exceeded: boolean, context?: string) =
 const progressStyle = (value: string) => ({
   '--progress': `${Math.min(Math.max(Number(value), 0), 100)}%`,
 });
-const categoryInputKey = (categoryId: string) => `category:${categoryId}`;
+type BudgetCategoryField = 'categoryId' | 'limitAmount';
+const categoryFieldKey = (categoryId: string, field: BudgetCategoryField) =>
+  `category:${categoryId}:${field}`;
 const categoryMeta = (id: string) => categoryMap.value.get(id);
 const categoryName = (id: string) =>
   budget.value?.categories.find((item) => item.categoryId === id)?.categoryName ??
@@ -104,8 +106,22 @@ function applyApiDetails(details: ApiErrorDetail[]) {
     if (detail.field === 'totalLimit') setFieldError('totalLimit', 'Informe um valor válido.');
     else if (detail.field === 'categories')
       form.categories.forEach((line) =>
-        setFieldError(categoryInputKey(line.categoryId), 'Revise o limite desta categoria.'),
+        setFieldError(
+          categoryFieldKey(line.categoryId, 'limitAmount'),
+          'Revise o limite desta categoria.',
+        ),
       );
+    else {
+      const match = /^categories\.(\d+)\.(categoryId|limitAmount)$/.exec(detail.field ?? '');
+      if (!match) return;
+      const line = form.categories[Number(match[1])];
+      const field = match[2] as BudgetCategoryField;
+      if (!line) return;
+      setFieldError(
+        categoryFieldKey(line.categoryId, field),
+        field === 'limitAmount' ? 'Revise o limite desta categoria.' : 'Revise esta categoria.',
+      );
+    }
   });
 }
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -196,7 +212,7 @@ function validateForm() {
     const limitAmount = normalizeMoney(line.limitAmount);
     if (!limitAmount)
       setFieldError(
-        categoryInputKey(line.categoryId),
+        categoryFieldKey(line.categoryId, 'limitAmount'),
         isZeroInput(line.limitAmount)
           ? 'O limite deve ser maior que zero.'
           : 'Revise o limite desta categoria.',
@@ -337,6 +353,9 @@ onMounted(async () => {
           <span>
             {{ categoryName(line.categoryId) }}
             <em v-if="isArchived(line.categoryId)">(arquivada)</em>
+            <small v-if="fieldErrors[categoryFieldKey(line.categoryId, 'categoryId')]">
+              {{ fieldErrors[categoryFieldKey(line.categoryId, 'categoryId')] }}
+            </small>
           </span>
           <label>
             <span class="visually-hidden">Limite da categoria</span>
@@ -346,9 +365,9 @@ onMounted(async () => {
               inputmode="decimal"
               placeholder="500,00"
               :disabled="isArchived(line.categoryId)"
-              :aria-invalid="Boolean(fieldErrors[categoryInputKey(line.categoryId)])"
+              :aria-invalid="Boolean(fieldErrors[categoryFieldKey(line.categoryId, 'limitAmount')])"
             />
-            <small>{{ fieldErrors[categoryInputKey(line.categoryId)] }}</small>
+            <small>{{ fieldErrors[categoryFieldKey(line.categoryId, 'limitAmount')] }}</small>
           </label>
           <button
             type="button"
