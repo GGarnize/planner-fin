@@ -25,6 +25,7 @@ test.beforeEach(async ({ page }) => {
   );
   await page.route('**/api/accounts', (r) => r.fulfill({ json: [account] }));
   await page.route('**/api/categories', (r) => r.fulfill({ json: [category] }));
+  await page.route('**/api/cards', (r) => r.fulfill({ json: { items: [], nextCursor: null } }));
   await page.route('**/api/transaction-templates*', (r) =>
     r.fulfill({ json: r.request().method() === 'GET' ? [template] : template }),
   );
@@ -43,8 +44,11 @@ test('lançamentos mobile priorizam lista e modelo apenas copia o rascunho', asy
     'false',
   );
   await expect(page.getByRole('heading', { name: 'Nenhum resultado para os filtros' })).toBeVisible();
-  await page.getByRole('button', { name: 'Nova despesa' }).click();
-  await expect(page).toHaveURL(/transactions\/new/);
+  await page.getByRole('button', { name: 'Novo lançamento' }).click();
+  const newTransactionDialog = page.getByRole('dialog', { name: 'Novo lançamento' });
+  await expect(newTransactionDialog).toBeVisible();
+  await newTransactionDialog.getByRole('button', { name: 'Despesa', exact: true }).click();
+  await expect(page).toHaveURL(/\/transactions\/new\?type=EXPENSE$/);
   await page.getByRole('button', { name: 'Usar modelo...' }).click();
   await page.getByRole('button', { name: /Aluguel.*Aluguel sintético/ }).click();
   await expect(page.getByLabel('Descrição')).toHaveValue('Aluguel sintético');
