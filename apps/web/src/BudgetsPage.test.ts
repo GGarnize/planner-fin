@@ -235,6 +235,113 @@ describe('tela de orçamento mensal', () => {
     expect(wrapper.text()).toContain('Informe um valor válido.');
   });
 
+  it('associa detalhe aninhado ao limite da categoria correta sem limpar o formulário', async () => {
+    vi.mocked(authenticatedFetch)
+      .mockReturnValueOnce(response(categories))
+      .mockReturnValueOnce(response({ error: {} }, 404));
+    const wrapper = await mountPage();
+    await startCreate(wrapper);
+    await wrapper.get('input[placeholder="5.000,00"]').setValue('1000');
+    await wrapper.get('select').setValue(mercado);
+    await wrapper.get('select').setValue(lazer);
+    const inputs = wrapper.findAll('.category-edit input');
+    await inputs[0]!.setValue('100');
+    await inputs[1]!.setValue('200');
+    vi.mocked(authenticatedFetch).mockReturnValueOnce(
+      response(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Dados inválidos.',
+            details: [
+              {
+                field: 'categories.1.limitAmount',
+                message: 'limitAmount must match pattern',
+              },
+            ],
+          },
+        },
+        400,
+      ),
+    );
+
+    await wrapper.get('form.budget-form').trigger('submit');
+    await flushPromises();
+
+    const currentInputs = wrapper.findAll('.category-edit input');
+    expect(currentInputs[0]!.attributes('aria-invalid')).toBe('false');
+    expect(currentInputs[1]!.attributes('aria-invalid')).toBe('true');
+    expect((currentInputs[0]!.element as HTMLInputElement).value).toBe('100');
+    expect((currentInputs[1]!.element as HTMLInputElement).value).toBe('200');
+    expect(wrapper.findAll('.category-edit')[0]!.text()).not.toContain(
+      'Revise o limite desta categoria.',
+    );
+    expect(wrapper.findAll('.category-edit')[1]!.text()).toContain(
+      'Revise o limite desta categoria.',
+    );
+  });
+
+  it('associa categoryId inválido à categoria indicada pelo índice', async () => {
+    vi.mocked(authenticatedFetch)
+      .mockReturnValueOnce(response(categories))
+      .mockReturnValueOnce(response({ error: {} }, 404));
+    const wrapper = await mountPage();
+    await startCreate(wrapper);
+    await wrapper.get('input[placeholder="5.000,00"]').setValue('1000');
+    await wrapper.get('select').setValue(mercado);
+    await wrapper.get('select').setValue(lazer);
+    const inputs = wrapper.findAll('.category-edit input');
+    await inputs[0]!.setValue('100');
+    await inputs[1]!.setValue('200');
+    vi.mocked(authenticatedFetch).mockReturnValueOnce(
+      response(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Dados inválidos.',
+            details: [
+              { field: 'categories.1.categoryId', message: 'categoryId must be a UUID' },
+            ],
+          },
+        },
+        400,
+      ),
+    );
+
+    await wrapper.get('form.budget-form').trigger('submit');
+    await flushPromises();
+
+    expect(wrapper.findAll('.category-edit')[0]!.text()).not.toContain('Revise esta categoria.');
+    expect(wrapper.findAll('.category-edit')[1]!.text()).toContain('Revise esta categoria.');
+  });
+
+  it('mantém o erro geral quando não existe detalhe mapeável', async () => {
+    vi.mocked(authenticatedFetch)
+      .mockReturnValueOnce(response(categories))
+      .mockReturnValueOnce(response({ error: {} }, 404));
+    const wrapper = await mountPage();
+    await startCreate(wrapper);
+    await wrapper.get('input[placeholder="5.000,00"]').setValue('100');
+    vi.mocked(authenticatedFetch).mockReturnValueOnce(
+      response(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Dados inválidos.',
+            details: [{ field: 'campoDesconhecido', message: 'erro desconhecido' }],
+          },
+        },
+        400,
+      ),
+    );
+
+    await wrapper.get('form.budget-form').trigger('submit');
+    await flushPromises();
+
+    expect(wrapper.get('[role=alert]').text()).toContain('Dados inválidos.');
+    expect(wrapper.get('input[placeholder="5.000,00"]').attributes('aria-invalid')).toBe('false');
+  });
+
   it('apresenta falha recuperável de leitura em vez de estado vazio', async () => {
     vi.mocked(authenticatedFetch).mockReturnValueOnce(response(categories)).mockRejectedValueOnce(new Error('offline'));
     const wrapper = await mountPage();
