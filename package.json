@@ -10,6 +10,7 @@
   "packageManager": "pnpm@10.28.1",
   "scripts": {
     "env:doctor": "node scripts/doctor.mjs",
+    "commands": "node scripts/commands.mjs",
     "dev": "node scripts/run-with-root-env.mjs pnpm --parallel --filter @planner-fin/api --filter @planner-fin/web dev",
     "dev:api": "node scripts/run-with-root-env.mjs pnpm --filter @planner-fin/api dev",
     "dev:web": "node scripts/run-with-root-env.mjs pnpm --filter @planner-fin/web dev",
