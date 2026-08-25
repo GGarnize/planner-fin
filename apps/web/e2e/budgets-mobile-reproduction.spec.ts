@@ -55,10 +55,11 @@ const projected = {
   updatedAt: '',
 };
 
-test('REPRODUÇÃO: orçamento em viewports alvo, payload e CTA com viewport reduzido', async ({
+test('TO-BE: orçamento responsivo, criação, edição e CTA sem sobreposição', async ({
   page,
 }, testInfo) => {
-  let created = false;
+  test.setTimeout(90_000);
+  let currentBudget: typeof projected | null = null;
   let sentPayload: unknown;
   await page.route('**/api/auth/csrf', (route) =>
     route.fulfill({ json: { csrfToken: 'csrf-sintetico' } }),
@@ -68,12 +69,20 @@ test('REPRODUÇÃO: orçamento em viewports alvo, payload e CTA com viewport red
   );
   await page.route('**/api/categories?*', (route) => route.fulfill({ json: categories }));
   await page.route('**/api/budgets?*', (route) =>
-    route.fulfill(created ? { json: projected } : { status: 404, json: { error: {} } }),
+    route.fulfill(currentBudget ? { json: currentBudget } : { status: 404, json: { error: {} } }),
   );
   await page.route('**/api/budgets', async (route) => {
     sentPayload = route.request().postDataJSON();
-    created = true;
-    await route.fulfill({ status: 201, json: projected });
+    currentBudget = projected;
+    await route.fulfill({ status: 201, json: currentBudget });
+  });
+  await page.route('**/api/budgets/*', async (route) => {
+    sentPayload = route.request().postDataJSON();
+    currentBudget = {
+      ...projected,
+      totalLimit: String((sentPayload as { totalLimit: string }).totalLimit),
+    };
+    await route.fulfill({ json: currentBudget });
   });
 
   const metrics: unknown[] = [];
@@ -114,7 +123,7 @@ test('REPRODUÇÃO: orçamento em viewports alvo, payload e CTA com viewport red
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport.width);
   }
 
-  created = true;
+  currentBudget = projected;
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     await page.goto('/budgets');
@@ -141,9 +150,12 @@ test('REPRODUÇÃO: orçamento em viewports alvo, payload e CTA com viewport red
       }, viewport),
     );
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport.width);
+    expect(
+      await page.locator('.category-row').evaluate((row) => getComputedStyle(row).paddingRight),
+    ).toBe('0px');
   }
 
-  created = false;
+  currentBudget = null;
   await page.setViewportSize({ width: 360, height: 800 });
   await page.goto('/budgets');
   await page.getByRole('button', { name: 'Criar orçamento' }).click();
@@ -180,8 +192,109 @@ test('REPRODUÇÃO: orçamento em viewports alvo, payload e CTA com viewport red
     categories: [],
   });
 
+  for (const [index, viewport] of viewports.entries()) {
+    await page.setViewportSize(viewport);
+    await page.goto('/budgets');
+    await page.getByRole('button', { name: 'Editar orçamento' }).click();
+    const total = page.getByPlaceholder('5.000,00');
+    await total.fill(`${5100 + index},00`);
+    const editMetrics = await page.evaluate((size) => {
+      const shellContent = document.querySelector('.shell-content') as HTMLElement;
+      const form = document.querySelector('.budget-form') as HTMLElement;
+      const action = document.querySelector('.form-actions') as HTMLElement;
+      return {
+        phase: 'edit',
+        viewport: size,
+        scrollWidth: document.documentElement.scrollWidth,
+        scrollHeight: document.documentElement.scrollHeight,
+        shellPaddingBottom: getComputedStyle(shellContent).paddingBottom,
+        formWidth: form.getBoundingClientRect().width,
+        actionBottom: action.getBoundingClientRect().bottom,
+        fabDisplay: getComputedStyle(document.querySelector('.global-fab')!).display,
+        bottomNavDisplay: getComputedStyle(document.querySelector('.bottom-nav')!).display,
+      };
+    }, viewport);
+    metrics.push(editMetrics);
+    expect(editMetrics.scrollWidth).toBe(viewport.width);
+    expect(editMetrics.fabDisplay).toBe('none');
+    if (viewport.width <= 767) {
+      expect(editMetrics.bottomNavDisplay).toBe('none');
+      expect(Number.parseFloat(editMetrics.shellPaddingBottom)).toBeLessThanOrEqual(20);
+    }
+
+    const editSave = page.getByRole('button', { name: 'Salvar' });
+    await editSave.scrollIntoViewIfNeeded();
+    await expect(editSave).toBeVisible();
+    const saveBox = await editSave.boundingBox();
+    expect(saveBox).not.toBeNull();
+    expect(saveBox!.y + saveBox!.height).toBeLessThanOrEqual(viewport.height);
+    const patch = page.waitForRequest(
+      (request) => request.url().includes('/api/budgets/') && request.method() === 'PATCH',
+    );
+    await editSave.click();
+    await patch;
+    await expect(page.getByRole('heading', { name: 'Resumo' })).toBeVisible();
+  }
+
+  await page.setViewportSize({ width: 390, height: 480 });
+  await page.goto('/budgets');
+  await page.getByRole('button', { name: 'Editar orçamento' }).click();
+  await page.getByPlaceholder('5.000,00').fill('9.999,00');
+  const keyboardSave = page.getByRole('button', { name: 'Salvar' });
+  await keyboardSave.scrollIntoViewIfNeeded();
+  await expect(keyboardSave).toBeVisible();
+  const keyboardBox = await keyboardSave.boundingBox();
+  expect(keyboardBox).not.toBeNull();
+  expect(keyboardBox!.y + keyboardBox!.height).toBeLessThanOrEqual(480);
+
   await testInfo.attach('budgets-mobile-reproduction-metrics.json', {
     body: Buffer.from(JSON.stringify({ metrics, sentPayload }, null, 2)),
     contentType: 'application/json',
   });
+});
+
+test('dirty guard preserva valores e protege Voltar, Android Back e navegação de rota', async ({
+  page,
+}) => {
+  await page.route('**/api/auth/csrf', (route) =>
+    route.fulfill({ json: { csrfToken: 'csrf-sintetico' } }),
+  );
+  await page.route('**/api/auth/refresh', (route) =>
+    route.fulfill({ json: { accessToken: 'token-sintetico', expiresIn: 900, user } }),
+  );
+  await page.route('**/api/categories?*', (route) => route.fulfill({ json: categories }));
+  await page.route('**/api/budgets?*', (route) => route.fulfill({ json: projected }));
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/budgets');
+  await page.getByRole('button', { name: 'Editar orçamento' }).click();
+
+  const cleanBackPrevented = await page.evaluate(() => {
+    const event = new Event('plannerfin:android-back', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(cleanBackPrevented).toBe(false);
+  await page.getByPlaceholder('5.000,00').fill('7.777,00');
+  await page.getByRole('button', { name: 'Voltar' }).click();
+  await expect(page.getByRole('dialog', { name: 'Descartar alterações?' })).toBeVisible();
+  await page.getByRole('button', { name: 'Continuar editando' }).click();
+  await expect(page.getByPlaceholder('5.000,00')).toHaveValue('7.777,00');
+
+  const dirtyBackPrevented = await page.evaluate(() => {
+    const event = new Event('plannerfin:android-back', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(dirtyBackPrevented).toBe(true);
+  await expect(page.getByRole('dialog', { name: 'Descartar alterações?' })).toBeVisible();
+  await page.getByRole('button', { name: 'Continuar editando' }).click();
+  await expect(page.getByPlaceholder('5.000,00')).toHaveValue('7.777,00');
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole('link', { name: 'Início' }).click();
+  await expect(page).toHaveURL(/\/budgets$/);
+  await expect(page.getByRole('dialog', { name: 'Descartar alterações?' })).toBeVisible();
+  await page.getByRole('button', { name: 'Descartar' }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
 });
