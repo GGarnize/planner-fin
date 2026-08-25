@@ -51,6 +51,15 @@ function Test-ThrowsMatching {
   }
 }
 
+function New-FakeHttpException {
+  param([string] $Message, [Nullable[int]] $StatusCode)
+  $exception = New-Object System.Exception $Message
+  if ($null -ne $StatusCode) {
+    $exception | Add-Member -MemberType NoteProperty -Name Response -Value ([pscustomobject]@{ StatusCode = $StatusCode }) -Force
+  }
+  return $exception
+}
+
 Write-Host 'Self-test: scripts/android-release.lib.ps1 sob Set-StrictMode -Version Latest'
 Write-Host ''
 
@@ -94,6 +103,98 @@ Assert-True ((Get-ConnectedAdbDeviceCount -Lines @('List of devices attached', "
 
 Assert-True ((Get-ConnectedAdbDeviceCount -Lines @('List of devices attached', "emulator-5554`tdevice", "ABC123`tdevice", '')) -eq 2) `
   'Get-ConnectedAdbDeviceCount: dois devices prontos -- retorna 2'
+
+$script:FakeAdbCallLog = New-Object System.Collections.Generic.List[string]
+$fakeAdbStartupInvoker = {
+  param($Path, [Parameter(ValueFromRemainingArguments = $true)][string[]] $Args)
+  $script:FakeAdbCallLog.Add($Args -join ' ')
+  if ($Args[0] -eq 'start-server') {
+    return [pscustomobject]@{
+      ExitCode = 0
+      Stdout   = @()
+      Stderr   = @('* daemon not running; starting now at tcp:5037', '* daemon started successfully')
+    }
+  }
+  return [pscustomobject]@{
+    ExitCode = 0
+    Stdout   = @('List of devices attached')
+    Stderr   = @()
+  }
+}
+$adbStartupResult = Get-AdbDevicesProbe -AdbPath 'C:\fake\adb.exe' -AdbInvoker $fakeAdbStartupInvoker
+Assert-True ($adbStartupResult.DeviceCount -eq 0) `
+  'Get-AdbDevicesProbe: startup normal do daemon em stderr + exit 0 -- nao lanca e retorna 0 devices'
+Assert-True (($script:FakeAdbCallLog -join '|') -eq 'start-server|devices') `
+  'Get-AdbDevicesProbe: executa start-server antes de devices'
+
+$fakeAdbOneDeviceInvoker = {
+  param($Path, [Parameter(ValueFromRemainingArguments = $true)][string[]] $Args)
+  if ($Args[0] -eq 'devices') {
+    return [pscustomobject]@{
+      ExitCode = 0
+      Stdout   = @('List of devices attached', "emulator-5554`tdevice")
+      Stderr   = @()
+    }
+  }
+  return [pscustomobject]@{ ExitCode = 0; Stdout = @(); Stderr = @() }
+}
+$adbOneDeviceResult = Get-AdbDevicesProbe -AdbPath 'C:\fake\adb.exe' -AdbInvoker $fakeAdbOneDeviceInvoker
+Assert-True ($adbOneDeviceResult.DeviceCount -eq 1) `
+  'Get-AdbDevicesProbe: adb devices com um device pronto -- retorna 1 device'
+
+$fakeAdbFailureInvoker = {
+  param($Path, [Parameter(ValueFromRemainingArguments = $true)][string[]] $Args)
+  throw 'adb devices falhou com exit code 1: erro sintetico'
+}
+Assert-True (Test-ThrowsMatching { Get-AdbDevicesProbe -AdbPath 'C:\fake\adb.exe' -AdbInvoker $fakeAdbFailureInvoker } 'exit code 1') `
+  'Get-AdbDevicesProbe: exit code nao zero continua propagando erro real'
+
+# --- Test-AndroidLatestEndpoint --------------------------------------------------------
+# O pos-check remoto da release e deliberadamente nao bloqueante depois que o publish ja
+# terminou com sucesso: 200/302 sao OK; falhas HTTP/rede viram WARN. Todos os cenarios
+# abaixo usam invocadores sinteticos -- nenhum GET real, nenhum upload/publicacao.
+
+$http200 = Test-AndroidLatestEndpoint -ApiBaseUrlProd 'https://api.example.test/api' -RequestInvoker {
+  param($Url)
+  [pscustomobject]@{ StatusCode = 200 }
+}
+Assert-True ($http200.Status -eq 'OK' -and $http200.StatusCode -eq 200) `
+  'Test-AndroidLatestEndpoint: HTTP 200 -- OK'
+
+$http302Direct = Test-AndroidLatestEndpoint -ApiBaseUrlProd 'https://api.example.test/api/' -RequestInvoker {
+  param($Url)
+  [pscustomobject]@{ StatusCode = 302 }
+}
+Assert-True ($http302Direct.Status -eq 'OK' -and $http302Direct.StatusCode -eq 302) `
+  'Test-AndroidLatestEndpoint: HTTP 302 como resposta direta -- OK'
+
+$http302Exception = Test-AndroidLatestEndpoint -ApiBaseUrlProd 'https://api.example.test/api' -RequestInvoker {
+  param($Url)
+  throw (New-FakeHttpException -Message 'redirect sintetico' -StatusCode 302)
+}
+Assert-True ($http302Exception.Status -eq 'OK' -and $http302Exception.StatusCode -eq 302) `
+  'Test-AndroidLatestEndpoint: excecao com Response 302 -- OK'
+
+$http500Exception = Test-AndroidLatestEndpoint -ApiBaseUrlProd 'https://api.example.test/api' -RequestInvoker {
+  param($Url)
+  throw (New-FakeHttpException -Message 'erro HTTP sintetico' -StatusCode 500)
+}
+Assert-True ($http500Exception.Status -eq 'WARN' -and $http500Exception.StatusCode -eq 500) `
+  'Test-AndroidLatestEndpoint: excecao com Response nao-302 -- WARN'
+
+$httpNoResponseException = Test-AndroidLatestEndpoint -ApiBaseUrlProd 'https://api.example.test/api' -RequestInvoker {
+  param($Url)
+  throw (New-FakeHttpException -Message 'sem Response sintetico' -StatusCode $null)
+}
+Assert-True ($httpNoResponseException.Status -eq 'WARN' -and $null -eq $httpNoResponseException.StatusCode) `
+  'Test-AndroidLatestEndpoint: excecao sem Response sob StrictMode -- WARN, sem PropertyNotFoundStrict'
+
+$httpTransientException = Test-AndroidLatestEndpoint -ApiBaseUrlProd 'https://api.example.test/api' -RequestInvoker {
+  param($Url)
+  throw 'indisponibilidade transitoria sintetica'
+}
+Assert-True ($httpTransientException.Status -eq 'WARN') `
+  'Test-AndroidLatestEndpoint: indisponibilidade transitoria -- WARN'
 
 # --- Invoke-PublishCommand -------------------------------------------------------------
 # Bug original: "& pnpm @publishArgs" sem redirecionamento emitia cada linha de stdout do

@@ -96,6 +96,114 @@ function Get-ConnectedAdbDeviceCount {
   return @($Lines | Select-String -Pattern '\bdevice$').Count
 }
 
+function Invoke-AdbCommand {
+  <#
+    Executa adb.exe capturando stdout/stderr sem usar `2>&1`. No Windows PowerShell 5.1,
+    stderr de processo nativo pode virar NativeCommandError sob ErrorActionPreference=Stop,
+    mesmo quando o exit code real e 0 (caso comum ao iniciar o daemon ADB). Aqui o exit
+    code e a unica fonte de falha; stderr informativo em sucesso fica disponivel ao
+    chamador, mas nao vira excecao por si so.
+  #>
+  param(
+    [Parameter(Mandatory = $true)][string] $AdbPath,
+    [Parameter(Mandatory = $true)][string[]] $Arguments
+  )
+
+  $stdoutFile = [System.IO.Path]::GetTempFileName()
+  $stderrFile = [System.IO.Path]::GetTempFileName()
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    $ErrorActionPreference = 'Continue'
+    & $AdbPath @Arguments > $stdoutFile 2> $stderrFile
+    $exitCode = [int]$LASTEXITCODE
+    $ErrorActionPreference = $previousErrorActionPreference
+    $global:LASTEXITCODE = $exitCode
+    $stdout = @(Get-Content -Path $stdoutFile -ErrorAction SilentlyContinue)
+    $stderr = @(Get-Content -Path $stderrFile -ErrorAction SilentlyContinue)
+    if ($exitCode -ne 0) {
+      $details = @($stderr + $stdout) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+      $suffix = if ($details.Count -gt 0) { ": $($details -join "`n")" } else { '.' }
+      throw "adb $($Arguments -join ' ') falhou com exit code $exitCode$suffix"
+    }
+    return [pscustomobject]@{
+      ExitCode = $exitCode
+      Stdout   = $stdout
+      Stderr   = $stderr
+    }
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+    Remove-Item -Path $stdoutFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path $stderrFile -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Get-AdbDevicesProbe {
+  param(
+    [Parameter(Mandatory = $true)][string] $AdbPath,
+    [scriptblock] $AdbInvoker
+  )
+  if ($null -eq $AdbInvoker) {
+    $AdbInvoker = { param($Path, [Parameter(ValueFromRemainingArguments = $true)][string[]] $Args) Invoke-AdbCommand -AdbPath $Path -Arguments $Args }
+  }
+
+  & $AdbInvoker $AdbPath @('start-server') | Out-Null
+  $devices = & $AdbInvoker $AdbPath @('devices')
+  return [pscustomobject]@{
+    DeviceCount = Get-ConnectedAdbDeviceCount -Lines $devices.Stdout
+    Lines       = $devices.Stdout
+  }
+}
+
+function Test-ObjectProperty {
+  param($Value, [Parameter(Mandatory = $true)][string] $Name)
+  if ($null -eq $Value) { return $false }
+  foreach ($property in @($Value.PSObject.Properties)) {
+    if ($property.Name -eq $Name) { return $true }
+  }
+  return $false
+}
+
+function Test-AndroidLatestEndpoint {
+  param(
+    [Parameter(Mandatory = $true)][string] $ApiBaseUrlProd,
+    [scriptblock] $RequestInvoker
+  )
+  $latestUrl = "$($ApiBaseUrlProd.TrimEnd('/'))/releases/android/latest"
+  if ($null -eq $RequestInvoker) {
+    $RequestInvoker = {
+      param($Url)
+      Invoke-WebRequest -Uri $Url -MaximumRedirection 0 -UseBasicParsing -ErrorAction Stop
+    }
+  }
+
+  try {
+    $response = & $RequestInvoker $latestUrl
+    $statusCode = [int]$response.StatusCode
+    if ($statusCode -eq 200 -or $statusCode -eq 302) {
+      return [pscustomobject]@{ Status = 'OK'; Url = $latestUrl; StatusCode = $statusCode; Message = "$latestUrl respondeu $statusCode." }
+    }
+    return [pscustomobject]@{ Status = 'WARN'; Url = $latestUrl; StatusCode = $statusCode; Message = "Nao foi possivel confirmar $latestUrl automaticamente (HTTP $statusCode). Verifique manualmente." }
+  } catch {
+    $statusCode = $null
+    $response = $null
+    if ($_.Exception -and (Test-ObjectProperty -Value $_.Exception -Name 'Response')) {
+      $response = $_.Exception.Response
+    }
+    if ($response -and (Test-ObjectProperty -Value $response -Name 'StatusCode')) {
+      $rawStatusCode = $response.StatusCode
+      if ($rawStatusCode -and (Test-ObjectProperty -Value $rawStatusCode -Name 'value__')) {
+        $statusCode = [int]$rawStatusCode.value__
+      } elseif ($rawStatusCode) {
+        $statusCode = [int]$rawStatusCode
+      }
+    }
+    if ($statusCode -eq 302) {
+      return [pscustomobject]@{ Status = 'OK'; Url = $latestUrl; StatusCode = 302; Message = "$latestUrl respondeu 302 (redirect para o APK)." }
+    }
+    return [pscustomobject]@{ Status = 'WARN'; Url = $latestUrl; StatusCode = $statusCode; Message = "Nao foi possivel confirmar $latestUrl automaticamente ($($_.Exception.Message)). Verifique manualmente." }
+  }
+}
+
 # ---------------------------------------------------------------------------
 # Config nao secreto
 # ---------------------------------------------------------------------------
@@ -429,11 +537,16 @@ function Invoke-DoctorCommand {
     $platformTools = Join-Path $config.androidSdkDir 'platform-tools'
     if (Test-Path (Join-Path $platformTools 'adb.exe')) {
       Write-DoctorLine 'OK' 'adb.exe encontrado em platform-tools'
-      $deviceCount = Get-ConnectedAdbDeviceCount -Lines ((& (Join-Path $platformTools 'adb.exe') devices) 2>$null)
-      if ($deviceCount -gt 0) {
-        Write-DoctorLine 'OK' "$deviceCount dispositivo(s) Android conectado(s)"
-      } else {
-        Write-DoctorLine 'WARN' 'Nenhum dispositivo Android conectado (adb devices).'
+      try {
+        $adbProbe = Get-AdbDevicesProbe -AdbPath (Join-Path $platformTools 'adb.exe')
+        if ($adbProbe.DeviceCount -gt 0) {
+          Write-DoctorLine 'OK' "$($adbProbe.DeviceCount) dispositivo(s) Android conectado(s)"
+        } else {
+          Write-DoctorLine 'WARN' 'Nenhum dispositivo Android conectado (adb devices).'
+        }
+      } catch {
+        Write-DoctorLine 'FAIL' $_.Exception.Message
+        $failed = $true
       }
     } else {
       Write-DoctorLine 'FAIL' 'adb.exe nao encontrado em platform-tools.'
@@ -660,7 +773,7 @@ function Invoke-ReleaseCommand {
 
   $adb = Join-Path (Join-Path $config.androidSdkDir 'platform-tools') 'adb.exe'
   if (Test-Path $adb) {
-    $deviceCount = Get-ConnectedAdbDeviceCount -Lines ((& $adb devices) 2>$null)
+    $deviceCount = (Get-AdbDevicesProbe -AdbPath $adb).DeviceCount
     if ($deviceCount -gt 0 -and (Confirm-YesNo "Instalar $newVersion no dispositivo conectado via adb install -r?")) {
       & $adb install -r $apkPath
       if ($LASTEXITCODE -ne 0) { Write-Host 'adb install -r falhou - release local permanece intacta.' -ForegroundColor Yellow }
@@ -693,15 +806,8 @@ function Invoke-ReleaseCommand {
   if ($exitCode -ne 0) { throw 'pnpm android:release:publish -- --yes falhou.' }
 
   if ($config.apiBaseUrlProd) {
-    try {
-      $latestUrl = "$($config.apiBaseUrlProd.TrimEnd('/'))/releases/android/latest"
-      $response = Invoke-WebRequest -Uri $latestUrl -MaximumRedirection 0 -ErrorAction Stop
-      Write-DoctorLine 'OK' "$latestUrl respondeu $($response.StatusCode)."
-    } catch {
-      $statusCode = $_.Exception.Response.StatusCode.value__
-      if ($statusCode -eq 302) { Write-DoctorLine 'OK' "$latestUrl respondeu 302 (redirect para o APK)." }
-      else { Write-DoctorLine 'WARN' "Nao foi possivel confirmar $latestUrl automaticamente ($($_.Exception.Message)). Verifique manualmente." }
-    }
+    $latestProbe = Test-AndroidLatestEndpoint -ApiBaseUrlProd $config.apiBaseUrlProd
+    Write-DoctorLine $latestProbe.Status $latestProbe.Message
   }
 
   Write-Host ''
