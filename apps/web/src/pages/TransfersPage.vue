@@ -1,6 +1,7 @@
 <script setup lang="ts">
-/* global Event, KeyboardEvent, window */
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+/* global Event, HTMLButtonElement, HTMLElement, KeyboardEvent, window */
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { onBeforeRouteLeave, useRouter } from 'vue-router';
 import type {
   FinancialTransferStatus,
   PublicFinancialAccount,
@@ -10,14 +11,24 @@ import { authenticatedFetch } from '../auth';
 import { setModalScrollLock } from '../modal-scroll-lock';
 import { normalizeMoney } from '../transaction-template';
 type Page = { data: PublicFinancialTransfer[]; page: { limit: number; nextCursor: string | null } };
+const router = useRouter();
 const items = ref<PublicFinancialTransfer[]>([]),
   accounts = ref<PublicFinancialAccount[]>([]);
 const loading = ref(false),
   error = ref(''),
   nextCursor = ref<string | null>(null);
 const showForm = ref(false),
+  filtersOpen = ref(false),
+  showDiscardConfirm = ref(false),
   editing = ref<PublicFinancialTransfer | null>(null),
-  completing = ref<PublicFinancialTransfer | null>(null);
+  completing = ref<PublicFinancialTransfer | null>(null),
+  discardTarget = ref<'form' | 'complete'>('form'),
+  discardSource = ref<'button' | 'route' | 'history'>('button');
+const moreFiltersButton = ref<HTMLButtonElement | null>(null),
+  formDialog = ref<HTMLElement | null>(null),
+  completeDialog = ref<HTMLElement | null>(null),
+  discardDialog = ref<HTMLElement | null>(null),
+  formBackButton = ref<HTMLButtonElement | null>(null);
 const filters = reactive({
   sourceAccountId: '',
   destinationAccountId: '',
@@ -40,8 +51,14 @@ const form = reactive({
   completedAt: '',
 });
 const completeForm = reactive({ actualAmount: '', completedAt: '' });
+const fieldErrors = reactive<Record<string, string>>({});
+const completeFieldErrors = reactive<Record<string, string>>({});
+const formSnapshot = ref(''),
+  completeSnapshot = ref(''),
+  pendingRoute = ref('');
 let modalHistoryActive = false;
 let releasingModalHistory = false;
+let discardReturnFocus: HTMLElement | null = null;
 const androidBackState = globalThis as typeof globalThis & {
   __plannerfinSuppressNextAndroidBack?: number;
 };
@@ -56,6 +73,26 @@ watch(
   },
 );
 const hasFilters = computed(() => Object.values(filters).some(Boolean));
+const activeSecondaryFilters = computed(
+  () =>
+    [
+      filters.sourceAccountId,
+      filters.destinationAccountId,
+      filters.accountId,
+      filters.status,
+      filters.completedAtFrom,
+      filters.completedAtTo,
+    ].filter(Boolean).length,
+);
+const activeFilterCount = computed(() => Object.values(filters).filter(Boolean).length);
+const filterStatusText = computed(() =>
+  activeFilterCount.value === 1 ? '1 filtro ativo' : `${activeFilterCount.value} filtros ativos`,
+);
+const formDirty = computed(() => showForm.value && serializeForm() !== formSnapshot.value);
+const completeDirty = computed(
+  () => !!completing.value && serializeCompleteForm() !== completeSnapshot.value,
+);
+const hasUnsavedChanges = computed(() => formDirty.value || completeDirty.value);
 const accountName = (id: string) =>
   accounts.value.find((account) => account.id === id)?.name ?? 'Conta';
 const money = (value: string | null) =>
@@ -73,19 +110,48 @@ async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>
   if (!response.ok) throw new Error(body.error?.message || 'Não foi possível concluir a operação.');
   return body as T;
 }
-function validateForm(): { plannedAmount: string; actualAmount: string | null } | string {
+function serializeForm() {
+  return JSON.stringify({
+    status: form.status,
+    sourceAccountId: form.sourceAccountId,
+    destinationAccountId: form.destinationAccountId,
+    description: form.description,
+    notes: form.notes,
+    plannedAmount: form.plannedAmount,
+    actualAmount: form.actualAmount,
+    dueDate: form.dueDate,
+    completedAt: form.completedAt,
+  });
+}
+function serializeCompleteForm() {
+  return JSON.stringify({
+    actualAmount: completeForm.actualAmount,
+    completedAt: completeForm.completedAt,
+  });
+}
+function resetFieldErrors() {
+  Object.keys(fieldErrors).forEach((key) => delete fieldErrors[key]);
+  Object.keys(completeFieldErrors).forEach((key) => delete completeFieldErrors[key]);
+}
+function validateForm(): { plannedAmount: string; actualAmount: string | null } | false {
+  resetFieldErrors();
   const plannedAmount = normalizeMoney(form.plannedAmount);
   const actualAmount = form.status === 'COMPLETED' ? normalizeMoney(form.actualAmount) : null;
-  if (!form.sourceAccountId) return 'Selecione a conta de origem.';
-  if (!form.destinationAccountId) return 'Selecione a conta de destino.';
-  if (form.sourceAccountId === form.destinationAccountId) return 'Origem e destino devem ser diferentes.';
-  if (!form.description.trim()) return 'Informe a descricao.';
-  if (!plannedAmount) return 'Informe um valor previsto positivo com ate duas casas decimais.';
-  if (!form.dueDate) return 'Informe o vencimento.';
+  if (!form.sourceAccountId) fieldErrors.sourceAccountId = 'Selecione a conta de origem.';
+  if (!form.destinationAccountId)
+    fieldErrors.destinationAccountId = 'Selecione a conta de destino.';
+  if (form.sourceAccountId === form.destinationAccountId)
+    fieldErrors.destinationAccountId = 'Origem e destino devem ser diferentes.';
+  if (!form.description.trim()) fieldErrors.description = 'Informe a descricao.';
+  if (!plannedAmount)
+    fieldErrors.plannedAmount = 'Informe um valor previsto positivo com ate duas casas decimais.';
+  if (!form.dueDate) fieldErrors.dueDate = 'Informe o vencimento.';
   if (form.status === 'COMPLETED' && !actualAmount)
-    return 'Informe um valor realizado positivo com ate duas casas decimais.';
-  if (form.status === 'COMPLETED' && !form.completedAt) return 'Informe a data de conclusao.';
-  return { plannedAmount, actualAmount };
+    fieldErrors.actualAmount = 'Informe um valor realizado positivo com ate duas casas decimais.';
+  if (form.status === 'COMPLETED' && !form.completedAt)
+    fieldErrors.completedAt = 'Informe a data de conclusao.';
+  if (Object.keys(fieldErrors).length) return false;
+  return { plannedAmount: plannedAmount!, actualAmount };
 }
 async function load(append = false) {
   loading.value = true;
@@ -106,6 +172,7 @@ async function load(append = false) {
   }
 }
 function openCreate() {
+  resetFieldErrors();
   editing.value = null;
   Object.assign(form, {
     status: 'PENDING',
@@ -118,9 +185,12 @@ function openCreate() {
     dueDate: '',
     completedAt: '',
   });
+  formSnapshot.value = serializeForm();
   showForm.value = true;
+  void nextTick(() => formBackButton.value?.focus());
 }
 function openEdit(item: PublicFinancialTransfer) {
+  resetFieldErrors();
   editing.value = item;
   Object.assign(form, {
     ...item,
@@ -128,13 +198,18 @@ function openEdit(item: PublicFinancialTransfer) {
     actualAmount: item.actualAmount ?? '',
     completedAt: item.completedAt ?? '',
   });
+  formSnapshot.value = serializeForm();
   showForm.value = true;
+  void nextTick(() => formBackButton.value?.focus());
 }
 async function save() {
   error.value = '';
   const validation = validateForm();
-  if (typeof validation === 'string') {
-    error.value = validation;
+  if (!validation) {
+    await nextTick();
+    formDialog.value
+      ?.querySelector<HTMLElement>('[aria-invalid="true"], input:invalid, select:invalid')
+      ?.focus();
     return;
   }
   loading.value = true;
@@ -164,7 +239,7 @@ async function save() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    showForm.value = false;
+    closeForm();
     await load();
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : 'Falha ao salvar.';
@@ -175,13 +250,20 @@ async function save() {
 async function complete() {
   if (!completing.value) return;
   error.value = '';
+  Object.keys(completeFieldErrors).forEach((key) => delete completeFieldErrors[key]);
   const actualAmount = normalizeMoney(completeForm.actualAmount);
   if (!actualAmount) {
-    error.value = 'Informe um valor realizado positivo com ate duas casas decimais.';
-    return;
+    completeFieldErrors.actualAmount =
+      'Informe um valor realizado positivo com ate duas casas decimais.';
   }
   if (!completeForm.completedAt) {
-    error.value = 'Informe a data de conclusao.';
+    completeFieldErrors.completedAt = 'Informe a data de conclusao.';
+  }
+  if (Object.keys(completeFieldErrors).length) {
+    await nextTick();
+    completeDialog.value
+      ?.querySelector<HTMLElement>('[aria-invalid="true"], input:invalid')
+      ?.focus();
     return;
   }
   try {
@@ -190,7 +272,7 @@ async function complete() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ actualAmount, completedAt: completeForm.completedAt }),
     });
-    completing.value = null;
+    closeComplete();
     await load();
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : 'Falha ao concluir.';
@@ -214,15 +296,76 @@ function clearFilters() {
   });
   void load();
 }
+function closeForm(releaseHistory = true) {
+  showForm.value = false;
+  editing.value = null;
+  formSnapshot.value = '';
+  resetFieldErrors();
+  if (releaseHistory) releaseModalHistory();
+}
+function closeComplete(releaseHistory = true) {
+  completing.value = null;
+  completeSnapshot.value = '';
+  Object.keys(completeFieldErrors).forEach((key) => delete completeFieldErrors[key]);
+  if (releaseHistory) releaseModalHistory();
+}
+function requestDiscard(
+  target: 'form' | 'complete',
+  source: 'button' | 'route' | 'history' = 'button',
+  returnFocus?: HTMLElement | null,
+) {
+  const isDirty = target === 'form' ? formDirty.value : completeDirty.value;
+  if (!isDirty) {
+    if (target === 'form') closeForm(source !== 'history');
+    else closeComplete(source !== 'history');
+    return;
+  }
+  discardTarget.value = target;
+  discardSource.value = source;
+  discardReturnFocus = returnFocus ?? null;
+  showDiscardConfirm.value = true;
+}
+function cancelDiscard() {
+  showDiscardConfirm.value = false;
+  pendingRoute.value = '';
+  if (discardSource.value === 'history') ensureModalHistory();
+  discardSource.value = 'button';
+  void nextTick(() => (discardReturnFocus ?? formBackButton.value)?.focus());
+}
+async function confirmDiscard() {
+  const target = discardTarget.value;
+  const source = discardSource.value;
+  const route = pendingRoute.value;
+  showDiscardConfirm.value = false;
+  pendingRoute.value = '';
+  discardSource.value = 'button';
+  if (target === 'form') closeForm(source === 'button');
+  else closeComplete(source === 'button');
+  if (source === 'route' && route) await router.push(route);
+}
+function startComplete(item: PublicFinancialTransfer) {
+  completing.value = item;
+  completeForm.actualAmount = item.plannedAmount;
+  completeForm.completedAt = item.dueDate;
+  completeSnapshot.value = serializeCompleteForm();
+  void nextTick(() => completeDialog.value?.querySelector<HTMLElement>('input, button')?.focus());
+}
 function closeTopDialog(releaseHistory = true) {
+  if (showDiscardConfirm.value) {
+    cancelDiscard();
+    return true;
+  }
   if (completing.value) {
-    completing.value = null;
-    if (releaseHistory) releaseModalHistory();
+    requestDiscard('complete', releaseHistory ? 'button' : 'history');
     return true;
   }
   if (showForm.value) {
-    showForm.value = false;
-    if (releaseHistory) releaseModalHistory();
+    requestDiscard('form', releaseHistory ? 'button' : 'history', formBackButton.value);
+    return true;
+  }
+  if (filtersOpen.value) {
+    filtersOpen.value = false;
+    void nextTick(() => moreFiltersButton.value?.focus());
     return true;
   }
   return false;
@@ -266,13 +409,27 @@ onMounted(async () => {
   await load();
 });
 watch(
-  () => showForm.value || !!completing.value,
+  () => showForm.value || !!completing.value || showDiscardConfirm.value,
   (active) => {
     setModalScrollLock('transfers', active);
-    if (active) ensureModalHistory();
+    if (showForm.value || !!completing.value) ensureModalHistory();
     else releaseModalHistory();
   },
 );
+watch(showDiscardConfirm, async (visible) => {
+  if (!visible) return;
+  await nextTick();
+  discardDialog.value?.querySelector<HTMLElement>('button')?.focus();
+});
+onBeforeRouteLeave((to) => {
+  if (!hasUnsavedChanges.value || showDiscardConfirm.value) return true;
+  pendingRoute.value = to.fullPath;
+  discardSource.value = 'route';
+  discardTarget.value = formDirty.value ? 'form' : 'complete';
+  discardReturnFocus = formBackButton.value;
+  showDiscardConfirm.value = true;
+  return false;
+});
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener('plannerfin:android-back', onAndroidBack, true);
@@ -297,29 +454,57 @@ onBeforeUnmount(() => {
       {{ error }} <button class="link" @click="load()">Tentar novamente</button>
     </p>
     <section class="filters" aria-label="Filtros">
-      <select v-model="filters.sourceAccountId">
-        <option value="">Todas as origens</option>
-        <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
-      </select>
-      <select v-model="filters.destinationAccountId">
-        <option value="">Todos os destinos</option>
-        <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
-      </select>
-      <select v-model="filters.accountId">
-        <option value="">Qualquer conta participante</option>
-        <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
-      </select>
-      <select v-model="filters.status">
-        <option value="">Todos os estados</option>
-        <option value="PENDING">Pendente</option>
-        <option value="COMPLETED">Concluída</option>
-      </select>
-      <label>Vencimento inicial<input v-model="filters.dueDateFrom" type="date" /></label
-      ><label>Vencimento final<input v-model="filters.dueDateTo" type="date" /></label>
-      <label>Conclusão inicial<input v-model="filters.completedAtFrom" type="date" /></label
-      ><label>Conclusão final<input v-model="filters.completedAtTo" type="date" /></label>
-      <button @click="load()">Aplicar</button
-      ><button class="secondary" @click="clearFilters">Limpar</button>
+      <div class="primary-filters">
+        <label>Vencimento inicial<input v-model="filters.dueDateFrom" type="date" /></label
+        ><label>Vencimento final<input v-model="filters.dueDateTo" type="date" /></label>
+        <div class="filter-actions">
+          <button type="button" @click="load()">Aplicar</button
+          ><button
+            ref="moreFiltersButton"
+            type="button"
+            class="secondary"
+            :aria-expanded="filtersOpen"
+            aria-controls="transfer-secondary-filters"
+            @click="filtersOpen = !filtersOpen"
+          >
+            Mais filtros<span v-if="activeSecondaryFilters" class="filter-badge">{{
+              activeSecondaryFilters
+            }}</span></button
+          ><button v-if="hasFilters" type="button" class="link" @click="clearFilters">
+            Limpar filtros
+          </button>
+        </div>
+      </div>
+      <p v-if="hasFilters" class="filter-status" role="status">{{ filterStatusText }}</p>
+      <div v-show="filtersOpen" id="transfer-secondary-filters" class="secondary-filters">
+        <label
+          >Origem<select v-model="filters.sourceAccountId">
+            <option value="">Todas as origens</option>
+            <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
+          </select></label
+        >
+        <label
+          >Destino<select v-model="filters.destinationAccountId">
+            <option value="">Todos os destinos</option>
+            <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
+          </select></label
+        >
+        <label
+          >Conta participante<select v-model="filters.accountId">
+            <option value="">Qualquer conta participante</option>
+            <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
+          </select></label
+        >
+        <label
+          >Estado<select v-model="filters.status">
+            <option value="">Todos os estados</option>
+            <option value="PENDING">Pendente</option>
+            <option value="COMPLETED">Concluída</option>
+          </select></label
+        >
+        <label>Conclusão inicial<input v-model="filters.completedAtFrom" type="date" /></label
+        ><label>Conclusão final<input v-model="filters.completedAtTo" type="date" /></label>
+      </div>
     </section>
     <p v-if="loading" aria-live="polite">Carregando…</p>
     <section v-else-if="!items.length" class="empty">
@@ -351,109 +536,228 @@ onBeforeUnmount(() => {
         <p v-if="item.notes">{{ item.notes }}</p>
         <div class="actions">
           <button class="secondary" @click="openEdit(item)">Editar</button
-          ><button
-            v-if="item.status === 'PENDING'"
-            @click="
-              completing = item;
-              completeForm.actualAmount = item.plannedAmount;
-              completeForm.completedAt = item.dueDate;
-            "
-          >
-            Concluir</button
+          ><button v-if="item.status === 'PENDING'" @click="startComplete(item)">Concluir</button
           ><button v-else @click="reopen(item)">Reabrir</button>
         </div>
       </article>
       <button v-if="nextCursor" :disabled="loading" @click="load(true)">Carregar mais</button>
     </section>
-    <div v-if="showForm" class="modal" role="dialog" aria-modal="true">
-      <form @submit.prevent="save">
+    <div v-if="showForm" class="modal" role="dialog" aria-modal="true" aria-label="Transferencia">
+      <form ref="formDialog" @submit.prevent="save">
         <h2>{{ editing ? 'Editar transferência' : 'Nova transferência' }}</h2>
         <div class="modal-body">
-        <label
-          >Origem<select
-            v-model="form.sourceAccountId"
-            :disabled="editing?.status === 'COMPLETED'"
-            required
+          <h3 class="group-title">Contas</h3>
+          <label
+            >Origem<select
+              v-model="form.sourceAccountId"
+              :disabled="editing?.status === 'COMPLETED'"
+              :aria-invalid="!!fieldErrors.sourceAccountId"
+              aria-describedby="transfer-source-error"
+              required
+            >
+              <option value="">Selecione</option>
+              <option v-for="a in activeAccounts" :key="a.id" :value="a.id">{{ a.name }}</option>
+            </select>
+            <span
+              v-if="fieldErrors.sourceAccountId"
+              id="transfer-source-error"
+              class="field-error"
+              >{{ fieldErrors.sourceAccountId }}</span
+            ></label
           >
-            <option value="">Selecione</option>
-            <option v-for="a in activeAccounts" :key="a.id" :value="a.id">{{ a.name }}</option>
-          </select></label
-        ><label
-          >Destino<select
-            v-model="form.destinationAccountId"
-            :disabled="editing?.status === 'COMPLETED'"
-            required
+          <label
+            >Destino<select
+              v-model="form.destinationAccountId"
+              :disabled="editing?.status === 'COMPLETED'"
+              :aria-invalid="!!fieldErrors.destinationAccountId"
+              aria-describedby="transfer-destination-error"
+              required
+            >
+              <option value="">Selecione</option>
+              <option v-for="a in destinations" :key="a.id" :value="a.id">{{ a.name }}</option>
+            </select>
+            <span
+              v-if="fieldErrors.destinationAccountId"
+              id="transfer-destination-error"
+              class="field-error"
+              >{{ fieldErrors.destinationAccountId }}</span
+            ></label
           >
-            <option value="">Selecione</option>
-            <option v-for="a in destinations" :key="a.id" :value="a.id">{{ a.name }}</option>
-          </select></label
-        ><label>Descrição<input v-model="form.description" maxlength="200" required /></label
-        ><label>Notas<textarea v-model="form.notes" maxlength="2000" /></label
-        ><label
-          >Valor previsto<input
-            v-model="form.plannedAmount"
-            inputmode="decimal"
-            :disabled="editing?.status === 'COMPLETED'"
-            required /></label
-        ><label
-          >Vencimento<input
-            v-model="form.dueDate"
-            type="date"
-            :disabled="editing?.status === 'COMPLETED'"
-            required /></label
-        ><template v-if="!editing"
+          <h3 class="group-title">Detalhes</h3>
+          <label
+            >Descrição<input
+              v-model="form.description"
+              maxlength="200"
+              :aria-invalid="!!fieldErrors.description"
+              aria-describedby="transfer-description-error"
+              required
+            />
+            <span
+              v-if="fieldErrors.description"
+              id="transfer-description-error"
+              class="field-error"
+              >{{ fieldErrors.description }}</span
+            ></label
+          ><label>Notas<textarea v-model="form.notes" maxlength="2000" /></label
           ><label
-            >Estado<select v-model="form.status">
-              <option value="PENDING">Pendente</option>
-              <option value="COMPLETED">Concluída</option>
-            </select></label
-          ><template v-if="form.status === 'COMPLETED'"
-            ><label
-              >Valor realizado<input
-                v-model="form.actualAmount"
-                inputmode="decimal"
-                required /></label
-            ><label
-              >Data de conclusão<input
-                v-model="form.completedAt"
-                type="date"
-                required /></label></template
-        ></template>
-        <p v-if="editing?.status === 'COMPLETED'">
-          Reabra primeiro para alterar contas, valor previsto ou vencimento.
-        </p>
+            >Valor previsto<input
+              v-model="form.plannedAmount"
+              inputmode="decimal"
+              :disabled="editing?.status === 'COMPLETED'"
+              :aria-invalid="!!fieldErrors.plannedAmount"
+              aria-describedby="transfer-planned-error"
+              required
+            />
+            <span
+              v-if="fieldErrors.plannedAmount"
+              id="transfer-planned-error"
+              class="field-error"
+              >{{ fieldErrors.plannedAmount }}</span
+            ></label
+          ><label
+            >Vencimento<input
+              v-model="form.dueDate"
+              type="date"
+              :disabled="editing?.status === 'COMPLETED'"
+              :aria-invalid="!!fieldErrors.dueDate"
+              aria-describedby="transfer-due-date-error"
+              required
+            />
+            <span v-if="fieldErrors.dueDate" id="transfer-due-date-error" class="field-error">{{
+              fieldErrors.dueDate
+            }}</span></label
+          ><template v-if="!editing"
+            ><h3 class="group-title">Conclusão</h3>
+            <label
+              >Estado<select v-model="form.status">
+                <option value="PENDING">Pendente</option>
+                <option value="COMPLETED">Concluída</option>
+              </select></label
+            ><template v-if="form.status === 'COMPLETED'"
+              ><label
+                >Valor realizado<input
+                  v-model="form.actualAmount"
+                  inputmode="decimal"
+                  :aria-invalid="!!fieldErrors.actualAmount"
+                  aria-describedby="transfer-actual-error"
+                  required
+                />
+                <span
+                  v-if="fieldErrors.actualAmount"
+                  id="transfer-actual-error"
+                  class="field-error"
+                  >{{ fieldErrors.actualAmount }}</span
+                ></label
+              ><label
+                >Data de conclusão<input
+                  v-model="form.completedAt"
+                  type="date"
+                  :aria-invalid="!!fieldErrors.completedAt"
+                  aria-describedby="transfer-completed-error"
+                  required
+                />
+                <span
+                  v-if="fieldErrors.completedAt"
+                  id="transfer-completed-error"
+                  class="field-error"
+                  >{{ fieldErrors.completedAt }}</span
+                ></label
+              ></template
+            ></template
+          >
+          <p v-if="editing?.status === 'COMPLETED'">
+            Reabra primeiro para alterar contas, valor previsto ou vencimento.
+          </p>
         </div>
         <div class="actions">
-          <button type="button" class="secondary" @click="showForm = false">Cancelar</button
-          ><button :disabled="loading">Salvar</button>
+          <button
+            ref="formBackButton"
+            type="button"
+            class="secondary"
+            @click="requestDiscard('form', 'button', formBackButton)"
+          >
+            Voltar</button
+          ><button
+            type="button"
+            class="secondary"
+            @click="requestDiscard('form', 'button', formBackButton)"
+          >
+            Cancelar</button
+          ><button :disabled="loading">
+            {{ loading ? 'Salvando...' : 'Salvar transferencia' }}
+          </button>
         </div>
       </form>
     </div>
-    <div v-if="completing" class="modal" role="dialog" aria-modal="true">
-      <form @submit.prevent="complete">
+    <div
+      v-if="completing"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Concluir transferencia"
+    >
+      <form ref="completeDialog" @submit.prevent="complete">
         <h2>Concluir transferência</h2>
         <div class="modal-body">
-        <label
-          >Valor realizado<input
-            v-model="completeForm.actualAmount"
-            inputmode="decimal"
-            required /></label
-        ><label
-          >Data de conclusão<input v-model="completeForm.completedAt" type="date" required
-        /></label>
+          <label
+            >Valor realizado<input
+              v-model="completeForm.actualAmount"
+              inputmode="decimal"
+              :aria-invalid="!!completeFieldErrors.actualAmount"
+              aria-describedby="complete-actual-error"
+              required
+            />
+            <span
+              v-if="completeFieldErrors.actualAmount"
+              id="complete-actual-error"
+              class="field-error"
+              >{{ completeFieldErrors.actualAmount }}</span
+            ></label
+          ><label
+            >Data de conclusão<input
+              v-model="completeForm.completedAt"
+              type="date"
+              :aria-invalid="!!completeFieldErrors.completedAt"
+              aria-describedby="complete-date-error"
+              required
+            />
+            <span
+              v-if="completeFieldErrors.completedAt"
+              id="complete-date-error"
+              class="field-error"
+              >{{ completeFieldErrors.completedAt }}</span
+            ></label
+          >
         </div>
         <div class="actions">
-          <button type="button" class="secondary" @click="completing = null">Cancelar</button
+          <button type="button" class="secondary" @click="requestDiscard('complete')">
+            Cancelar</button
           ><button>Confirmar</button>
         </div>
       </form>
+    </div>
+    <div
+      v-if="showDiscardConfirm"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Descartar alteracoes"
+    >
+      <section ref="discardDialog" class="discard-dialog">
+        <h2>Descartar alteracoes?</h2>
+        <p>As alteracoes nao salvas serao perdidas.</p>
+        <div class="actions">
+          <button type="button" class="secondary" @click="cancelDiscard">Continuar editando</button
+          ><button type="button" @click="confirmDiscard">Descartar</button>
+        </div>
+      </section>
     </div>
   </main>
 </template>
 <style scoped>
 .transfers-page {
   width: min(100%, 76rem);
-  padding: 2rem;
+  padding: 2rem 2rem calc(var(--shell-nav-height, 0px) + 3rem + env(safe-area-inset-bottom));
 }
 .transfers-page > header,
 .actions,
@@ -465,9 +769,36 @@ onBeforeUnmount(() => {
 }
 .filters {
   display: grid;
+  gap: 0.65rem;
+  margin: 1.5rem 0;
+}
+.primary-filters,
+.secondary-filters {
+  display: grid;
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 0.75rem;
-  margin: 1.5rem 0;
+}
+.filter-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.filter-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.35rem;
+  min-height: 1.35rem;
+  margin-left: 0.45rem;
+  border-radius: 999px;
+  background: #173b7a;
+  color: #fff;
+  font-size: 0.8rem;
+}
+.filter-status {
+  margin: 0;
+  color: #475569;
+  font-weight: 700;
 }
 .list {
   display: grid;
@@ -475,10 +806,11 @@ onBeforeUnmount(() => {
 }
 .list article,
 .empty,
-form {
+form,
+.discard-dialog {
   background: #fff;
   padding: 1.25rem;
-  border-radius: 1rem;
+  border-radius: 8px;
   box-shadow: 0 0.5rem 2rem #0f172a18;
 }
 .list article > header {
@@ -521,10 +853,34 @@ form {
   overflow: hidden;
 }
 .modal-body {
+  display: grid;
+  gap: 1rem;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
   padding-right: 0.25rem;
+}
+.group-title {
+  margin: 0;
+  color: #173b7a;
+  font-size: 0.95rem;
+}
+.modal-body > label:nth-of-type(1),
+.modal-body > label:nth-of-type(2) {
+  padding: 0.75rem;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+.field-error {
+  display: block;
+  margin-top: 0.35rem;
+  color: #b42318;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+[aria-invalid='true'] {
+  border-color: #b42318;
 }
 select,
 textarea {
@@ -535,15 +891,37 @@ textarea {
 }
 @media (max-width: 600px) {
   .transfers-page {
-    padding: 1rem;
+    padding: 0 1rem calc(var(--shell-nav-height, 0px) + 1rem + env(safe-area-inset-bottom));
   }
   .transfers-page > header,
-  .amounts {
+  .amounts,
+  .primary-filters,
+  .secondary-filters {
     align-items: stretch;
     flex-direction: column;
+    grid-template-columns: 1fr;
   }
-  .actions {
+  .actions,
+  .filter-actions {
     flex-wrap: wrap;
+  }
+  .filter-actions button,
+  .empty button {
+    flex: 1 1 10rem;
+  }
+  .modal {
+    align-items: end;
+    place-items: end stretch;
+    padding: max(0.75rem, env(safe-area-inset-top)) 0 0;
+  }
+  .modal form,
+  .discard-dialog {
+    width: 100%;
+    max-height: calc(100dvh - max(0.75rem, env(safe-area-inset-top)));
+    border-radius: 1rem 1rem 0 0;
+  }
+  .modal form .actions {
+    padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
   }
 }
 </style>
