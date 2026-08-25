@@ -25,8 +25,8 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', redirect: '/dashboard' },
-    { path: '/login', component: LoginPage, meta: { public: true } },
-    { path: '/cadastro', component: RegisterPage, meta: { public: true } },
+    { path: '/login', component: LoginPage, meta: { public: true, guestOnly: true } },
+    { path: '/cadastro', component: RegisterPage, meta: { public: true, guestOnly: true } },
     { path: '/privacy-policy', component: PrivacyPolicyPage, meta: { public: true } },
     { path: '/conta', component: AccountPage },
     { path: '/accounts', component: AccountsPage },
@@ -60,5 +60,5 @@ router.beforeEach(async (to) => {
   }
   if (!to.meta.public && !authState.token)
     return { path: '/login', query: { redirect: to.fullPath } };
-  if (to.meta.public && authState.token) return '/dashboard';
+  if (to.meta.guestOnly && authState.token) return '/dashboard';
 });

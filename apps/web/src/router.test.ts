@@ -1,10 +1,13 @@
+import { mount, RouterLinkStub } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
+
 const mocked = vi.hoisted(() => ({
   authState: { token: null as string | null, user: null, restoring: false, error: '' },
   restore: vi.fn(async () => undefined),
 }));
 vi.mock('./auth', () => mocked);
 
+import MorePage from './pages/MorePage.vue';
 import { router } from './router';
 
 describe('redirecionamentos de autenticação', () => {
@@ -12,6 +15,37 @@ describe('redirecionamentos de autenticação', () => {
     mocked.authState.token = null;
     await router.push('/privacy-policy');
     await router.isReady();
+    expect(router.currentRoute.value.fullPath).toBe('/privacy-policy');
+  });
+
+  it('permite abrir a Política de Privacidade com autenticação', async () => {
+    mocked.authState.token = 'token';
+    await router.push('/privacy-policy');
+    expect(router.currentRoute.value.fullPath).toBe('/privacy-policy');
+  });
+
+  it('mantém login e cadastro como guest-only', async () => {
+    mocked.authState.token = 'token';
+    await router.push('/login');
+    expect(router.currentRoute.value.fullPath).toBe('/dashboard');
+
+    await router.push('/cadastro');
+    expect(router.currentRoute.value.fullPath).toBe('/dashboard');
+  });
+
+  it('permite abrir a Política de Privacidade pelo Mais autenticado', async () => {
+    mocked.authState.token = 'token';
+    await router.push('/mais');
+    const wrapper = mount(MorePage, {
+      global: { plugins: [router], stubs: { RouterLink: RouterLinkStub } },
+    });
+
+    const privacyLink = wrapper
+      .findAllComponents(RouterLinkStub)
+      .find((candidate) => candidate.props('to') === '/privacy-policy');
+    expect(privacyLink).toBeTruthy();
+    await router.push(privacyLink!.props('to'));
+
     expect(router.currentRoute.value.fullPath).toBe('/privacy-policy');
   });
 
