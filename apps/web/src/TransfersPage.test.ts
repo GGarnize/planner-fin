@@ -1,30 +1,70 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TransfersPage from './pages/TransfersPage.vue';
+
 vi.mock('./auth', () => ({ authenticatedFetch: vi.fn() }));
+
+let routeLeaveGuard: ((to: { fullPath: string }) => boolean) | undefined;
+const routerPush = vi.fn();
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: routerPush }),
+  onBeforeRouteLeave: (guard: typeof routeLeaveGuard) => {
+    routeLeaveGuard = guard;
+  },
+}));
+
 import { authenticatedFetch } from './auth';
 
 async function openTransferForm(wrapper: VueWrapper) {
   await wrapper
     .findAll('button')
-    .find((button) => button.text() === 'Nova transferencia' || button.text() === 'Nova transferência')!
+    .find(
+      (button) => button.text() === 'Nova transferencia' || button.text() === 'Nova transferência',
+    )!
     .trigger('click');
   await wrapper.vm.$nextTick();
 }
 
 const response = (data: unknown, ok = true) =>
   Promise.resolve({ ok, status: ok ? 200 : 500, json: () => Promise.resolve(data) } as Response);
+
 const accounts = [
   { id: 'a', name: 'Origem', archivedAt: null },
   { id: 'b', name: 'Destino', archivedAt: null },
 ] as never;
+
 const empty = { data: [], page: { limit: 20, nextCursor: null } };
-describe('tela de transferências', () => {
-  beforeEach(() => vi.mocked(authenticatedFetch).mockReset());
-  it('mostra estado vazio e formulário sem categoria', async () => {
-    vi.mocked(authenticatedFetch).mockImplementation((path) =>
-      response(String(path).startsWith('/transfers?') ? empty : accounts),
-    );
+const transfer = {
+  id: 't',
+  sourceAccountId: 'a',
+  destinationAccountId: 'b',
+  status: 'PENDING',
+  description: 'Reserva',
+  notes: null,
+  plannedAmount: '10.00',
+  actualAmount: null,
+  dueDate: '2026-08-01',
+  completedAt: null,
+  isOverdue: true,
+  createdAt: 'x',
+  updatedAt: 'x',
+};
+
+function mockList(data: unknown = empty) {
+  vi.mocked(authenticatedFetch).mockImplementation((path) =>
+    response(String(path).startsWith('/transfers?') ? data : accounts),
+  );
+}
+
+describe('tela de transferencias', () => {
+  beforeEach(() => {
+    vi.mocked(authenticatedFetch).mockReset();
+    routerPush.mockReset();
+    routeLeaveGuard = undefined;
+  });
+
+  it('mostra lista inicial vazia e formulario sem categoria', async () => {
+    mockList();
     const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
     await flushPromises();
     expect(w.text()).toContain('Nenhuma transferência cadastrada');
@@ -34,10 +74,9 @@ describe('tela de transferências', () => {
     expect(w.text()).not.toContain('Categoria');
     w.unmount();
   });
-  it('exclui origem do destino e cria concluída com strings', async () => {
-    vi.mocked(authenticatedFetch).mockImplementation((path) =>
-      response(String(path).startsWith('/transfers?') ? empty : accounts),
-    );
+
+  it('exclui origem do destino e cria concluida com strings', async () => {
+    mockList();
     const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
     await flushPromises();
     await openTransferForm(w);
@@ -63,11 +102,11 @@ describe('tela de transferências', () => {
     const body = JSON.parse(call[1]!.body as string);
     expect(typeof body.plannedAmount).toBe('string');
     expect(body.status).toBe('COMPLETED');
+    w.unmount();
   });
+
   it('cria pendente normalizando valor inteiro para decimal canonico', async () => {
-    vi.mocked(authenticatedFetch).mockImplementation((path) =>
-      response(String(path).startsWith('/transfers?') ? empty : accounts),
-    );
+    mockList();
     const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
     await flushPromises();
     await openTransferForm(w);
@@ -86,11 +125,173 @@ describe('tela de transferências', () => {
     expect(body.plannedAmount).toBe('2300.00');
     expect(body).not.toHaveProperty('actualAmount');
     expect(body).not.toHaveProperty('completedAt');
+    w.unmount();
   });
-  it('bloqueia scroll de fundo enquanto modal esta aberto e libera ao fechar', async () => {
-    vi.mocked(authenticatedFetch).mockImplementation((path) =>
-      response(String(path).startsWith('/transfers?') ? empty : accounts),
+
+  it('mantem apenas vencimento como filtro primario e abre filtros secundarios sob demanda', async () => {
+    mockList();
+    const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    expect(w.find('#transfer-secondary-filters').attributes('style')).toContain('display: none');
+    expect(w.text()).toContain('Vencimento inicial');
+    expect(w.text()).toContain('Mais filtros');
+    await w.get('button[aria-controls="transfer-secondary-filters"]').trigger('click');
+    await w.vm.$nextTick();
+    expect(w.find('#transfer-secondary-filters').attributes('style') ?? '').not.toContain(
+      'display: none',
     );
+    expect(w.text()).toContain('Conta participante');
+    w.unmount();
+  });
+
+  it('aplica, indica, preserva combinacao e limpa filtros', async () => {
+    mockList();
+    const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    await w.get('input[type="date"]').setValue('2026-08-01');
+    await w.get('button[aria-controls="transfer-secondary-filters"]').trigger('click');
+    await w.find('#transfer-secondary-filters select').setValue('a');
+    await w
+      .findAll('button')
+      .find((b) => b.text() === 'Aplicar')!
+      .trigger('click');
+    await flushPromises();
+    expect(w.text()).toContain('2 filtros ativos');
+    expect((w.find('#transfer-secondary-filters select').element as HTMLSelectElement).value).toBe(
+      'a',
+    );
+    expect(
+      vi
+        .mocked(authenticatedFetch)
+        .mock.calls.some((call) => String(call[0]).includes('dueDateFrom=2026-08-01')),
+    ).toBe(true);
+    expect(
+      vi
+        .mocked(authenticatedFetch)
+        .mock.calls.some((call) => String(call[0]).includes('sourceAccountId=a')),
+    ).toBe(true);
+    await w
+      .findAll('button')
+      .find((b) => b.text() === 'Limpar filtros')!
+      .trigger('click');
+    await flushPromises();
+    expect(w.text()).not.toContain('filtros ativos');
+    expect((w.get('input[type="date"]').element as HTMLInputElement).value).toBe('');
+    w.unmount();
+  });
+
+  it('abre edicao em superficie dedicada', async () => {
+    mockList({ data: [transfer], page: { limit: 20, nextCursor: null } });
+    const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    await w
+      .findAll('button')
+      .find((b) => b.text() === 'Editar')!
+      .trigger('click');
+    expect(w.get('[role="dialog"]').text()).toContain('Editar');
+    expect((w.get('input[maxlength="200"]').element as HTMLInputElement).value).toBe('Reserva');
+    w.unmount();
+  });
+
+  it('mantem dados preenchidos apos erro de validacao e de API', async () => {
+    vi.mocked(authenticatedFetch).mockImplementation((path, init) => {
+      if (init?.method === 'POST')
+        return response({ error: { message: 'Falha sintetica ao salvar.' } }, false);
+      return response(String(path).startsWith('/transfers?') ? empty : accounts);
+    });
+    const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    await openTransferForm(w);
+    await w.get('.modal form').trigger('submit');
+    await flushPromises();
+    expect(w.text()).toContain('Selecione a conta de origem');
+    let selects = w.findAll('.modal select');
+    await selects[0]!.setValue('a');
+    await w.vm.$nextTick();
+    selects = w.findAll('.modal select');
+    await selects[1]!.setValue('b');
+    await w.get('input[maxlength="200"]').setValue('Reserva preservada');
+    await w.get('input[inputmode="decimal"]').setValue('99');
+    await w.get('.modal input[type="date"]').setValue('2026-08-08');
+    await w.get('.modal form').trigger('submit');
+    await flushPromises();
+    expect(w.get('[role=alert]').text()).toContain('Falha sintetica');
+    expect((w.get('input[maxlength="200"]').element as HTMLInputElement).value).toBe(
+      'Reserva preservada',
+    );
+    w.unmount();
+  });
+
+  it('protege rascunho no cancelar e permite descartar', async () => {
+    mockList();
+    const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    await openTransferForm(w);
+    await w.get('input[maxlength="200"]').setValue('Rascunho');
+    await w
+      .findAll('button')
+      .find((b) => b.text() === 'Cancelar')!
+      .trigger('click');
+    expect(w.get('[aria-label="Descartar alteracoes"]').text()).toContain('Descartar');
+    await w
+      .findAll('button')
+      .find((b) => b.text() === 'Continuar editando')!
+      .trigger('click');
+    expect((w.get('input[maxlength="200"]').element as HTMLInputElement).value).toBe('Rascunho');
+    await w
+      .findAll('button')
+      .find((b) => b.text() === 'Voltar')!
+      .trigger('click');
+    await w
+      .findAll('button')
+      .find((b) => b.text() === 'Descartar')!
+      .trigger('click');
+    await flushPromises();
+    expect(w.find('.modal').exists()).toBe(false);
+    w.unmount();
+  });
+
+  it('back limpo fecha direto e back sujo pede confirmacao', async () => {
+    mockList();
+    const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    await openTransferForm(w);
+    const cleanBack = new Event('plannerfin:android-back', { cancelable: true });
+    window.dispatchEvent(cleanBack);
+    await flushPromises();
+    expect(cleanBack.defaultPrevented).toBe(true);
+    expect(w.find('.modal').exists()).toBe(false);
+
+    await openTransferForm(w);
+    await w.get('input[maxlength="200"]').setValue('Rascunho');
+    const dirtyBack = new Event('plannerfin:android-back', { cancelable: true });
+    window.dispatchEvent(dirtyBack);
+    await flushPromises();
+    expect(dirtyBack.defaultPrevented).toBe(true);
+    expect(w.get('[aria-label="Descartar alteracoes"]').text()).toContain('Continuar editando');
+    expect((w.get('input[maxlength="200"]').element as HTMLInputElement).value).toBe('Rascunho');
+    w.unmount();
+  });
+
+  it('guarda navegacao de rota com rascunho sujo', async () => {
+    mockList();
+    const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    await openTransferForm(w);
+    await w.get('input[maxlength="200"]').setValue('Rascunho de rota');
+    expect(routeLeaveGuard?.({ fullPath: '/accounts' })).toBe(false);
+    await w.vm.$nextTick();
+    await w
+      .findAll('button')
+      .find((b) => b.text() === 'Descartar')!
+      .trigger('click');
+    await flushPromises();
+    expect(routerPush).toHaveBeenCalledWith('/accounts');
+    w.unmount();
+  });
+
+  it('bloqueia scroll de fundo enquanto modal esta aberto e libera ao fechar', async () => {
+    mockList();
     document.body.style.overflow = '';
     const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
     await flushPromises();
@@ -105,29 +306,9 @@ describe('tela de transferências', () => {
     expect(w.find('.modal').exists()).toBe(false);
     w.unmount();
   });
-  it('mostra vencida, conclui, reabre, filtra e pagina', async () => {
-    const item = {
-      id: 't',
-      sourceAccountId: 'a',
-      destinationAccountId: 'b',
-      status: 'PENDING',
-      description: 'Reserva',
-      notes: null,
-      plannedAmount: '10.00',
-      actualAmount: null,
-      dueDate: '2026-08-01',
-      completedAt: null,
-      isOverdue: true,
-      createdAt: 'x',
-      updatedAt: 'x',
-    };
-    vi.mocked(authenticatedFetch).mockImplementation((path) =>
-      response(
-        String(path).startsWith('/transfers?')
-          ? { data: [item], page: { limit: 20, nextCursor: 'cursor' } }
-          : accounts,
-      ),
-    );
+
+  it('mostra vencida, conclui, reabre e pagina', async () => {
+    mockList({ data: [transfer], page: { limit: 20, nextCursor: 'cursor' } });
     const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
     await flushPromises();
     expect(w.text()).toContain('Vencida');
@@ -147,8 +328,10 @@ describe('tela de transferências', () => {
     expect(
       vi.mocked(authenticatedFetch).mock.calls.some((c) => String(c[0]).includes('cursor=cursor')),
     ).toBe(true);
+    w.unmount();
   });
-  it('informa API indisponível', async () => {
+
+  it('informa API indisponivel', async () => {
     vi.mocked(authenticatedFetch).mockImplementation((path) =>
       String(path).startsWith('/transfers?')
         ? Promise.reject(new Error('offline'))
@@ -156,6 +339,7 @@ describe('tela de transferências', () => {
     );
     const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
     await flushPromises();
-    expect(w.get('[role=alert]').text()).toContain('API indisponível');
+    expect(w.get('[role=alert]').text()).toContain('API indispon');
+    w.unmount();
   });
 });
