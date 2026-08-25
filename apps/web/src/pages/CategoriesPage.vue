@@ -10,6 +10,7 @@ import { authenticatedFetch } from '../auth';
 import KebabMenu, { type KebabMenuAction } from '../components/KebabMenu.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import CategoryIcon from '../components/CategoryIcon.vue';
+import PageHeader from '../components/PageHeader.vue';
 import { CATEGORY_ICON_OPTIONS, validCategoryColor } from '../category-icon';
 const categories = ref<PublicFinancialCategory[]>([]),
   loading = ref(false),
@@ -27,7 +28,10 @@ const initial = (): CreateFinancialCategoryRequest => ({
   icon: null,
 });
 const form = reactive(initial());
-const icons = CATEGORY_ICON_OPTIONS satisfies Array<{ value: FinancialCategoryIcon; label: string }>;
+const icons = CATEGORY_ICON_OPTIONS satisfies Array<{
+  value: FinancialCategoryIcon;
+  label: string;
+}>;
 const grouped = computed(() => ({
   INCOME: categories.value.filter((item) => item.type === 'INCOME'),
   EXPENSE: categories.value.filter((item) => item.type === 'EXPENSE'),
@@ -140,17 +144,13 @@ onMounted(load);
 </script>
 <template>
   <main class="categories-page">
-    <header>
-      <div>
-        <router-link class="account-back" to="/conta"
-          ><span class="material-icons" aria-hidden="true">arrow_back</span
-          ><span>Minha conta</span></router-link
-        >
-        <h1>Categorias financeiras</h1>
-        <p>Organize receitas e despesas sem misturar suas naturezas.</p>
-      </div>
-      <button @click="create()">Nova categoria</button>
-    </header>
+    <PageHeader
+      title="Categorias financeiras"
+      description="Organize receitas e despesas sem misturar suas naturezas."
+      back-to="/conta"
+    >
+      <template #action><button @click="create()">Nova categoria</button></template>
+    </PageHeader>
     <p v-if="error" role="alert">
       {{ error }} <button class="link" @click="load">Tentar novamente</button>
     </p>
@@ -247,7 +247,6 @@ onMounted(load);
   width: min(100%, 72rem);
   padding: 2rem;
 }
-.categories-page > header,
 .filters,
 .actions {
   display: flex;
@@ -258,27 +257,6 @@ onMounted(load);
 .filters {
   justify-content: flex-start;
   margin: 1rem 0;
-}
-.account-back {
-  min-height: 2.75rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  margin-bottom: 0.5rem;
-  padding: 0 0.65rem 0 0.45rem;
-  color: var(--color-on-accent-container);
-  background: var(--color-accent-container);
-  border: 1px solid var(--color-accent);
-  border-radius: 0.65rem;
-  text-decoration: none;
-  font-weight: 700;
-}
-.account-back:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-.account-back .material-icons {
-  font-size: 1.15rem;
 }
 .filter-field {
   display: grid;
@@ -409,10 +387,6 @@ select {
 @media (max-width: 600px) {
   .categories-page {
     padding: 0;
-  }
-  .categories-page > header {
-    align-items: stretch;
-    flex-direction: column;
   }
   .filters {
     display: grid;

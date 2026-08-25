@@ -16,6 +16,7 @@ import { normalizeMoney } from '../transaction-template';
 import CategoryIcon from '../components/CategoryIcon.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import KebabMenu, { type KebabMenuAction } from '../components/KebabMenu.vue';
+import PageHeader from '../components/PageHeader.vue';
 const cards = ref<PublicFinancialCreditCard[]>([]),
   purchases = ref<PaginatedCardPurchasesResponse['items']>([]),
   invoices = ref<PublicCardInvoice[]>([]),
@@ -514,11 +515,11 @@ onMounted(load);
 </script>
 <template>
   <main class="cards-page">
-    <header>
-      <p class="eyebrow">Crédito sem dupla contagem</p>
-      <h1>Cartões e faturas</h1>
-      <p>Compras representam despesas. O pagamento da fatura apenas reduz o saldo da conta.</p>
-    </header>
+    <PageHeader
+      title="Cartões e faturas"
+      description="Compras representam despesas. O pagamento da fatura apenas reduz o saldo da conta."
+      back-to="/mais"
+    />
     <p v-if="error" role="alert">
       {{ error }} <button class="link" @click="load">Tentar novamente</button>
     </p>
@@ -684,11 +685,7 @@ onMounted(load);
       <section>
         <h2>Compras e parcelas futuras</h2>
         <p v-if="!purchases.length" class="empty">Nenhuma compra no cartão.</p>
-        <article
-          v-for="x in purchases"
-          :key="x.id"
-          class="purchase-card"
-        >
+        <article v-for="x in purchases" :key="x.id" class="purchase-card">
           <div class="purchase-card__summary">
             <div class="purchase-card__main">
               <div class="purchase-card__title">
@@ -746,9 +743,7 @@ onMounted(load);
             </div>
             <p>A edição só é concluída enquanto todas as faturas relacionadas estiverem abertas.</p>
             <button :disabled="saving">Salvar compra</button>
-            <button type="button" class="secondary" @click="cancelPurchaseEdit">
-              Cancelar
-            </button>
+            <button type="button" class="secondary" @click="cancelPurchaseEdit">Cancelar</button>
           </form>
         </article>
         <button v-if="purchaseCursor" :disabled="loadingPurchases" @click="loadMore('purchases')">
@@ -855,8 +850,7 @@ onMounted(load);
       :open="!!deletingPurchase"
       :title="`Excluir a compra ${deletingPurchase?.description ?? ''}?`"
       :message="
-        deletePurchaseError ||
-        'Isso remove a compra e todas as suas parcelas das faturas abertas.'
+        deletePurchaseError || 'Isso remove a compra e todas as suas parcelas das faturas abertas.'
       "
       confirm-label="Excluir"
       :busy="deletingPurchaseBusy"

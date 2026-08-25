@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { DashboardResponse } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 import { loadInitialSetup, setupState, skipInitialSetup } from '../initial-setup';
+import PanelActionLink from '../components/PanelActionLink.vue';
 
 const civilMonth = () => {
   const now = new Date();
@@ -250,7 +251,7 @@ async function skipSetup() {
           ><template v-else
             ><span>Saldo total atual</span
             ><strong>{{ money(snapshot.cashPosition.totalRealizedBalance) }}</strong></template
-          ><router-link to="/accounts">Ver contas</router-link>
+          ><PanelActionLink to="/accounts" icon="account_balance" label="Ver contas" />
         </section>
         <div class="quick-actions">
           <button
@@ -354,11 +355,7 @@ async function skipSetup() {
               <dd>{{ money(snapshot.budget.remainingAgainstCommitted) }}</dd>
             </div>
           </dl>
-          <router-link class="budget-cta" to="/budgets"
-            ><span class="material-icons" aria-hidden="true">account_balance_wallet</span
-            ><span>Ver Orçamento</span
-            ><span class="material-icons" aria-hidden="true">chevron_right</span></router-link
-          >
+          <PanelActionLink to="/budgets" icon="account_balance_wallet" label="Ver Orçamento" />
         </section>
         <section class="panel">
           <h2>Faturas</h2>
@@ -373,7 +370,7 @@ async function skipSetup() {
               <em v-if="item.projectedOverdue">Atraso projetado</em>
             </li>
           </ul>
-          <router-link to="/cards">Ver cartões</router-link>
+          <PanelActionLink to="/cards" icon="credit_card" label="Ver cartões" />
         </section>
         <section class="panel">
           <h2>Dívidas</h2>
@@ -382,12 +379,13 @@ async function skipSetup() {
             <li v-for="item in snapshot.debtInstallments" :key="item.installmentId">
               <b>{{ item.creditorName }} · parcela {{ item.installmentNumber }}</b>
               <span>
-                {{ money(item.totalAmount) }} · {{ debtProjectedStatusLabel(item.projectedStatus) }}
-                · vence em {{ formatShortDate(item.dueDate) }}
+                {{ money(item.totalAmount) }} ·
+                {{ debtProjectedStatusLabel(item.projectedStatus) }} · vence em
+                {{ formatShortDate(item.dueDate) }}
               </span>
             </li>
           </ul>
-          <router-link to="/debts">Ver dívidas</router-link>
+          <PanelActionLink to="/debts" icon="request_quote" label="Ver dívidas" />
         </section>
         <section class="panel">
           <h2>Despesas por categoria</h2>
@@ -404,11 +402,11 @@ async function skipSetup() {
         </section>
         <section class="panel actions">
           <h2>Ações rápidas</h2>
-          <router-link to="/accounts">Contas</router-link
-          ><router-link to="/transactions">Lançamentos</router-link
-          ><router-link to="/cards">Cartões</router-link
-          ><router-link to="/debts">Dívidas</router-link
-          ><router-link to="/budgets">Orçamentos</router-link>
+          <PanelActionLink compact to="/accounts" icon="account_balance" label="Contas" />
+          <PanelActionLink compact to="/transactions" icon="receipt_long" label="Lançamentos" />
+          <PanelActionLink compact to="/cards" icon="credit_card" label="Cartões" />
+          <PanelActionLink compact to="/debts" icon="request_quote" label="Dívidas" />
+          <PanelActionLink compact to="/budgets" icon="account_balance_wallet" label="Orçamentos" />
         </section>
       </div>
     </div>
@@ -569,24 +567,6 @@ async function skipSetup() {
   text-decoration: none;
   font-weight: 700;
 }
-.budget-cta {
-  min-height: 2.75rem;
-  display: grid;
-  grid-template-columns: 1.5rem 1fr 1.5rem;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-  padding: 0.55rem 0.7rem;
-  color: var(--color-on-accent-container);
-  background: var(--color-accent-container);
-  border: 1px solid var(--color-accent);
-  border-radius: 0.65rem;
-  text-decoration: none;
-  font-weight: 700;
-}
-.budget-cta .material-icons {
-  font-size: 1.25rem;
-}
 .quick-actions .primary-action {
   color: var(--color-on-accent);
   background: var(--color-accent);
@@ -621,9 +601,9 @@ async function skipSetup() {
   font-size: 1.25rem;
 }
 .actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
   gap: 0.5rem;
-  flex-wrap: wrap;
 }
 .grid {
   display: grid;
@@ -646,6 +626,12 @@ async function skipSetup() {
 }
 .panel p {
   margin: 0.5rem 0;
+}
+.panel :deep(.panel-action-link) {
+  margin-top: 0.75rem;
+}
+.actions :deep(.panel-action-link) {
+  margin-top: 0;
 }
 .panel dl {
   margin: 0;

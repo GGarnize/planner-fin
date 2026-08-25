@@ -8,6 +8,7 @@ import type {
 import { authenticatedFetch } from '../auth';
 import KebabMenu, { type KebabMenuAction } from '../components/KebabMenu.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import PageHeader from '../components/PageHeader.vue';
 import { normalizeMoney } from '../transaction-template';
 
 const accounts = ref<PublicFinancialAccount[]>([]);
@@ -158,14 +159,13 @@ onMounted(load);
 
 <template>
   <main class="accounts-page">
-    <header>
-      <div>
-        <router-link to="/conta">← Minha conta</router-link>
-        <h1>Contas financeiras</h1>
-        <p>Organize suas posições iniciais com segurança.</p>
-      </div>
-      <button @click="openCreate">Nova conta</button>
-    </header>
+    <PageHeader
+      title="Contas financeiras"
+      description="Organize suas posições iniciais com segurança."
+      back-to="/conta"
+    >
+      <template #action><button @click="openCreate">Nova conta</button></template>
+    </PageHeader>
     <p v-if="error" role="alert">
       {{ error }} <button class="link-button" @click="load">Tentar novamente</button>
     </p>
@@ -189,11 +189,12 @@ onMounted(load);
         <button type="button" class="entry-tap" @click="openEdit(account)">
           <span class="entry-top">
             <h2>
-              {{ account.name
-              }}<span v-if="account.archivedAt" class="badge">Arquivada</span>
+              {{ account.name }}<span v-if="account.archivedAt" class="badge">Arquivada</span>
             </h2>
             <span class="entry-amount">{{
-              account.realizedBalance === null ? 'Saldo indisponível' : money(account.realizedBalance)
+              account.realizedBalance === null
+                ? 'Saldo indisponível'
+                : money(account.realizedBalance)
             }}</span>
           </span>
           <span class="entry-meta">
@@ -241,12 +242,6 @@ onMounted(load);
 .accounts-page {
   width: min(100%, 72rem);
   padding: 2rem;
-}
-.accounts-page > header {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: center;
 }
 .account-grid {
   display: grid;
@@ -376,10 +371,6 @@ onMounted(load);
 @media (max-width: 600px) {
   .accounts-page {
     padding: 1rem;
-  }
-  .accounts-page > header {
-    align-items: stretch;
-    flex-direction: column;
   }
 }
 </style>

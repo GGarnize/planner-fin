@@ -27,12 +27,14 @@ const primary = [
       '/conta',
       '/transaction-templates',
       '/imports',
+      '/notifications',
     ],
   },
 ];
+const topLevelPaths = new Set(primary.map((item) => item.to));
 const active = (item: (typeof primary)[number]) =>
   item.matches.some((path) => route.path === path || route.path.startsWith(`${path}/`));
-const showGlobalAction = computed(() => primary.some((item) => active(item)));
+const showGlobalAction = computed(() => topLevelPaths.has(route.path));
 async function openChooser(event?: Event) {
   if (choosingType.value || globalThis.document.querySelector('[role="dialog"], .modal, .backdrop'))
     return;

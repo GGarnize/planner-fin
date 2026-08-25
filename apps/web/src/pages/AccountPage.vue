@@ -1,13 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
-import {
-  ACCENTS,
-  APPEARANCES,
-  appearanceState,
-  saveVisualPreferences,
-} from '../appearance';
+import { ACCENTS, APPEARANCES, appearanceState, saveVisualPreferences } from '../appearance';
 import { authState, authenticatedFetch, logout } from '../auth';
+import PageHeader from '../components/PageHeader.vue';
 import { loadInitialSetup, setupState } from '../initial-setup';
 
 const router = useRouter();
@@ -30,10 +26,7 @@ void loadInitialSetup();
 
 <template>
   <main v-if="authState.user" class="account-page">
-    <header>
-      <h1>Minha conta</h1>
-      <p>{{ authState.user.name }}</p>
-    </header>
+    <PageHeader title="Minha conta" :description="authState.user.name" back-to="/mais" />
     <p v-if="authState.error" role="alert">{{ authState.error }}</p>
     <section class="panel">
       <h2>Dados da conta</h2>
@@ -143,14 +136,6 @@ void loadInitialSetup();
 .account-page {
   width: min(100%, 42rem);
   margin: 0 auto;
-}
-.account-page header {
-  margin-bottom: 0.75rem;
-}
-.account-page header p {
-  margin: 0;
-  color: var(--color-text-muted);
-  overflow-wrap: anywhere;
 }
 .panel {
   margin-top: 0.75rem;

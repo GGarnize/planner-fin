@@ -9,6 +9,7 @@ import type {
   PublicFinancialDebt,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import PageHeader from '../components/PageHeader.vue';
 import { normalizeMoney } from '../transaction-template';
 const route = useRoute(),
   router = useRouter(),
@@ -257,16 +258,15 @@ onMounted(async () => {
 </script>
 <template>
   <main class="debts">
-    <header>
-      <div>
-        <p class="eyebrow">PLANEJAMENTO FINANCEIRO</p>
-        <h1>{{ detail ? 'Detalhe da dívida' : 'Dívidas e financiamentos' }}</h1>
-        <p>Acompanhe principal, custos e vencimentos sem dupla contagem.</p>
-      </div>
-      <button v-if="!detail" @click="showForm = !showForm">
-        {{ showForm ? 'Fechar' : 'Nova dívida' }}</button
-      ><button v-else class="secondary" @click="router.push('/debts')">Voltar</button>
-    </header>
+    <PageHeader
+      :title="detail ? 'Detalhe da dívida' : 'Dívidas e financiamentos'"
+      description="Acompanhe principal, custos e vencimentos sem dupla contagem."
+      :back-to="detail ? '/debts' : '/mais'"
+    >
+      <template v-if="!detail" #action>
+        <button @click="showForm = !showForm">{{ showForm ? 'Fechar' : 'Nova dívida' }}</button>
+      </template>
+    </PageHeader>
     <p v-if="error" role="alert">
       {{ error }}
       <button class="link" @click="route.params.id ? loadDetail(String(route.params.id)) : load()">
@@ -599,18 +599,12 @@ onMounted(async () => {
   padding: 2rem;
   color: var(--color-text);
 }
-header,
 .debt,
 .schedule {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-}
-.eyebrow {
-  color: var(--color-accent);
-  font-weight: 700;
-  font-size: 0.75rem;
 }
 .panel,
 .debt,
@@ -704,7 +698,6 @@ a {
   color: var(--color-accent);
 }
 @media (max-width: 650px) {
-  header,
   .debt {
     align-items: stretch;
     flex-direction: column;
