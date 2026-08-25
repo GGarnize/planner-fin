@@ -10,6 +10,7 @@ import type {
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
 import { safeApiErrorMessage } from '../api-error';
+import PageHeader from '../components/PageHeader.vue';
 import { filterActiveTemplates, normalizeMoney } from '../transaction-template';
 const router = useRouter();
 const items = ref<PublicRecurrence[]>([]),
@@ -183,12 +184,21 @@ function resetForm() {
   templateDirty.value = false;
   calendarDirty.value = false;
 }
+function scrollPageToTop() {
+  if (import.meta.env.MODE === 'test') return;
+  try {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  } catch {
+    // jsdom não implementa scrollTo; navegadores e Android executam o reset real.
+  }
+}
 async function startCreate() {
   editing.value = null;
   resetForm();
   formMode.value = 'create';
+  scrollPageToTop();
   await nextTick();
-  formBackButton.value?.focus();
+  formBackButton.value?.focus({ preventScroll: true });
 }
 function edit(item: PublicRecurrence) {
   resetForm();
@@ -200,7 +210,8 @@ function edit(item: PublicRecurrence) {
   templateDirty.value = false;
   calendarDirty.value = true;
   formMode.value = 'edit';
-  void nextTick(() => formBackButton.value?.focus());
+  scrollPageToTop();
+  void nextTick(() => formBackButton.value?.focus({ preventScroll: true }));
 }
 async function openTemplates() {
   templateSearch.value = '';
@@ -394,16 +405,11 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <main class="recurrences">
-    <header>
-      <div>
-        <p class="eyebrow">Planejamento</p>
-        <h1>Recorrências financeiras</h1>
-        <p>
-          Programe receitas, despesas e transferências. As ocorrências serão sempre criadas como
-          pendentes.
-        </p>
-      </div>
-    </header>
+    <PageHeader
+      title="Recorrências financeiras"
+      description="Programe receitas, despesas e transferências. As ocorrências serão sempre criadas como pendentes."
+      back-to="/mais"
+    />
     <p v-if="error" role="alert">
       {{ error }} <button class="link" @click="load">Tentar novamente</button>
     </p>
@@ -643,19 +649,13 @@ onBeforeUnmount(() => {
 .recurrences {
   width: min(100%, 72rem);
   padding: 2rem 2rem calc(var(--shell-nav-height, 0px) + 4rem + env(safe-area-inset-bottom));
-  color: #172033;
-}
-.eyebrow {
-  color: #155eef;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  color: var(--color-text);
 }
 .panel,
 .empty,
 article {
-  background: white;
-  border: 1px solid #dce3ef;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 1.25rem;
   margin: 1rem 0;
@@ -691,8 +691,10 @@ select,
 textarea {
   font: inherit;
   padding: 0.75rem;
-  border: 1px solid #94a3b8;
+  border: 1px solid var(--color-border);
   border-radius: 0.5rem;
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 textarea {
   min-height: 5rem;
@@ -742,7 +744,7 @@ article .actions {
   display: grid;
   place-items: center;
   padding: 1rem;
-  background: #0f172a88;
+  background: var(--color-overlay);
 }
 .sheet,
 .confirm {
@@ -751,7 +753,7 @@ article .actions {
   overflow: auto;
   padding: 1rem;
   border-radius: 8px;
-  background: white;
+  background: var(--color-surface);
 }
 .template-option {
   width: 100%;
@@ -764,20 +766,20 @@ article .actions {
   font-size: 0.85rem;
 }
 .secondary {
-  background: #e8efff;
-  color: #173b7a;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
 }
 .danger {
   background: #b42318;
 }
 .link {
   background: transparent;
-  color: #155eef;
+  color: var(--color-accent);
   padding: 0.2rem;
 }
 .badge {
-  background: #e8efff;
-  color: #173b7a;
+  background: var(--color-accent-container);
+  color: var(--color-on-accent-container);
   border-radius: 99px;
   padding: 0.25rem 0.6rem;
 }

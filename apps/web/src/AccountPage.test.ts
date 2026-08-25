@@ -54,6 +54,7 @@ describe('AccountPage', () => {
     expect(wrapper.text()).toContain('Pessoa Teste');
     expect(wrapper.text()).toContain('pessoa@example.test');
     expect(wrapper.findAllComponents(RouterLinkStub).map((link) => link.props('to'))).toEqual([
+      '/mais',
       '/accounts',
       '/categories',
     ]);

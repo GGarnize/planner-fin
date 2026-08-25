@@ -11,6 +11,7 @@ import type {
   PublicFinancialCategory,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import PageHeader from '../components/PageHeader.vue';
 import { importApi, ImportApiError, type ImportFilter } from '../import-api';
 import { importStatementFileAccept } from '../mobile';
 
@@ -373,13 +374,11 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="import-page">
-    <header>
-      <router-link to="/mais" aria-label="Voltar para Mais">←</router-link>
-      <div>
-        <h1>Importar extrato</h1>
-        <p>Revise antes de criar qualquer lançamento.</p>
-      </div>
-    </header>
+    <PageHeader
+      title="Importar extrato"
+      description="Revise antes de criar qualquer lançamento."
+      :back-to="typeof route.params.id === 'string' ? '/imports' : '/mais'"
+    />
     <p v-if="error" class="error" role="alert">
       {{ error }} <button class="link" @click="reload()">Tentar novamente</button>
     </p>
@@ -619,7 +618,7 @@ onBeforeUnmount(() => {
     <section v-else-if="readOnly" class="panel">
       <h2>Sessão encerrada</h2>
       <p>Estado: {{ session.status }}. Nenhuma ação será reenviada.</p>
-      <router-link to="/mais">Voltar para Mais</router-link>
+      <router-link class="button-link" to="/imports">Nova importação</router-link>
     </section>
 
     <div v-if="editing" class="backdrop" @click.self="editing = null">
@@ -731,7 +730,6 @@ onBeforeUnmount(() => {
   margin: 0 auto;
   padding: 2rem;
 }
-.import-page > header,
 .review-head,
 .row-title,
 .actions,
@@ -740,18 +738,6 @@ onBeforeUnmount(() => {
   gap: 1rem;
   align-items: center;
   justify-content: space-between;
-}
-.import-page > header a {
-  font-size: 1.5rem;
-  min-width: 44px;
-  min-height: 44px;
-  display: grid;
-  place-items: center;
-  text-decoration: none;
-}
-.import-page h1,
-.import-page header p {
-  margin: 0.2rem 0;
 }
 .panel,
 .rows article,
@@ -857,7 +843,7 @@ fieldset {
 }
 .danger {
   background: var(--color-error);
-  color: white;
+  color: var(--color-on-accent);
 }
 .link {
   padding: 0.2rem;

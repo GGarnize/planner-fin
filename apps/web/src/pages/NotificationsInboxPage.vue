@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
+import PageHeader from '../components/PageHeader.vue';
 import type {
   PublicFinancialAccount,
   PublicFinancialCategory,
@@ -22,7 +23,6 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const route = useRoute();
-const router = useRouter();
 
 const items = ref<Awaited<ReturnType<typeof notificationsApi.list>>['data']>([]);
 const loading = ref(true);
@@ -116,7 +116,12 @@ async function loadDetail(notificationId: string) {
     form.cardId = notification.cardId ?? '';
     form.installmentCount = 1;
     form.categoryId = notification.categoryId ?? '';
-    if (!form.accountId && !form.cardId && form.type === 'EXPENSE' && notification.parsedCardLast4) {
+    if (
+      !form.accountId &&
+      !form.cardId &&
+      form.type === 'EXPENSE' &&
+      notification.parsedCardLast4
+    ) {
       const matches = cardList.filter(
         (candidate) => !candidate.archivedAt && candidate.last4 === notification.parsedCardLast4,
       );
@@ -233,10 +238,6 @@ async function markNonFinancial() {
   }
 }
 
-function backToList() {
-  router.push('/notifications/inbox');
-}
-
 watch(
   () => form.type,
   () => {
@@ -249,9 +250,7 @@ watch(
 
 <template>
   <main class="inbox-page">
-    <header>
-      <h1>Para revisar</h1>
-    </header>
+    <PageHeader title="Para revisar" :back-to="id ? '/notifications/inbox' : '/notifications'" />
 
     <template v-if="!id">
       <p v-if="error" role="alert">
@@ -287,7 +286,6 @@ watch(
     </template>
 
     <template v-else>
-      <button class="link-button back" @click="backToList">← Voltar</button>
       <p v-if="detailError" role="alert">{{ detailError }}</p>
       <p v-if="detailLoading" aria-live="polite">Carregando…</p>
       <template v-else-if="detail">
@@ -482,9 +480,6 @@ watch(
 .badge[data-status='CONFIRMED'] {
   color: var(--color-on-accent);
   background: var(--color-accent);
-}
-.back {
-  margin-top: 0.5rem;
 }
 .app-line {
   margin: 0 0 0.5rem;

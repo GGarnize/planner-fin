@@ -29,9 +29,10 @@ describe('tela de categorias (API mockada)', () => {
       global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } },
     });
     await flushPromises();
-    const back = w.get('.account-back');
-    expect(back.text()).toContain('Minha conta');
+    const back = w.get('[aria-label="Voltar"]');
+    expect(back.attributes('href')).toBe('/conta');
     expect(back.get('.material-icons').text()).toBe('arrow_back');
+    expect(back.text()).not.toContain('Minha conta');
     const filters = w.get('.filters');
     expect(filters.get('.filter-field').text()).toContain('Natureza');
     expect(filters.get('select').element).toHaveProperty('value', '');

@@ -13,6 +13,7 @@ const mountShell = async (path = '/dashboard') => {
       { path: '/budgets', component: { template: '<p>Orçamento</p>' } },
       { path: '/mais', component: { template: '<p>Mais</p>' } },
       { path: '/accounts', component: { template: '<p>Contas</p>' } },
+      { path: '/notifications/inbox', component: { template: '<p>Inbox</p>' } },
     ],
   });
   await router.push(path);
@@ -34,14 +35,14 @@ describe('AuthenticatedShell', () => {
     expect(wrapper.get('.global-fab').attributes('aria-label')).toBe('Novo lançamento');
   });
 
-  it('considera módulo secundário ativo em Mais e inicia despesa pelo fluxo existente', async () => {
+  it('considera módulo secundário ativo em Mais sem exibir FAB global', async () => {
     const { wrapper, router } = await mountShell('/accounts');
     expect(wrapper.findAll('.bottom-nav a')[3]!.attributes('aria-current')).toBe('page');
-    await wrapper.get('.global-fab').trigger('click');
-    expect(wrapper.get('[role=dialog]').text()).toContain('Receita');
-    await wrapper.findAll('[role=dialog] div button')[1]!.trigger('click');
+    expect(wrapper.find('.global-fab').exists()).toBe(false);
+    await router.push('/notifications/inbox');
     await flushPromises();
-    expect(router.currentRoute.value.fullPath).toBe('/transactions/new?type=EXPENSE');
+    expect(wrapper.findAll('.bottom-nav a')[3]!.attributes('aria-current')).toBe('page');
+    expect(wrapper.find('.global-fab').exists()).toBe(false);
   });
 
   it('fecha a escolha global por Escape e pelo Back Android antes de navegar', async () => {

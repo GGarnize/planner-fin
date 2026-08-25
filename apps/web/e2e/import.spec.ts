@@ -129,6 +129,29 @@ test('CSV sintético passa por mapping, revisão, preview e confirmação', asyn
       },
     }),
   );
+  await page.route('**/api/financial-entries?*', (route) =>
+    route.fulfill({
+      json: {
+        data: confirmed
+          ? rows.map((row) => ({
+              id: row.id,
+              source: 'TRANSACTION',
+              sourceId: row.id,
+              accountId: 'a',
+              categoryId: row.categoryId,
+              type: row.type,
+              status: 'PAID',
+              description: row.description,
+              amount: row.amount,
+              date: row.date,
+              overdue: false,
+              createdAt: '',
+            }))
+          : [],
+        page: { limit: 20, nextCursor: null },
+      },
+    }),
+  );
 
   await page.setViewportSize({ width: 360, height: 800 });
   await page.goto('/mais');
@@ -143,7 +166,7 @@ test('CSV sintético passa por mapping, revisão, preview e confirmação', asyn
     page.getByRole('option', { name: /Data — ex.: 01\/08\/2026/ }).first(),
   ).toBeAttached();
   await page.getByRole('button', { name: /Aplicar mapping/ }).click();
-  await expect(page.getByText('entrada sintética')).toBeVisible();
+  await expect(page.locator('.rows').getByText('entrada sintética')).toBeVisible();
   await page.getByRole('button', { name: 'Revisar resumo' }).click();
   await page.getByRole('button', { name: 'Importar 2 lançamentos' }).click();
   await expect(page.getByRole('heading', { name: 'Importação concluída' })).toBeVisible();

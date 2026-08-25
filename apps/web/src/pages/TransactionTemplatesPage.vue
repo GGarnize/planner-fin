@@ -7,6 +7,7 @@ import type {
   PublicTransactionTemplate,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import PageHeader from '../components/PageHeader.vue';
 import { normalizeMoney, templateErrorMessage } from '../transaction-template';
 const items = ref<PublicTransactionTemplate[]>([]),
   accounts = ref<PublicFinancialAccount[]>([]),
@@ -110,17 +111,14 @@ function confirmDiscard() {
 }
 function cancelDiscard() {
   showDiscardConfirm.value = false;
-  void nextTick(() => formDialog.value?.querySelector<HTMLElement>('input, select, button')?.focus());
+  void nextTick(() =>
+    formDialog.value?.querySelector<HTMLElement>('input, select, button')?.focus(),
+  );
 }
 async function save() {
   error.value = '';
   const plannedAmount = normalizeMoney(form.plannedAmount);
-  if (
-    !form.name.trim() ||
-    !form.categoryId ||
-    !form.description.trim() ||
-    !plannedAmount
-  ) {
+  if (!form.name.trim() || !form.categoryId || !form.description.trim() || !plannedAmount) {
     error.value = 'Preencha nome, categoria, descrição e valor positivo.';
     return;
   }
@@ -233,13 +231,9 @@ watch(showDiscardConfirm, async (value) => {
 </script>
 <template>
   <main class="templates-page">
-    <header>
-      <div>
-        <router-link to="/mais">← Mais</router-link>
-        <h1>Modelos de lançamento</h1>
-      </div>
-      <button @click="open(undefined, $event)">Novo modelo</button>
-    </header>
+    <PageHeader title="Modelos de lançamento" back-to="/mais">
+      <template #action><button @click="open(undefined, $event)">Novo modelo</button></template>
+    </PageHeader>
     <label class="toggle"
       ><input v-model="includeArchived" type="checkbox" @change="load" /> Incluir arquivados</label
     >
@@ -365,16 +359,12 @@ watch(showDiscardConfirm, async (value) => {
   margin: 0 auto;
   padding: 1.5rem;
 }
-.templates-page > header,
 .list article > header,
 .actions {
   display: flex;
   gap: 0.75rem;
   justify-content: space-between;
   align-items: center;
-}
-.templates-page h1 {
-  margin: 0.25rem 0;
 }
 .toggle {
   display: flex;
@@ -394,19 +384,25 @@ watch(showDiscardConfirm, async (value) => {
 form,
 .confirm {
   padding: 1rem;
-  background: #fff;
+  background: var(--color-surface);
   border-radius: 1rem;
-  box-shadow: 0 0.25rem 1rem #0f172a12;
+  box-shadow: var(--shadow-surface);
 }
 .list h2 {
   margin: 0;
 }
 .secondary {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
 }
 .danger {
   background: #b42318;
+}
+select,
+textarea {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-color: var(--color-border);
 }
 .backdrop {
   position: fixed;
@@ -415,7 +411,7 @@ form,
   display: grid;
   place-items: center;
   padding: 1rem;
-  background: #0f172a88;
+  background: var(--color-overlay);
 }
 .backdrop form {
   width: min(100%, 34rem);
@@ -428,9 +424,6 @@ form,
 @media (max-width: 767px) {
   .templates-page {
     padding: 0;
-  }
-  .templates-page > header {
-    align-items: flex-end;
   }
   .list article > header {
     align-items: flex-start;

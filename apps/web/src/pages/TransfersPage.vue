@@ -8,6 +8,7 @@ import type {
   PublicFinancialTransfer,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import PageHeader from '../components/PageHeader.vue';
 import { setModalScrollLock } from '../modal-scroll-lock';
 import { normalizeMoney } from '../transaction-template';
 type Page = { data: PublicFinancialTransfer[]; page: { limit: number; nextCursor: string | null } };
@@ -440,16 +441,9 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <main class="transfers-page">
-    <header>
-      <div>
-        <h1>Transferências</h1>
-        <nav>
-          <router-link to="/accounts">Contas</router-link> ·
-          <router-link to="/transactions">Lançamentos</router-link>
-        </nav>
-      </div>
-      <button @click="openCreate">Nova transferência</button>
-    </header>
+    <PageHeader title="Transferências" back-to="/mais">
+      <template #action><button @click="openCreate">Nova transferência</button></template>
+    </PageHeader>
     <p v-if="error" role="alert">
       {{ error }} <button class="link" @click="load()">Tentar novamente</button>
     </p>
@@ -759,7 +753,6 @@ onBeforeUnmount(() => {
   width: min(100%, 76rem);
   padding: 2rem 2rem calc(var(--shell-nav-height, 0px) + 3rem + env(safe-area-inset-bottom));
 }
-.transfers-page > header,
 .actions,
 .amounts {
   display: flex;
@@ -791,13 +784,13 @@ onBeforeUnmount(() => {
   min-height: 1.35rem;
   margin-left: 0.45rem;
   border-radius: 999px;
-  background: #173b7a;
-  color: #fff;
+  background: var(--color-accent-container);
+  color: var(--color-on-accent-container);
   font-size: 0.8rem;
 }
 .filter-status {
   margin: 0;
-  color: #475569;
+  color: var(--color-text-muted);
   font-weight: 700;
 }
 .list {
@@ -808,10 +801,10 @@ onBeforeUnmount(() => {
 .empty,
 form,
 .discard-dialog {
-  background: #fff;
+  background: var(--color-surface);
   padding: 1.25rem;
   border-radius: 8px;
-  box-shadow: 0 0.5rem 2rem #0f172a18;
+  box-shadow: var(--shadow-surface);
 }
 .list article > header {
   display: flex;
@@ -825,8 +818,8 @@ form,
   display: grid;
 }
 .secondary {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
 }
 .link {
   background: none;
@@ -836,7 +829,7 @@ form,
 .modal {
   position: fixed;
   inset: 0;
-  background: #0f172a99;
+  background: var(--color-overlay);
   display: grid;
   place-items: center;
   padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
@@ -862,15 +855,15 @@ form,
 }
 .group-title {
   margin: 0;
-  color: #173b7a;
+  color: var(--color-accent);
   font-size: 0.95rem;
 }
 .modal-body > label:nth-of-type(1),
 .modal-body > label:nth-of-type(2) {
   padding: 0.75rem;
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: #f8fbff;
+  background: var(--color-surface-muted);
 }
 .field-error {
   display: block;
@@ -886,14 +879,15 @@ select,
 textarea {
   font: inherit;
   padding: 0.75rem;
-  border: 1px solid #94a3b8;
+  border: 1px solid var(--color-border);
   border-radius: 0.5rem;
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 @media (max-width: 600px) {
   .transfers-page {
     padding: 0;
   }
-  .transfers-page > header,
   .amounts,
   .primary-filters,
   .secondary-filters {

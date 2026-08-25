@@ -2,6 +2,7 @@
 /* global document, window */
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import PageHeader from '../components/PageHeader.vue';
 import { catalogLabelFor, NOTIFICATION_APP_CATALOG } from '../notification-app-catalog';
 import {
   getCaptureState,
@@ -43,7 +44,9 @@ const catalogExpanded = ref(false);
 
 const isAndroid = computed(() => isNotificationListenerDiagnosticAvailable());
 const monitoredCount = computed(() => captureState.value.monitoredPackages.length);
-const knownPackageNames = computed(() => new Set(NOTIFICATION_APP_CATALOG.map((entry) => entry.packageName)));
+const knownPackageNames = computed(
+  () => new Set(NOTIFICATION_APP_CATALOG.map((entry) => entry.packageName)),
+);
 
 function labelForPackage(packageName: string): string {
   return (
@@ -94,8 +97,9 @@ const ignoredObserved = computed(() =>
 // Apps conhecidos exclui pacotes já monitorados, para que um app monitorado+conhecido
 // (ex.: Nubank) apareça uma única vez, na seção Monitorados.
 const visibleCatalog = computed(() =>
-  NOTIFICATION_APP_CATALOG.filter((entry) => !captureState.value.monitoredPackages.includes(entry.packageName))
-    .filter((entry) => matchesSearch(entry.label, entry.packageName)),
+  NOTIFICATION_APP_CATALOG.filter(
+    (entry) => !captureState.value.monitoredPackages.includes(entry.packageName),
+  ).filter((entry) => matchesSearch(entry.label, entry.packageName)),
 );
 
 async function refresh() {
@@ -251,9 +255,7 @@ async function restoreIgnored(packageName: string) {
 
 <template>
   <main class="notifications-page">
-    <header>
-      <h1>Captura por notificações</h1>
-    </header>
+    <PageHeader title="Captura por notificações" back-to="/mais" />
 
     <section v-if="!isAndroid" class="panel unavailable">
       <span class="material-icons" aria-hidden="true">phonelink_off</span>
@@ -270,8 +272,8 @@ async function restoreIgnored(packageName: string) {
       <section v-if="!status.granted" class="panel disclosure">
         <h2>Acesso às notificações: Desativado</h2>
         <p>
-          O PlannerFin pode identificar possíveis movimentações nas notificações dos aplicativos
-          que você escolher.
+          O PlannerFin pode identificar possíveis movimentações nas notificações dos aplicativos que
+          você escolher.
         </p>
         <p class="fine-print">
           Se você ativar esta função, o PlannerFin poderá ler o título e o texto das notificações
@@ -344,7 +346,12 @@ async function restoreIgnored(packageName: string) {
           <h2>Desligar captura</h2>
           <p>Você pode manter o histórico já capturado ou apagá-lo agora.</p>
           <div class="actions">
-            <button type="button" class="secondary" :disabled="savingCapture" @click="disableKeepHistory">
+            <button
+              type="button"
+              class="secondary"
+              :disabled="savingCapture"
+              @click="disableKeepHistory"
+            >
               Desativar
             </button>
             <button
@@ -364,8 +371,8 @@ async function restoreIgnored(packageName: string) {
         <section v-if="showAppManager" class="panel app-manager" aria-label="Gerenciar apps">
           <h2>Gerenciar apps</h2>
           <p>
-            Escolha quais aplicativos o PlannerFin pode monitorar para capturar conteúdo
-            financeiro. Nenhum app é ativado por padrão.
+            Escolha quais aplicativos o PlannerFin pode monitorar para capturar conteúdo financeiro.
+            Nenhum app é ativado por padrão.
           </p>
 
           <label class="search-field">
