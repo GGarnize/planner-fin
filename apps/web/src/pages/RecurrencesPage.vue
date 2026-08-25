@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /* global Event, HTMLButtonElement, HTMLElement, KeyboardEvent, window */
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { onBeforeRouteLeave, useRouter } from 'vue-router';
 import type {
   PublicFinancialAccount,
   PublicFinancialCategory,
@@ -10,6 +11,7 @@ import type {
 import { authenticatedFetch } from '../auth';
 import { safeApiErrorMessage } from '../api-error';
 import { filterActiveTemplates, normalizeMoney } from '../transaction-template';
+const router = useRouter();
 const items = ref<PublicRecurrence[]>([]),
   accounts = ref<PublicFinancialAccount[]>([]),
   categories = ref<PublicFinancialCategory[]>([]),
@@ -25,13 +27,22 @@ const templates = ref<PublicTransactionTemplate[]>([]),
   templateSearch = ref(''),
   showTemplates = ref(false),
   showConfirm = ref(false),
-  dirty = ref(false),
+  showDiscardConfirm = ref(false),
+  formMode = ref<'list' | 'create' | 'edit'>('list'),
+  discardIntent = ref<'form' | 'route'>('form'),
+  formDirty = ref(false),
+  templateDirty = ref(false),
   calendarDirty = ref(false);
 const templateTrigger = ref<HTMLButtonElement | null>(null),
   templateDialog = ref<HTMLElement | null>(null),
-  confirmDialog = ref<HTMLElement | null>(null);
+  confirmDialog = ref<HTMLElement | null>(null),
+  discardDialog = ref<HTMLElement | null>(null),
+  newRecurrenceButton = ref<HTMLButtonElement | null>(null),
+  formBackButton = ref<HTMLButtonElement | null>(null);
 let templateHistoryPushed = false,
-  handlingDialogPop = false;
+  handlingDialogPop = false,
+  discardReturnFocus: HTMLElement | null = null,
+  pendingRoute = '';
 const form = reactive({
   kind: 'TRANSACTION',
   transactionType: 'EXPENSE',
@@ -49,6 +60,25 @@ const form = reactive({
   description: '',
   notes: '',
 });
+function defaultForm() {
+  return {
+    kind: 'TRANSACTION',
+    transactionType: 'EXPENSE',
+    frequency: 'MONTHLY',
+    dayOfWeek: 1,
+    dayOfMonth: 1,
+    monthOfYear: 1,
+    startDate: new Date().toISOString().slice(0, 10),
+    endDate: '',
+    accountId: '',
+    categoryId: '',
+    sourceAccountId: '',
+    destinationAccountId: '',
+    plannedAmount: '',
+    description: '',
+    notes: '',
+  };
+}
 const activeAccounts = computed(() => accounts.value.filter((x) => !x.archivedAt));
 const activeCategories = computed(() =>
   categories.value.filter((x) => !x.archivedAt && x.type === form.transactionType),
@@ -133,6 +163,9 @@ async function save() {
       body: JSON.stringify(payload()),
     });
     editing.value = null;
+    formMode.value = 'list';
+    formDirty.value = false;
+    templateDirty.value = false;
     await load();
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Falha ao salvar.';
@@ -140,13 +173,34 @@ async function save() {
     saving.value = false;
   }
 }
+function resetForm() {
+  Object.assign(form, defaultForm());
+  selectedTemplate.value = null;
+  pendingTemplate.value = null;
+  templateWarning.value = '';
+  showConfirm.value = false;
+  formDirty.value = false;
+  templateDirty.value = false;
+  calendarDirty.value = false;
+}
+async function startCreate() {
+  editing.value = null;
+  resetForm();
+  formMode.value = 'create';
+  await nextTick();
+  formBackButton.value?.focus();
+}
 function edit(item: PublicRecurrence) {
+  resetForm();
   editing.value = item;
   Object.assign(form, item, { endDate: item.endDate ?? '', notes: item.notes ?? '' });
   selectedTemplate.value = null;
   templateWarning.value = '';
-  dirty.value = false;
+  formDirty.value = false;
+  templateDirty.value = false;
   calendarDirty.value = true;
+  formMode.value = 'edit';
+  void nextTick(() => formBackButton.value?.focus());
 }
 async function openTemplates() {
   templateSearch.value = '';
@@ -193,13 +247,14 @@ function applyTemplate(template: PublicTransactionTemplate) {
       'A categoria padrão está indisponível. Escolha uma categoria ativa compatível. ';
   if (template.defaultAccountId && !template.defaultAccountAvailable)
     templateWarning.value += 'A conta padrão está indisponível. Escolha uma conta ativa.';
-  dirty.value = false;
+  formDirty.value = true;
+  templateDirty.value = false;
   showConfirm.value = false;
   pendingTemplate.value = null;
   closeTemplates();
 }
 function chooseTemplate(template: PublicTransactionTemplate) {
-  if (dirty.value) {
+  if (templateDirty.value) {
     pendingTemplate.value = template;
     showConfirm.value = true;
   } else applyTemplate(template);
@@ -212,9 +267,39 @@ function cancelTemplate() {
 function confirmTemplate() {
   if (pendingTemplate.value) applyTemplate(pendingTemplate.value);
 }
+function leaveForm() {
+  resetForm();
+  editing.value = null;
+  formMode.value = 'list';
+  void nextTick(() => newRecurrenceButton.value?.focus());
+}
+function requestDiscard(returnFocus?: HTMLElement | null) {
+  if (!formDirty.value) {
+    leaveForm();
+    return;
+  }
+  discardIntent.value = 'form';
+  discardReturnFocus = returnFocus ?? null;
+  showDiscardConfirm.value = true;
+}
+function cancelDiscard() {
+  showDiscardConfirm.value = false;
+  pendingRoute = '';
+  discardIntent.value = 'form';
+  void nextTick(() => (discardReturnFocus ?? formBackButton.value)?.focus());
+}
+async function confirmDiscard() {
+  const intent = discardIntent.value;
+  const route = pendingRoute;
+  pendingRoute = '';
+  showDiscardConfirm.value = false;
+  leaveForm();
+  if (intent === 'route' && route) await router.push(route);
+}
 function closeTopDialog(syncHistory = true) {
   if (showConfirm.value) cancelTemplate();
   else if (showTemplates.value) closeTemplates(syncHistory);
+  else if (showDiscardConfirm.value) cancelDiscard();
   else return false;
   return true;
 }
@@ -222,8 +307,14 @@ function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && closeTopDialog()) event.preventDefault();
 }
 function onAndroidBack(event: Event) {
-  if (!closeTopDialog(false)) return;
-  event.preventDefault();
+  if (showConfirm.value || showTemplates.value || showDiscardConfirm.value) {
+    if (closeTopDialog(false)) event.preventDefault();
+    return;
+  }
+  if (formMode.value !== 'list') {
+    requestDiscard(formBackButton.value);
+    event.preventDefault();
+  }
 }
 function onPopState() {
   if (!showConfirm.value && !showTemplates.value) return;
@@ -237,9 +328,17 @@ function onPopState() {
 }
 function removeTemplate() {
   selectedTemplate.value = null;
+  formDirty.value = true;
+  templateDirty.value = true;
 }
 function markCalendarDirty() {
   calendarDirty.value = true;
+  formDirty.value = true;
+  templateDirty.value = true;
+}
+function markFormDirty() {
+  formDirty.value = true;
+  templateDirty.value = true;
 }
 async function action(item: PublicRecurrence, name: 'pause' | 'resume' | 'archive' | 'generate') {
   if (name === 'archive' && !globalThis.confirm('Arquivar esta recorrência?')) return;
@@ -265,6 +364,19 @@ watch(showConfirm, async (visible) => {
   if (!visible) return;
   await nextTick();
   confirmDialog.value?.querySelector<HTMLElement>('button')?.focus();
+});
+watch(showDiscardConfirm, async (visible) => {
+  if (!visible) return;
+  await nextTick();
+  discardDialog.value?.querySelector<HTMLElement>('button')?.focus();
+});
+onBeforeRouteLeave((to) => {
+  if (formMode.value === 'list' || !formDirty.value || showDiscardConfirm.value) return true;
+  pendingRoute = to.fullPath;
+  discardIntent.value = 'route';
+  discardReturnFocus = formBackButton.value;
+  showDiscardConfirm.value = true;
+  return false;
 });
 onMounted(() => {
   window.addEventListener('keydown', onKeydown);
@@ -295,9 +407,12 @@ onBeforeUnmount(() => {
     <p v-if="error" role="alert">
       {{ error }} <button class="link" @click="load">Tentar novamente</button>
     </p>
-    <section class="panel">
+    <div v-if="formMode === 'list'" class="page-actions">
+      <button ref="newRecurrenceButton" type="button" @click="startCreate">Nova recorrência</button>
+    </div>
+    <section v-if="formMode !== 'list'" class="panel form-panel">
       <h2>{{ editing ? 'Editar recorrência' : 'Nova recorrência' }}</h2>
-      <form @submit.prevent="save" @input="dirty = true">
+      <form @submit.prevent="save" @input="markFormDirty" @change="markFormDirty">
         <div v-if="form.kind === 'TRANSACTION'" class="template-action">
           <button ref="templateTrigger" type="button" class="secondary" @click="openTemplates">
             Usar modelo...</button
@@ -400,18 +515,33 @@ onBeforeUnmount(() => {
           ><label class="wide">Notas<textarea v-model="form.notes" maxlength="2000" /></label>
         </div>
         <div class="actions">
-          <button :disabled="saving">{{ saving ? 'Salvando…' : 'Salvar recorrência' }}</button
-          ><button v-if="editing" type="button" class="secondary" @click="editing = null">
+          <button
+            ref="formBackButton"
+            type="button"
+            class="secondary"
+            :disabled="saving"
+            @click="requestDiscard(formBackButton)"
+          >
+            Voltar</button
+          ><button :disabled="saving">{{ saving ? 'Salvando…' : 'Salvar recorrência' }}</button
+          ><button
+            type="button"
+            class="secondary"
+            :disabled="saving"
+            @click="requestDiscard(formBackButton)"
+          >
             Cancelar
           </button>
         </div>
       </form>
     </section>
-    <section>
+    <section v-if="formMode === 'list'" class="list-section">
       <h2>Suas recorrências</h2>
-      <p v-if="loading">Carregando recorrências…</p>
+      <p v-if="loading" role="status">Carregando recorrências…</p>
       <div v-else-if="!items.length" class="empty">
-        Nenhuma recorrência cadastrada. Crie a primeira acima.
+        <h3>Nenhuma recorrência cadastrada</h3>
+        <p>Use recorrências para programar lançamentos ou transferências que se repetem.</p>
+        <button type="button" @click="startCreate">Nova recorrência</button>
       </div>
       <div v-else class="cards">
         <article v-for="item in items" :key="item.id" :class="{ archived: item.archivedAt }">
@@ -491,12 +621,28 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
+    <div v-if="showDiscardConfirm" class="backdrop">
+      <section
+        ref="discardDialog"
+        class="confirm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="discard-title"
+      >
+        <h2 id="discard-title">Descartar alterações?</h2>
+        <p>As alterações não salvas serão perdidas.</p>
+        <div class="actions">
+          <button type="button" class="secondary" @click="cancelDiscard">Continuar editando</button
+          ><button type="button" @click="confirmDiscard">Descartar</button>
+        </div>
+      </section>
+    </div>
   </main>
 </template>
 <style scoped>
 .recurrences {
   width: min(100%, 72rem);
-  padding: 2rem;
+  padding: 2rem 2rem calc(var(--shell-nav-height, 0px) + 4rem + env(safe-area-inset-bottom));
   color: #172033;
 }
 .eyebrow {
@@ -510,9 +656,28 @@ onBeforeUnmount(() => {
 article {
   background: white;
   border: 1px solid #dce3ef;
-  border-radius: 16px;
+  border-radius: 8px;
   padding: 1.25rem;
   margin: 1rem 0;
+}
+.page-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 1rem 0;
+}
+.form-panel {
+  max-width: 56rem;
+}
+.list-section h2 {
+  margin-top: 0;
+}
+.empty {
+  display: grid;
+  gap: 0.65rem;
+}
+.empty h3,
+.empty p {
+  margin: 0;
 }
 .grid {
   display: grid;
@@ -541,11 +706,27 @@ article {
   justify-content: space-between;
   gap: 1rem;
 }
+article > div:first-child {
+  min-width: 0;
+}
+article h3,
+article p,
+article strong {
+  overflow-wrap: anywhere;
+}
 .actions {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
   margin-top: 1rem;
+}
+.form-panel .actions {
+  padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+}
+article .actions {
+  align-content: flex-start;
+  justify-content: flex-end;
+  min-width: min(100%, 20rem);
 }
 .template-action {
   display: flex;
@@ -569,7 +750,7 @@ article {
   max-height: calc(100dvh - 2rem);
   overflow: auto;
   padding: 1rem;
-  border-radius: 1rem;
+  border-radius: 8px;
   background: white;
 }
 .template-option {
@@ -609,7 +790,19 @@ article {
 }
 @media (max-width: 700px) {
   .recurrences {
-    padding: 1rem;
+    padding: 0 0 calc(var(--shell-nav-height, 0px) + 1rem + env(safe-area-inset-bottom));
+  }
+  header,
+  .page-actions,
+  .list-section {
+    padding-inline: 1rem;
+  }
+  .page-actions {
+    justify-content: stretch;
+  }
+  .page-actions button,
+  .empty button {
+    width: 100%;
   }
   .grid {
     grid-template-columns: 1fr;
@@ -620,11 +813,25 @@ article {
   article {
     display: block;
   }
+  article .actions {
+    min-width: 0;
+    justify-content: stretch;
+  }
+  article .actions button {
+    flex: 1 1 8rem;
+  }
+  .panel,
+  .empty,
+  article {
+    padding: 1rem;
+  }
   .backdrop {
     align-items: end;
     padding: 0;
   }
-  .sheet {
+  .sheet,
+  .confirm {
+    width: 100%;
     border-radius: 1rem 1rem 0 0;
     padding-bottom: max(1rem, env(safe-area-inset-bottom));
   }
