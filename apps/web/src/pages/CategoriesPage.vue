@@ -142,7 +142,10 @@ onMounted(load);
   <main class="categories-page">
     <header>
       <div>
-        <router-link to="/conta">← Minha conta</router-link>
+        <router-link class="account-back" to="/conta"
+          ><span class="material-icons" aria-hidden="true">arrow_back</span
+          ><span>Minha conta</span></router-link
+        >
         <h1>Categorias financeiras</h1>
         <p>Organize receitas e despesas sem misturar suas naturezas.</p>
       </div>
@@ -152,15 +155,17 @@ onMounted(load);
       {{ error }} <button class="link" @click="load">Tentar novamente</button>
     </p>
     <div class="filters">
-      <label
-        >Natureza<select v-model="filterType" @change="load">
+      <label class="filter-field"
+        ><span>Natureza</span
+        ><select v-model="filterType" @change="load">
           <option value="">Todas</option>
           <option value="INCOME">Receitas</option>
           <option value="EXPENSE">Despesas</option>
         </select></label
       ><label class="check"
-        ><input v-model="includeArchived" type="checkbox" @change="load" /> Incluir
-        arquivadas</label
+        ><input v-model="includeArchived" type="checkbox" @change="load" /><span
+          >Incluir arquivadas</span
+        ></label
       >
     </div>
     <p v-if="loading" aria-live="polite">Carregando…</p>
@@ -254,12 +259,43 @@ onMounted(load);
   justify-content: flex-start;
   margin: 1rem 0;
 }
-.filters label {
-  display: flex;
+.account-back {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+  padding: 0 0.65rem 0 0.45rem;
+  color: var(--color-on-accent-container);
+  background: var(--color-accent-container);
+  border: 1px solid var(--color-accent);
+  border-radius: 0.65rem;
+  text-decoration: none;
+  font-weight: 700;
+}
+.account-back:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.account-back .material-icons {
+  font-size: 1.15rem;
+}
+.filter-field {
+  display: grid;
+  gap: 0.35rem;
+  min-width: min(100%, 16rem);
+  font-weight: 700;
+}
+.check {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
   gap: 0.5rem;
+  align-self: end;
 }
 .check input {
   width: auto;
+  margin: 0;
 }
 .groups {
   display: grid;
@@ -368,15 +404,28 @@ select {
   border-radius: 0.5rem;
   background: var(--color-surface);
   color: var(--color-text);
+  width: 100%;
 }
 @media (max-width: 600px) {
   .categories-page {
-    padding: 1rem;
+    padding: 0;
   }
-  .categories-page > header,
-  .filters {
+  .categories-page > header {
     align-items: stretch;
     flex-direction: column;
+  }
+  .filters {
+    display: grid;
+    gap: 0.75rem;
+    align-items: stretch;
+    margin: 0.75rem 0 1rem;
+  }
+  .filter-field {
+    min-width: 0;
+  }
+  .check {
+    justify-content: flex-start;
+    align-self: start;
   }
 }
 </style>

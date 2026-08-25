@@ -719,25 +719,26 @@ function onPopState() {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 0.75rem;
-  margin: 1.5rem 0;
+  margin: 0.75rem 0 1rem;
 }
 .filter-summary {
   display: flex;
   gap: 0.5rem;
   align-items: center;
-  margin: 1rem 0;
+  margin: 0.85rem 0 0.65rem;
 }
 .list {
   display: grid;
-  gap: 1.25rem;
+  gap: 0.9rem;
 }
 .date-group {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.45rem;
 }
 .date-group > h2 {
   margin: 0;
   font-size: 1rem;
+  line-height: 1.25;
   color: var(--color-text);
 }
 .list article,
@@ -911,8 +912,17 @@ textarea {
     margin: 0.5rem 0 1rem;
     grid-template-columns: 1fr;
   }
+  .filter-summary {
+    margin: 0.75rem 0 0.5rem;
+  }
+  .list {
+    gap: 0.75rem;
+  }
+  .date-group {
+    gap: 0.35rem;
+  }
   .list article {
-    padding: 1rem;
+    padding: 0.75rem;
   }
 }
 </style>

@@ -24,9 +24,52 @@ const dashboard = {
     plannedNet: '1500.00',
   },
   budget: null,
-  upcomingTransactions: [],
-  cardInvoices: [],
-  debtInstallments: [],
+  upcomingTransactions: [
+    {
+      id: 't-dashboard',
+      type: 'EXPENSE',
+      description: 'Aluguel dashboard',
+      plannedAmount: '1000.00',
+      dueDate: '2026-09-05',
+      categoryName: 'Moradia',
+      overdue: false,
+    },
+    {
+      id: 't-dashboard-income',
+      type: 'INCOME',
+      description: 'Salario dashboard',
+      plannedAmount: '5000.00',
+      dueDate: '2026-09-10',
+      categoryName: 'Trabalho',
+      overdue: false,
+    },
+  ],
+  cardInvoices: [
+    {
+      invoiceId: 'invoice-dashboard',
+      cardId: 'cc1',
+      cardName: 'Cartao sintetico',
+      referenceMonth: '2026-08',
+      status: 'OPEN',
+      total: '922.56',
+      dueDate: '2026-09-05',
+      projectedOverdue: false,
+    },
+  ],
+  debtInstallments: [
+    {
+      debtId: 'debt-dashboard',
+      installmentId: 'debt-installment-dashboard',
+      creditorName: 'Credor sintetico',
+      installmentNumber: 3,
+      dueDate: '2026-09-05',
+      totalAmount: '250.00',
+      projectedStatus: 'OVERDUE',
+      principalAmount: '250.00',
+      interestAmount: '0.00',
+      feeAmount: '0.00',
+    },
+  ],
   expenseByCategory: { categories: [], uncategorizedDebtCostRealized: '0.00' },
   counters: {
     overdueTransactions: 0,
@@ -72,8 +115,22 @@ async function mockPlannerFin(page: Page) {
   );
   await page.route('**/api/accounts?*', (route) => route.fulfill({ json: accounts }));
   await page.route('**/api/accounts', (route) => route.fulfill({ json: accounts }));
-  await page.route('**/api/categories?*', (route) => route.fulfill({ json: [category] }));
-  await page.route('**/api/categories', (route) => route.fulfill({ json: [category] }));
+  await page.route('**/api/categories?*', (route) =>
+    route.fulfill({
+      json: [
+        category,
+        { id: 'income-category', name: 'Trabalho', type: 'INCOME', archivedAt: null },
+      ],
+    }),
+  );
+  await page.route('**/api/categories', (route) =>
+    route.fulfill({
+      json: [
+        category,
+        { id: 'income-category', name: 'Trabalho', type: 'INCOME', archivedAt: null },
+      ],
+    }),
+  );
   await page.route('**/api/transfers?*', (route) =>
     route.fulfill({
       json: {
@@ -176,6 +233,7 @@ const pages = [
     pageSelector: '.transactions-page',
     contentSelector: '.transaction-card',
   },
+  { path: '/categories', pageSelector: '.categories-page', contentSelector: '.category' },
   { path: '/transfers', pageSelector: '.transfers-page', contentSelector: '.list article' },
   { path: '/recurrences', pageSelector: '.recurrences', contentSelector: 'article' },
   { path: '/budgets', pageSelector: '.budgets', contentSelector: '.summary-panel' },
@@ -233,6 +291,32 @@ for (const viewport of viewports) {
       );
 
       expect(metrics.scrollWidth, target.path).toBeLessThanOrEqual(viewport.width);
+
+      if (target.path === '/dashboard') {
+        await expect(page.locator('.dashboard')).not.toContainText(
+          /\b(OPEN|INCOME|EXPENSE|OVERDUE)\b/,
+        );
+        await expect(page.locator('.dashboard')).not.toContainText(/\b2026-0[89](?:-\d{2})?\b/);
+        await expect(page.getByText('Aberta')).toBeVisible();
+        await expect(page.getByText('Cartao sintetico · Ago/2026')).toBeVisible();
+      }
+
+      if (target.path === '/categories' && viewport.width < 768) {
+        await expect(page.getByText('Natureza', { exact: true })).toBeVisible();
+        await expect(page.getByLabel('Natureza')).toBeVisible();
+        await expect(page.getByLabel('Incluir arquivadas')).toBeVisible();
+      }
+
+      if (target.path === '/transactions' && viewport.width < 768) {
+        const spacing = await page.evaluate(() => {
+          const group = document.querySelector('.date-group');
+          const heading = group?.querySelector('h2');
+          const card = group?.querySelector('.transaction-card');
+          if (!heading || !card) throw new Error('Grupo de lançamento incompleto');
+          return card.getBoundingClientRect().top - heading.getBoundingClientRect().bottom;
+        });
+        expect(spacing, target.path).toBeLessThanOrEqual(8);
+      }
 
       if (viewport.width < 768) {
         expect(metrics.shell.paddingLeft, target.path).toBeGreaterThanOrEqual(12);

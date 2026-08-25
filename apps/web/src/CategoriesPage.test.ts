@@ -23,6 +23,21 @@ describe('tela de categorias (API mockada)', () => {
     await flushPromises();
     expect(w.text()).toContain('Nenhuma categoria encontrada');
   });
+  it('mostra voltar como navegação secundária e mantém filtros alinhados', async () => {
+    vi.mocked(authenticatedFetch).mockReturnValue(response([item]));
+    const w = mount(CategoriesPage, {
+      global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } },
+    });
+    await flushPromises();
+    const back = w.get('.account-back');
+    expect(back.text()).toContain('Minha conta');
+    expect(back.get('.material-icons').text()).toBe('arrow_back');
+    const filters = w.get('.filters');
+    expect(filters.get('.filter-field').text()).toContain('Natureza');
+    expect(filters.get('select').element).toHaveProperty('value', '');
+    expect(filters.get('.check').text()).toContain('Incluir arquivadas');
+    expect(filters.find('input[type=checkbox]').exists()).toBe(true);
+  });
   it('cria receita com cor e ícone fechados', async () => {
     vi.mocked(authenticatedFetch)
       .mockReturnValueOnce(response([]))
