@@ -891,7 +891,7 @@ textarea {
 }
 @media (max-width: 600px) {
   .transfers-page {
-    padding: 0 1rem calc(var(--shell-nav-height, 0px) + 1rem + env(safe-area-inset-bottom));
+    padding: 0;
   }
   .transfers-page > header,
   .amounts,

@@ -1080,7 +1080,7 @@ textarea {
 }
 @media (max-width: 600px) {
   .cards-page {
-    padding: 0.5rem;
+    padding: 0;
   }
   .grid {
     grid-template-columns: 1fr;
