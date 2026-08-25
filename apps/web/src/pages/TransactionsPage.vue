@@ -895,7 +895,7 @@ textarea {
 }
 @media (max-width: 600px) {
   .transactions-page {
-    padding: 1rem;
+    padding: 0;
   }
   .transactions-page > header {
     align-items: stretch;

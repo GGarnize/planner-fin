@@ -792,11 +792,6 @@ article .actions {
   .recurrences {
     padding: 0 0 calc(var(--shell-nav-height, 0px) + 1rem + env(safe-area-inset-bottom));
   }
-  header,
-  .page-actions,
-  .list-section {
-    padding-inline: 1rem;
-  }
   .page-actions {
     justify-content: stretch;
   }
