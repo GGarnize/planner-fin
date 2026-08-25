@@ -77,19 +77,19 @@ describe('DashboardPage', () => {
     vi.mocked(authenticatedFetch).mockReturnValue(response(data));
     const wrapper = mount(DashboardPage, { global: { stubs: ['RouterLink'] } });
     await flushPromises();
-    expect(wrapper.text()).toContain('2026-12');
+    expect(wrapper.text()).toContain('Dez/2026');
     await wrapper.get('button[aria-label="Próximo mês"]').trigger('click');
     await flushPromises();
-    expect(wrapper.text()).toContain('2027-01');
+    expect(wrapper.text()).toContain('Jan/2027');
     await wrapper.get('button[aria-label="Mês anterior"]').trigger('click');
     await flushPromises();
-    expect(wrapper.text()).toContain('2026-12');
+    expect(wrapper.text()).toContain('Dez/2026');
     await wrapper
       .findAll('button')
       .find((button) => button.text() === 'Mês atual')!
       .trigger('click');
     await flushPromises();
-    expect(wrapper.text()).toContain('2026-12');
+    expect(wrapper.text()).toContain('Dez/2026');
   });
   it('abre seletor compacto, aplica mês e fecha pelo Back Android', async () => {
     vi.mocked(authenticatedFetch).mockReturnValue(response(data));
@@ -139,6 +139,15 @@ describe('DashboardPage', () => {
           categoryName: 'Casa',
           overdue: true,
         },
+        {
+          id: 't-income',
+          type: 'INCOME',
+          description: 'Salário',
+          plannedAmount: '5000.00',
+          dueDate: '2026-08-05',
+          categoryName: 'Trabalho',
+          overdue: false,
+        },
       ],
       cardInvoices: [
         {
@@ -146,9 +155,9 @@ describe('DashboardPage', () => {
           cardId: 'c',
           cardName: 'Cartão teste',
           referenceMonth: '2026-08',
-          status: 'CLOSED',
+          status: 'OPEN',
           total: '200.00',
-          dueDate: '2026-08-01',
+          dueDate: '2026-09-05',
           projectedOverdue: true,
         },
       ],
@@ -165,6 +174,18 @@ describe('DashboardPage', () => {
           interestAmount: '20.00',
           feeAmount: '5.00',
         },
+        {
+          debtId: 'd2',
+          installmentId: 'di2',
+          creditorName: 'Credor em dia',
+          installmentNumber: 2,
+          dueDate: '2026-08-05',
+          totalAmount: '100.00',
+          projectedStatus: 'PENDING',
+          principalAmount: '100.00',
+          interestAmount: '0.00',
+          feeAmount: '0.00',
+        },
       ],
       expenseByCategory: {
         categories: [{ categoryId: 'c', categoryName: 'Casa', amount: '480.00' }],
@@ -178,8 +199,19 @@ describe('DashboardPage', () => {
     await flushPromises();
     expect(wrapper.text()).toContain('R$ 1.500,00');
     expect(wrapper.find('.exceeded').exists()).toBe(true);
-    for (const text of ['Aluguel', 'Cartão teste', 'Credor teste', 'Casa', 'R$ 25,00'])
+    for (const text of ['Aluguel', 'Salário', 'Cartão teste', 'Credor teste', 'Casa', 'R$ 25,00'])
       expect(wrapper.text()).toContain(text);
+    expect(wrapper.text()).toContain('Despesa');
+    expect(wrapper.text()).toContain('Receita');
+    expect(wrapper.text()).toContain('Cartão teste · Ago/2026');
+    expect(wrapper.text()).toContain('R$ 200,00 · Aberta · vence em 5 set');
+    expect(wrapper.text()).toContain('R$ 300,00 · vence em 1 ago');
+    expect(wrapper.text()).toContain('R$ 5.000,00 · vence em 5 ago');
+    expect(wrapper.text()).toContain('R$ 425,00 · Vencida · vence em 1 ago');
+    expect(wrapper.text()).toContain('R$ 100,00 · Pendente · vence em 5 ago');
+    expect(wrapper.text()).not.toMatch(/\b(OPEN|CLOSED|INCOME|EXPENSE|OVERDUE|PENDING)\b/);
+    expect(wrapper.text()).not.toContain('2026-08');
+    expect(wrapper.text()).not.toContain('2026-09-05');
     expect(wrapper.text()).toContain('Resultado realizado');
     expect(wrapper.text()).not.toContain('Saldo realizado');
     expect(wrapper.get('a[href="/budgets"]').attributes('href')).toBe('/budgets');

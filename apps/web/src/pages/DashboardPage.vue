@@ -29,6 +29,54 @@ const parseMonth = (value: string) => {
 };
 const formatMonth = (year: number, monthValue: number) =>
   `${year}-${String(monthValue).padStart(2, '0')}`;
+function formatReferenceMonth(value: string) {
+  const [year, monthValue] = value.split('-').map(Number);
+  if (!year || !monthValue) return 'Mês não reconhecido';
+  const label = new Intl.DateTimeFormat('pt-BR', {
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+    .format(new Date(Date.UTC(year, monthValue - 1, 1)))
+    .replace('.', '')
+    .replace(' de ', '/');
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+function formatShortDate(value: string) {
+  const [year, monthValue, day] = value.split('-').map(Number);
+  if (!year || !monthValue || !day) return 'data não reconhecida';
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  })
+    .format(new Date(Date.UTC(year, monthValue - 1, day)))
+    .replace('.', '')
+    .replace(' de ', ' ');
+}
+function invoiceStatusLabel(status: DashboardResponse['cardInvoices'][number]['status']) {
+  const labels: Record<DashboardResponse['cardInvoices'][number]['status'], string> = {
+    OPEN: 'Aberta',
+    CLOSED: 'Fechada',
+  };
+  return labels[status] ?? 'Status não reconhecido';
+}
+function transactionTypeLabel(type: DashboardResponse['upcomingTransactions'][number]['type']) {
+  const labels: Record<DashboardResponse['upcomingTransactions'][number]['type'], string> = {
+    INCOME: 'Receita',
+    EXPENSE: 'Despesa',
+  };
+  return labels[type] ?? 'Tipo não reconhecido';
+}
+function debtProjectedStatusLabel(
+  status: DashboardResponse['debtInstallments'][number]['projectedStatus'],
+) {
+  const labels: Record<DashboardResponse['debtInstallments'][number]['projectedStatus'], string> = {
+    PENDING: 'Pendente',
+    OVERDUE: 'Vencida',
+  };
+  return labels[status] ?? 'Status não reconhecido';
+}
 const addMonth = (value: string, offset: -1 | 1) => {
   const { year, monthValue } = parseMonth(value);
   const date = new Date(Date.UTC(year, monthValue - 1 + offset, 1));
@@ -154,7 +202,7 @@ async function skipSetup() {
           @click="openPicker"
         >
           <strong>{{ monthLabel }}</strong
-          ><small>{{ month }}</small>
+          ><small>{{ formatReferenceMonth(month) }}</small>
         </button>
         <form
           v-if="pickerOpen"
@@ -266,17 +314,20 @@ async function skipSetup() {
         <section class="panel">
           <h2>Próximos lançamentos</h2>
           <p v-if="!snapshot.upcomingTransactions.length">Nenhum lançamento próximo.</p>
-          <ul>
+          <ul class="dashboard-list">
             <li v-for="item in snapshot.upcomingTransactions" :key="item.id">
-              <b>{{ item.description }}</b> · {{ item.type }} · {{ money(item.plannedAmount) }} ·
-              {{ item.dueDate }} · {{ item.categoryName ?? 'Sem categoria' }}
+              <b>{{ item.description }}</b>
+              <span>
+                {{ transactionTypeLabel(item.type) }} · {{ money(item.plannedAmount) }} · vence em
+                {{ formatShortDate(item.dueDate) }} · {{ item.categoryName ?? 'Sem categoria' }}
+              </span>
               <em v-if="item.overdue">Vencido</em>
             </li>
           </ul>
         </section>
         <section class="panel" :class="{ exceeded: snapshot.budget?.exceeded }">
           <h2>Orçamento</h2>
-          <p v-if="!snapshot.budget">Nenhum orçamento para {{ month }}</p>
+          <p v-if="!snapshot.budget">Nenhum orçamento para {{ formatReferenceMonth(month) }}</p>
           <dl v-else>
             <div>
               <dt>Limite</dt>
@@ -312,10 +363,13 @@ async function skipSetup() {
         <section class="panel">
           <h2>Faturas</h2>
           <p v-if="!snapshot.cardInvoices.length">Nenhuma fatura em aberto.</p>
-          <ul>
+          <ul class="dashboard-list">
             <li v-for="item in snapshot.cardInvoices" :key="item.invoiceId">
-              <b>{{ item.cardName }}</b> · {{ item.referenceMonth }} · {{ item.status }} ·
-              {{ money(item.total) }} · {{ item.dueDate }}
+              <b>{{ item.cardName }} · {{ formatReferenceMonth(item.referenceMonth) }}</b>
+              <span>
+                {{ money(item.total) }} · {{ invoiceStatusLabel(item.status) }} · vence em
+                {{ formatShortDate(item.dueDate) }}
+              </span>
               <em v-if="item.projectedOverdue">Atraso projetado</em>
             </li>
           </ul>
@@ -324,10 +378,13 @@ async function skipSetup() {
         <section class="panel">
           <h2>Dívidas</h2>
           <p v-if="!snapshot.debtInstallments.length">Nenhuma parcela próxima.</p>
-          <ul>
+          <ul class="dashboard-list">
             <li v-for="item in snapshot.debtInstallments" :key="item.installmentId">
-              <b>{{ item.creditorName }}</b> · parcela {{ item.installmentNumber }} ·
-              {{ item.dueDate }} · {{ money(item.totalAmount) }} · {{ item.projectedStatus }}
+              <b>{{ item.creditorName }} · parcela {{ item.installmentNumber }}</b>
+              <span>
+                {{ money(item.totalAmount) }} · {{ debtProjectedStatusLabel(item.projectedStatus) }}
+                · vence em {{ formatShortDate(item.dueDate) }}
+              </span>
             </li>
           </ul>
           <router-link to="/debts">Ver dívidas</router-link>
@@ -603,6 +660,18 @@ async function skipSetup() {
 }
 .panel li {
   margin: 0.55rem 0;
+}
+.dashboard-list {
+  padding-left: 1.1rem;
+}
+.dashboard-list li b,
+.dashboard-list li span,
+.dashboard-list li em {
+  display: block;
+}
+.dashboard-list li span {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
 }
 .panel em,
 .exceeded {
