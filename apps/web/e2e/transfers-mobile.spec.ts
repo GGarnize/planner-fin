@@ -88,7 +88,10 @@ for (const viewport of [
     await page.getByRole('button', { name: 'Aplicar' }).click();
     await expect(page.getByText('2 filtros ativos')).toBeVisible();
     await expect(page.getByRole('button', { name: /Mais filtros/ })).toContainText('1');
-    await page.getByRole('button', { name: 'Limpar filtros' }).click();
+    await page
+      .getByRole('region', { name: 'Filtros' })
+      .getByRole('button', { name: 'Limpar filtros' })
+      .click();
     await expect(page.getByText('filtros ativos')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Nova transferência' }).click();

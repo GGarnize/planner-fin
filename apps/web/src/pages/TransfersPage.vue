@@ -565,7 +565,6 @@ onBeforeUnmount(() => {
               >{{ fieldErrors.sourceAccountId }}</span
             ></label
           >
-          <h3 class="group-title">Detalhes</h3>
           <label
             >Destino<select
               v-model="form.destinationAccountId"
@@ -583,7 +582,9 @@ onBeforeUnmount(() => {
               class="field-error"
               >{{ fieldErrors.destinationAccountId }}</span
             ></label
-          ><label
+          >
+          <h3 class="group-title">Detalhes</h3>
+          <label
             >Descrição<input
               v-model="form.description"
               maxlength="200"
