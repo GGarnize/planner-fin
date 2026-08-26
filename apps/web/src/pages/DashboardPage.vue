@@ -203,7 +203,9 @@ async function skipSetup() {
           @click="openPicker"
         >
           <strong>{{ monthLabel }}</strong
-          ><small>{{ formatReferenceMonth(month) }}</small>
+          ><span class="material-icons period-label__icon" aria-hidden="true">{{
+            pickerOpen ? 'expand_less' : 'expand_more'
+          }}</span>
         </button>
         <form
           v-if="pickerOpen"
@@ -227,7 +229,7 @@ async function skipSetup() {
         <span class="material-icons" aria-hidden="true">chevron_right</span>
       </button>
     </header>
-    <p v-if="loading" role="status">Carregando dashboard…</p>
+    <p v-if="loading" role="status">Carregando dashboard...</p>
     <section v-else-if="error" class="panel" role="alert">
       <p>{{ error }}</p>
       <button @click="load">Tentar novamente</button>
@@ -454,23 +456,23 @@ async function skipSetup() {
 .period-label {
   width: 100%;
   min-height: 2.75rem;
-  display: grid;
-  place-items: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.35rem;
   padding: 0.25rem 0.5rem;
   color: var(--color-text);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 0.75rem;
 }
-.period-label strong,
-.period-label small {
-  display: block;
-}
 .period-label strong {
   font-size: 1.25rem;
+  font-weight: 700;
 }
-.period-label small {
+.period-label__icon {
   color: var(--color-text-muted);
+  font-size: 1.35rem;
 }
 .period-picker {
   position: absolute;

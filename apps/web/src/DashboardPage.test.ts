@@ -77,19 +77,20 @@ describe('DashboardPage', () => {
     vi.mocked(authenticatedFetch).mockReturnValue(response(data));
     const wrapper = mount(DashboardPage, { global: { stubs: ['RouterLink'] } });
     await flushPromises();
-    expect(wrapper.text()).toContain('Dez/2026');
+    expect(wrapper.text()).toContain('Dezembro de 2026');
+    expect(wrapper.get('.period-label').text()).not.toContain('Dez/2026');
     await wrapper.get('button[aria-label="Próximo mês"]').trigger('click');
     await flushPromises();
-    expect(wrapper.text()).toContain('Jan/2027');
+    expect(wrapper.text()).toContain('Janeiro de 2027');
     await wrapper.get('button[aria-label="Mês anterior"]').trigger('click');
     await flushPromises();
-    expect(wrapper.text()).toContain('Dez/2026');
+    expect(wrapper.text()).toContain('Dezembro de 2026');
     await wrapper
       .findAll('button')
       .find((button) => button.text() === 'Mês atual')!
       .trigger('click');
     await flushPromises();
-    expect(wrapper.text()).toContain('Dez/2026');
+    expect(wrapper.text()).toContain('Dezembro de 2026');
   });
   it('abre seletor compacto, aplica mês e fecha pelo Back Android', async () => {
     vi.mocked(authenticatedFetch).mockReturnValue(response(data));
