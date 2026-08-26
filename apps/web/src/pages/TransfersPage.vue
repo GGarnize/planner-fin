@@ -40,6 +40,7 @@ const filters = reactive({
   completedAtFrom: '',
   completedAtTo: '',
 });
+const dateFilterType = ref<'dueDate' | 'completedAt'>('dueDate');
 const form = reactive({
   status: 'PENDING' as FinancialTransferStatus,
   sourceAccountId: '',
@@ -81,8 +82,6 @@ const activeSecondaryFilters = computed(
       filters.destinationAccountId,
       filters.accountId,
       filters.status,
-      filters.completedAtFrom,
-      filters.completedAtTo,
     ].filter(Boolean).length,
 );
 const activeFilterCount = computed(() => Object.values(filters).filter(Boolean).length);
@@ -295,7 +294,17 @@ function clearFilters() {
   Object.keys(filters).forEach((key) => {
     filters[key as keyof typeof filters] = '';
   });
+  dateFilterType.value = 'dueDate';
   void load();
+}
+function onDateFilterTypeChange() {
+  if (dateFilterType.value === 'dueDate') {
+    filters.completedAtFrom = '';
+    filters.completedAtTo = '';
+    return;
+  }
+  filters.dueDateFrom = '';
+  filters.dueDateTo = '';
 }
 function closeForm(releaseHistory = true) {
   showForm.value = false;
@@ -449,8 +458,27 @@ onBeforeUnmount(() => {
     </p>
     <section class="filters" aria-label="Filtros">
       <div class="primary-filters">
-        <label>Vencimento inicial<input v-model="filters.dueDateFrom" type="date" /></label
-        ><label>Vencimento final<input v-model="filters.dueDateTo" type="date" /></label>
+        <label class="date-filter-type"
+          >Filtrar data por<select v-model="dateFilterType" @change="onDateFilterTypeChange">
+            <option value="dueDate">Vencimento</option>
+            <option value="completedAt">Conclusão</option>
+          </select></label
+        >
+        <fieldset class="date-period">
+          <legend>Período</legend>
+          <label v-if="dateFilterType === 'dueDate'"
+            >De<input v-model="filters.dueDateFrom" type="date"
+          /></label>
+          <label v-if="dateFilterType === 'dueDate'"
+            >Até<input v-model="filters.dueDateTo" type="date"
+          /></label>
+          <label v-if="dateFilterType === 'completedAt'"
+            >De<input v-model="filters.completedAtFrom" type="date"
+          /></label>
+          <label v-if="dateFilterType === 'completedAt'"
+            >Até<input v-model="filters.completedAtTo" type="date"
+          /></label>
+        </fieldset>
         <div class="filter-actions">
           <button type="button" @click="load()">Aplicar</button
           ><button
@@ -496,8 +524,6 @@ onBeforeUnmount(() => {
             <option value="COMPLETED">Concluída</option>
           </select></label
         >
-        <label>Conclusão inicial<input v-model="filters.completedAtFrom" type="date" /></label
-        ><label>Conclusão final<input v-model="filters.completedAtTo" type="date" /></label>
       </div>
     </section>
     <p v-if="loading" aria-live="polite">Carregando…</p>
@@ -771,6 +797,24 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 0.75rem;
 }
+.date-period {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.date-period legend {
+  grid-column: 1 / -1;
+  padding: 0;
+  font-weight: 700;
+}
+.date-filter-type,
+.date-period label {
+  min-width: 0;
+}
 .filter-actions {
   display: flex;
   gap: 0.5rem;
@@ -889,11 +933,17 @@ textarea {
     padding: 0;
   }
   .amounts,
-  .primary-filters,
   .secondary-filters {
     align-items: stretch;
     flex-direction: column;
     grid-template-columns: 1fr;
+  }
+  .primary-filters {
+    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .date-period {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .actions,
   .filter-actions {

@@ -147,7 +147,7 @@ onMounted(load);
     <PageHeader
       title="Categorias financeiras"
       description="Organize receitas e despesas sem misturar suas naturezas."
-      back-to="/conta"
+      back-to="/mais"
     >
       <template #action><button @click="create()">Nova categoria</button></template>
     </PageHeader>

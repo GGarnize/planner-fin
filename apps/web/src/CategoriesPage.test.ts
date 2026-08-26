@@ -30,7 +30,7 @@ describe('tela de categorias (API mockada)', () => {
     });
     await flushPromises();
     const back = w.get('[aria-label="Voltar"]');
-    expect(back.attributes('href')).toBe('/conta');
+    expect(back.attributes('href')).toBe('/mais');
     expect(back.get('.material-icons').text()).toBe('arrow_back');
     expect(back.text()).not.toContain('Minha conta');
     const filters = w.get('.filters');

@@ -128,12 +128,16 @@ describe('tela de transferencias', () => {
     w.unmount();
   });
 
-  it('mantem apenas vencimento como filtro primario e abre filtros secundarios sob demanda', async () => {
+  it('mostra vencimento como tipo de periodo padrao e abre filtros secundarios sob demanda', async () => {
     mockList();
     const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
     await flushPromises();
     expect(w.find('#transfer-secondary-filters').attributes('style')).toContain('display: none');
-    expect(w.text()).toContain('Vencimento inicial');
+    expect(w.text()).toContain('Filtrar data por');
+    expect(w.text()).toContain('Período');
+    expect(w.findAll('.date-period input[type="date"]')).toHaveLength(2);
+    expect((w.get('.date-filter-type select').element as HTMLSelectElement).value).toBe('dueDate');
+    expect(w.text()).not.toContain('Conclusão inicial');
     expect(w.text()).toContain('Mais filtros');
     await w.get('button[aria-controls="transfer-secondary-filters"]').trigger('click');
     await w.vm.$nextTick();
@@ -148,7 +152,7 @@ describe('tela de transferencias', () => {
     mockList();
     const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
     await flushPromises();
-    await w.get('input[type="date"]').setValue('2026-08-01');
+    await w.get('.date-period input[type="date"]').setValue('2026-08-01');
     await w.get('button[aria-controls="transfer-secondary-filters"]').trigger('click');
     await w.find('#transfer-secondary-filters select').setValue('a');
     await w
@@ -176,7 +180,42 @@ describe('tela de transferencias', () => {
       .trigger('click');
     await flushPromises();
     expect(w.text()).not.toContain('filtros ativos');
-    expect((w.get('input[type="date"]').element as HTMLInputElement).value).toBe('');
+    expect((w.get('.date-period input[type="date"]').element as HTMLInputElement).value).toBe('');
+    expect((w.get('.date-filter-type select').element as HTMLSelectElement).value).toBe('dueDate');
+    w.unmount();
+  });
+
+  it('alterna periodo para conclusao sem manter vencimento oculto ativo', async () => {
+    mockList();
+    const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+    const dueInputs = w.findAll('.date-period input[type="date"]');
+    await dueInputs[0]!.setValue('2026-08-01');
+    await dueInputs[1]!.setValue('2026-08-31');
+
+    await w.get('.date-filter-type select').setValue('completedAt');
+    await w.vm.$nextTick();
+    expect(w.findAll('.date-period input[type="date"]')).toHaveLength(2);
+    expect(
+      vi
+        .mocked(authenticatedFetch)
+        .mock.calls.some((call) => String(call[0]).includes('dueDateFrom=2026-08-01')),
+    ).toBe(false);
+
+    const completedInputs = w.findAll('.date-period input[type="date"]');
+    await completedInputs[0]!.setValue('2026-09-01');
+    await completedInputs[1]!.setValue('2026-09-30');
+    await w
+      .findAll('button')
+      .find((b) => b.text() === 'Aplicar')!
+      .trigger('click');
+    await flushPromises();
+
+    const listCalls = vi.mocked(authenticatedFetch).mock.calls.map((call) => String(call[0]));
+    expect(listCalls.some((url) => url.includes('completedAtFrom=2026-09-01'))).toBe(true);
+    expect(listCalls.some((url) => url.includes('completedAtTo=2026-09-30'))).toBe(true);
+    expect(listCalls.some((url) => url.includes('dueDateFrom=2026-08-01'))).toBe(false);
+    expect(w.text()).toContain('2 filtros ativos');
     w.unmount();
   });
 

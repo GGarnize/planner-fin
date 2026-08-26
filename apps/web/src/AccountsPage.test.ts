@@ -24,9 +24,12 @@ describe('tela de contas (API mockada)', () => {
   beforeEach(() => vi.mocked(authenticatedFetch).mockReset());
   it('mostra estado vazio e ação de criação', async () => {
     vi.mocked(authenticatedFetch).mockReturnValue(response([]));
-    const wrapper = mount(AccountsPage, { global: { stubs: ['router-link'] } });
+    const wrapper = mount(AccountsPage, {
+      global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } },
+    });
     await flushPromises();
     expect(wrapper.text()).toContain('Nenhuma conta cadastrada');
+    expect(wrapper.get('[aria-label="Voltar"]').attributes('href')).toBe('/mais');
   });
   it('envia saldo como string ao criar', async () => {
     vi.mocked(authenticatedFetch)
