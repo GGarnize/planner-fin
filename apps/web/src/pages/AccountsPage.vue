@@ -162,7 +162,7 @@ onMounted(load);
     <PageHeader
       title="Contas financeiras"
       description="Organize suas posições iniciais com segurança."
-      back-to="/conta"
+      back-to="/mais"
     >
       <template #action><button @click="openCreate">Nova conta</button></template>
     </PageHeader>

@@ -38,7 +38,7 @@ export function installAndroidBackHandler(router: Router): void {
     }
     const current = router.currentRoute.value.path;
     if (canGoBack && current !== '/' && current !== '/dashboard') {
-      router.back();
+      window.history.back();
       return;
     }
     void CapacitorApp.exitApp();

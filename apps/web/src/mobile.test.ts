@@ -76,6 +76,7 @@ describe('runtime Android', () => {
   it('volta no histórico SPA quando há rota útil', async () => {
     mocked.native = true;
     mocked.platform = 'android';
+    const historyBack = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
     const router = {
       currentRoute: { value: { path: '/cards' } },
       back: vi.fn(),
@@ -84,8 +85,10 @@ describe('runtime Android', () => {
     installAndroidBackHandler(router as never);
     const handler = mocked.addListener.mock.calls[0][1];
     handler({ canGoBack: true });
-    expect(router.back).toHaveBeenCalled();
+    expect(historyBack).toHaveBeenCalledTimes(1);
+    expect(router.back).not.toHaveBeenCalled();
     expect(mocked.exitApp).not.toHaveBeenCalled();
+    historyBack.mockRestore();
   });
 
   it('não navega quando uma tela consome o Back Android', async () => {

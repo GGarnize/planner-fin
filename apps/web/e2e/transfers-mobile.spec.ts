@@ -79,20 +79,51 @@ for (const viewport of [
     await expect(page.getByText('Nenhuma transferência cadastrada')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Nova transferência' })).toBeVisible();
     await expect(page.locator('#transfer-secondary-filters')).toBeHidden();
+    await expect(page.getByLabel('Filtrar data por')).toHaveValue('dueDate');
+    await expect(page.locator('.date-period input[type="date"]')).toHaveCount(2);
+    await expect(page.getByLabel('Conclusão inicial')).toHaveCount(0);
     await expectNoHorizontalOverflow(page, viewport.width);
 
-    await page.getByLabel('Vencimento inicial').fill('2026-09-01');
+    await page.locator('.date-period input[type="date"]').nth(0).fill('2026-09-01');
+    await page.locator('.date-period input[type="date"]').nth(1).fill('2026-09-30');
     await page.getByRole('button', { name: /Mais filtros/ }).click();
     await expect(page.locator('#transfer-secondary-filters')).toBeVisible();
     await page.locator('#transfer-secondary-filters select').first().selectOption('a');
+    const dueRequest = page.waitForRequest(
+      (candidate) =>
+        candidate.url().includes('/api/transfers?') &&
+        candidate.url().includes('dueDateFrom=2026-09-01'),
+    );
     await page.getByRole('button', { name: 'Aplicar' }).click();
-    await expect(page.getByText('2 filtros ativos')).toBeVisible();
+    expect((await dueRequest).url()).toContain('dueDateTo=2026-09-30');
+    await expect(page.getByText('3 filtros ativos')).toBeVisible();
     await expect(page.getByRole('button', { name: /Mais filtros/ })).toContainText('1');
+
+    await page.getByLabel('Filtrar data por').selectOption('completedAt');
+    await expect(page.locator('.date-period input[type="date"]')).toHaveCount(2);
+    await page.locator('.date-period input[type="date"]').nth(0).fill('2026-10-01');
+    await page.locator('.date-period input[type="date"]').nth(1).fill('2026-10-31');
+    const completedRequest = page.waitForRequest(
+      (candidate) =>
+        candidate.url().includes('/api/transfers?') &&
+        candidate.url().includes('completedAtFrom=2026-10-01'),
+    );
+    await page.getByRole('button', { name: 'Aplicar' }).click();
+    const completedUrl = (await completedRequest).url();
+    expect(completedUrl).toContain('completedAtTo=2026-10-31');
+    expect(completedUrl).not.toContain('dueDateFrom=');
+    expect(completedUrl).not.toContain('dueDateTo=');
+    await expect(page.getByText('3 filtros ativos')).toBeVisible();
+
     await page
       .getByRole('region', { name: 'Filtros' })
       .getByRole('button', { name: 'Limpar filtros' })
       .click();
     await expect(page.getByText('filtros ativos')).toHaveCount(0);
+    await expect(page.getByLabel('Filtrar data por')).toHaveValue('dueDate');
+    await expect(page.locator('.date-period input[type="date"]').nth(0)).toHaveValue('');
+    await expect(page.locator('.date-period input[type="date"]').nth(1)).toHaveValue('');
+    await expectNoHorizontalOverflow(page, viewport.width);
 
     await page.getByRole('button', { name: 'Nova transferência' }).click();
     await expect(page.getByRole('dialog', { name: 'Transferencia' })).toBeVisible();

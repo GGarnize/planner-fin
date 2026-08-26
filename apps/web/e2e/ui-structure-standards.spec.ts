@@ -206,6 +206,14 @@ async function expectNoWhiteSurface(page: Page, selector: string) {
   expect(color).not.toBe('rgb(255, 255, 255)');
 }
 
+async function expectRealBackFromAccounts(page: Page, from: string, to: RegExp) {
+  await page.goto(from);
+  await page.getByRole('link', { name: /Contas/ }).first().click();
+  await expect(page).toHaveURL(/\/accounts$/);
+  await page.goBack();
+  await expect(page).toHaveURL(to);
+}
+
 test('navegação mobile usa Up padronizado e FAB só nos destinos de topo', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockPlannerFin(page);
@@ -217,8 +225,8 @@ test('navegação mobile usa Up padronizado e FAB só nos destinos de topo', asy
   await expect(page.getByRole('button', { name: 'Novo lançamento' })).toBeVisible();
 
   const targets = [
-    { label: 'Contas', path: /\/accounts$/, parent: '/conta' },
-    { label: 'Categorias', path: /\/categories$/, parent: '/conta' },
+    { label: 'Contas', path: /\/accounts$/, parent: '/mais' },
+    { label: 'Categorias', path: /\/categories$/, parent: '/mais' },
     { label: 'Cartões', path: /\/cards$/, parent: '/mais' },
     { label: 'Dívidas', path: /\/debts$/, parent: '/mais' },
     { label: 'Transferências', path: /\/transfers$/, parent: '/mais' },
@@ -241,6 +249,20 @@ test('navegação mobile usa Up padronizado e FAB só nos destinos de topo', asy
   await expectSecondary(page, '/imports');
   await page.goto('/notifications/inbox');
   await expectSecondary(page, '/notifications');
+});
+
+test('Back preserva histÃ³rico real e Up de Contas usa Mais', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockPlannerFin(page);
+
+  await expectRealBackFromAccounts(page, '/dashboard', /\/dashboard$/);
+  await expectRealBackFromAccounts(page, '/mais', /\/mais$/);
+
+  await page.goto('/dashboard');
+  await page.getByRole('link', { name: /Contas/ }).first().click();
+  await expect(page.getByLabel('Voltar')).toHaveAttribute('href', '/mais');
+  await page.getByLabel('Voltar').click();
+  await expect(page).toHaveURL(/\/mais$/);
 });
 
 test('dark mode mantém superfícies legíveis em Transferências, Recorrências, Modelos e Importação', async ({
