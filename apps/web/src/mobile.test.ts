@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createRouter, createWebHistory, type Router } from 'vue-router';
 
 const mocked = vi.hoisted(() => ({
   native: false,
@@ -76,7 +77,6 @@ describe('runtime Android', () => {
   it('volta no histórico SPA quando há rota útil', async () => {
     mocked.native = true;
     mocked.platform = 'android';
-    const historyBack = vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
     const router = {
       currentRoute: { value: { path: '/cards' } },
       back: vi.fn(),
@@ -85,10 +85,45 @@ describe('runtime Android', () => {
     installAndroidBackHandler(router as never);
     const handler = mocked.addListener.mock.calls[0][1];
     handler({ canGoBack: true });
-    expect(historyBack).toHaveBeenCalledTimes(1);
-    expect(router.back).not.toHaveBeenCalled();
+    expect(router.back).toHaveBeenCalled();
     expect(mocked.exitApp).not.toHaveBeenCalled();
-    historyBack.mockRestore();
+  });
+
+  it.each([
+    ['/dashboard', '/accounts'],
+    ['/mais', '/accounts'],
+  ])('handler Android retorna de %s -> %s para a rota anterior real', async (origin, destination) => {
+    mocked.native = true;
+    mocked.platform = 'android';
+    const router = createRouter({
+      history: createWebHistory(),
+      routes: [
+        { path: '/', component: { template: '<p>Raiz</p>' } },
+        { path: '/dashboard', component: { template: '<p>Inicio</p>' } },
+        { path: '/mais', component: { template: '<p>Mais</p>' } },
+        { path: '/accounts', component: { template: '<p>Contas</p>' } },
+      ],
+    });
+
+    await router.push(origin);
+    await router.isReady();
+    await router.push(destination);
+    await router.isReady();
+    const { installAndroidBackHandler } = await import('./mobile');
+    installAndroidBackHandler(router as Router);
+
+    const handler = mocked.addListener.mock.calls.at(-1)![1];
+    const changed = new Promise<void>((resolve) => {
+      const remove = router.afterEach(() => {
+        remove();
+        resolve();
+      });
+    });
+    handler({ canGoBack: true });
+    await changed;
+
+    expect(router.currentRoute.value.path).toBe(origin);
+    expect(mocked.exitApp).not.toHaveBeenCalled();
   });
 
   it('não navega quando uma tela consome o Back Android', async () => {
