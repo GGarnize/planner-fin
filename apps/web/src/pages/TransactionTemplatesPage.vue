@@ -18,6 +18,7 @@ const items = ref<PublicTransactionTemplate[]>([]),
   formDirty = ref(false),
   editing = ref<PublicTransactionTemplate | null>(null),
   loading = ref(false),
+  loadError = ref(''),
   error = ref(''),
   confirming = ref<PublicTransactionTemplate | null>(null);
 const formDialog = ref<HTMLElement | null>(null),
@@ -49,13 +50,13 @@ async function api<T>(path: string, init?: Parameters<typeof authenticatedFetch>
 }
 async function load() {
   loading.value = true;
-  error.value = '';
+  loadError.value = '';
   try {
     items.value = await api(
       `/transaction-templates${includeArchived.value ? '?includeArchived=true' : ''}`,
     );
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : 'Falha ao carregar.';
+  } catch {
+    loadError.value = 'Não foi possível carregar os modelos. Tente novamente.';
   } finally {
     loading.value = false;
   }
@@ -195,9 +196,8 @@ async function restore(item: PublicTransactionTemplate) {
     error.value = e instanceof Error ? e.message : 'Falha ao restaurar.';
   }
 }
-onMounted(async () => {
-  window.addEventListener('keydown', onKeydown);
-  window.addEventListener('plannerfin:android-back', onAndroidBack, true);
+async function loadPage() {
+  loadError.value = '';
   try {
     [accounts.value, categories.value] = await Promise.all([
       api<PublicFinancialAccount[]>('/accounts'),
@@ -205,8 +205,13 @@ onMounted(async () => {
     ]);
     await load();
   } catch {
-    error.value = 'Não foi possível carregar os modelos.';
+    loadError.value = 'Não foi possível carregar os modelos. Tente novamente.';
   }
+}
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown);
+  window.addEventListener('plannerfin:android-back', onAndroidBack, true);
+  void loadPage();
 });
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
@@ -237,11 +242,16 @@ watch(showDiscardConfirm, async (value) => {
     <label class="toggle"
       ><input v-model="includeArchived" type="checkbox" @change="load" /> Incluir arquivados</label
     >
-    <p v-if="error" role="alert">{{ error }}</p>
-    <p v-if="loading" aria-live="polite">Carregando…</p>
+    <p v-if="loadError" role="alert">
+      {{ loadError }}
+      <button class="secondary" type="button" @click="loadPage">Tentar novamente</button>
+    </p>
+    <p v-if="error && !showForm" role="alert">{{ error }}</p>
+    <p v-if="loading" role="status">Carregando modelos...</p>
     <section v-else-if="!items.length" class="empty">
       <h2>Nenhum modelo {{ includeArchived ? 'encontrado' : 'ativo' }}</h2>
       <p>Crie um modelo para preencher lançamentos com menos digitação.</p>
+      <button type="button" @click="open(undefined, $event)">Criar modelo</button>
     </section>
     <section class="list">
       <article v-for="item in items" :key="item.id">

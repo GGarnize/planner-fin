@@ -43,6 +43,47 @@ describe('gestão de modelos', () => {
     expect(wrapper.text()).toContain('Arquivar');
     expect(wrapper.text()).not.toContain('Excluir');
   });
+  it('mostra erro amigavel com retry quando nao carrega os modelos', async () => {
+    vi.mocked(authenticatedFetch).mockImplementation((path) => {
+      if (path === '/accounts') return ok([account]);
+      if (path === '/categories') return ok([category, incomeCategory]);
+      if (path === '/transaction-templates') return Promise.reject(new Error('Failed to fetch'));
+      return ok([]);
+    });
+    const wrapper = mount(TransactionTemplatesPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+
+    expect(wrapper.get('[role=alert]').text()).toContain(
+      'Não foi possível carregar os modelos. Tente novamente.',
+    );
+    expect(wrapper.get('[role=alert]').text()).not.toContain('Failed to fetch');
+
+    vi.mocked(authenticatedFetch).mockImplementation((path) =>
+      path === '/accounts'
+        ? ok([account])
+        : path === '/categories'
+          ? ok([category, incomeCategory])
+          : ok([template]),
+    );
+    await wrapper.get('[role=alert] button').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Aluguel');
+  });
+  it('mostra CTA util no estado vazio', async () => {
+    vi.mocked(authenticatedFetch).mockImplementation((path) =>
+      path === '/accounts'
+        ? ok([account])
+        : path === '/categories'
+          ? ok([category, incomeCategory])
+          : ok([]),
+    );
+    const wrapper = mount(TransactionTemplatesPage, { global: { stubs: ['router-link'] } });
+    await flushPromises();
+
+    expect(wrapper.get('.empty').text()).toContain('Nenhum modelo ativo');
+    expect(wrapper.get('.empty button').text()).toBe('Criar modelo');
+  });
   it('arquiva e restaura pelos endpoints contratuais', async () => {
     const wrapper = mount(TransactionTemplatesPage, { global: { stubs: ['router-link'] } });
     await flushPromises();
