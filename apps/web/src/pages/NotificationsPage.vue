@@ -268,7 +268,11 @@ async function restoreIgnored(packageName: string) {
       </div>
     </section>
 
-    <template v-else-if="!loading">
+    <p v-else-if="loading" class="panel loading-state" role="status">
+      Carregando notificações...
+    </p>
+
+    <template v-else>
       <section v-if="!status.granted" class="panel disclosure">
         <h2>Acesso às notificações: Desativado</h2>
         <p>

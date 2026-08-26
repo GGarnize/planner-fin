@@ -147,8 +147,18 @@ describe('CardsPage', () => {
     await vi.waitFor(() => expect(wrapper.text()).toContain('Nenhum cartão'));
     expect(wrapper.text()).toContain('Nenhuma compra');
     expect(wrapper.text()).toContain('Nenhuma fatura');
+    expect(wrapper.findAll('.empty button').map((button) => button.text())).toEqual([
+      'Novo cartão',
+      'Nova compra',
+    ]);
     expect(wrapper.text()).not.toContain('CVV');
     expect(wrapper.text()).not.toContain('Número completo');
+  });
+
+  it('expõe carregamento inicial como status acessível', () => {
+    const wrapper = mount(CardsPage);
+
+    expect(wrapper.get('[role=status]').text()).toContain('Carregando cartões e faturas');
   });
 
   it('mantém Novo cartão e Nova compra fechados por padrão e permite cancelar', async () => {

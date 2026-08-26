@@ -86,6 +86,13 @@ describe('NotificationsPage — indisponibilidade no navegador', () => {
 });
 
 describe('NotificationsPage — sem acesso concedido', () => {
+  it('mostra carregamento acessível enquanto consulta o estado do Android', () => {
+    mocks.getStatus.mockReturnValue(new Promise(() => undefined));
+    const wrapper = mountPage();
+
+    expect(wrapper.get('[role=status]').text()).toContain('Carregando notificações');
+  });
+
   it('mostra disclosure e CTA Ativar acesso / Agora não', async () => {
     const wrapper = mountPage();
     await flushPromises();

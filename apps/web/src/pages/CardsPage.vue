@@ -523,7 +523,7 @@ onMounted(load);
     <p v-if="error" role="alert">
       {{ error }} <button class="link" @click="load">Tentar novamente</button>
     </p>
-    <p v-if="loading">Carregando cartões e faturas…</p>
+    <p v-if="loading" role="status">Carregando cartões e faturas...</p>
     <template v-else
       ><div class="section-toolbar">
         <button type="button" @click="openCardForm">
@@ -574,9 +574,11 @@ onMounted(load);
       </section>
       <section>
         <h2>Seus cartões</h2>
-        <p v-if="!cards.length" class="empty">
-          Nenhum cartão cadastrado. Use Novo cartão para cadastrar o primeiro.
-        </p>
+        <section v-if="!cards.length" class="empty" aria-labelledby="cards-empty-title">
+          <h3 id="cards-empty-title">Nenhum cartão cadastrado</h3>
+          <p>Cadastre um cartão para acompanhar compras parceladas e faturas.</p>
+          <button type="button" @click="openCardForm">Novo cartão</button>
+        </section>
         <div class="tiles">
           <article v-for="item in cards" :key="item.id" :class="{ archived: item.archivedAt }">
             <div class="tile-row">
@@ -684,7 +686,11 @@ onMounted(load);
       </section>
       <section>
         <h2>Compras e parcelas futuras</h2>
-        <p v-if="!purchases.length" class="empty">Nenhuma compra no cartão.</p>
+        <section v-if="!purchases.length" class="empty" aria-labelledby="purchases-empty-title">
+          <h3 id="purchases-empty-title">Nenhuma compra no cartão</h3>
+          <p>Lance uma compra para distribuir parcelas nas faturas futuras.</p>
+          <button type="button" @click="openPurchaseForm">Nova compra</button>
+        </section>
         <article v-for="x in purchases" :key="x.id" class="purchase-card">
           <div class="purchase-card__summary">
             <div class="purchase-card__main">
@@ -752,7 +758,10 @@ onMounted(load);
       </section>
       <section>
         <h2>Faturas</h2>
-        <p v-if="!invoices.length" class="empty">Nenhuma fatura materializada.</p>
+        <section v-if="!invoices.length" class="empty" aria-labelledby="invoices-empty-title">
+          <h3 id="invoices-empty-title">Nenhuma fatura materializada</h3>
+          <p>As faturas aparecem aqui quando houver compras ou ciclos já materializados.</p>
+        </section>
         <article v-for="x in invoices" :key="x.id" class="invoice-card">
           <div
             class="invoice-card__summary"
