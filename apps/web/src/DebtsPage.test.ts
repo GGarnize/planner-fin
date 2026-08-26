@@ -7,10 +7,79 @@ import { authenticatedFetch } from './auth';
 vi.mock('./auth', () => ({ authenticatedFetch: vi.fn() }));
 const response = (data: unknown, ok = true) =>
   ({ ok, status: ok ? 200 : 503, json: async () => data }) as Response;
+const debtDetail = {
+  id: 'debt-1',
+  type: 'FINANCING',
+  creditorName: 'Credor',
+  description: 'Contrato',
+  notes: null,
+  originalPrincipal: '1000.00',
+  startDate: '2028-02-29',
+  installmentCount: 2,
+  status: 'ACTIVE',
+  archivedAt: null,
+  createdAt: '2028-02-01T00:00:00.000Z',
+  updatedAt: '2028-02-01T00:00:00.000Z',
+  funding: null,
+  projections: {
+    outstandingPrincipal: '1000.00',
+    paidPrincipal: '0.00',
+    paidInterestAmount: '0.00',
+    paidFeeAmount: '0.00',
+    pendingInterestAmount: '0.00',
+    pendingFeeAmount: '0.00',
+    totalFutureAmount: '1000.00',
+    overdueInstallmentCount: 1,
+    nextInstallment: {
+      id: 'installment-1',
+      debtId: 'debt-1',
+      installmentNumber: 1,
+      dueDate: '2028-03-29',
+      principalAmount: '500.00',
+      interestAmount: '0.00',
+      feeAmount: '0.00',
+      totalAmount: '500.00',
+      status: 'PENDING',
+      projectedStatus: 'OVERDUE',
+      paidAt: null,
+    },
+    projectedStatus: 'ACTIVE',
+  },
+  installments: [
+    {
+      id: 'installment-1',
+      debtId: 'debt-1',
+      installmentNumber: 1,
+      dueDate: '2028-03-29',
+      principalAmount: '500.00',
+      interestAmount: '0.00',
+      feeAmount: '0.00',
+      totalAmount: '500.00',
+      status: 'PENDING',
+      projectedStatus: 'OVERDUE',
+      paidAt: null,
+    },
+    {
+      id: 'installment-2',
+      debtId: 'debt-1',
+      installmentNumber: 2,
+      dueDate: '2028-04-29',
+      principalAmount: '500.00',
+      interestAmount: '0.00',
+      feeAmount: '0.00',
+      totalAmount: '500.00',
+      status: 'PENDING',
+      projectedStatus: 'PENDING',
+      paidAt: null,
+    },
+  ],
+  payments: [],
+};
 async function render(path = '/debts') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/mais', component: { template: '<p>Mais</p>' } },
       { path: '/debts', component: DebtsPage },
       { path: '/debts/:id', component: DebtsPage },
     ],
@@ -30,6 +99,54 @@ describe('página de dívidas', () => {
     const w = await render();
     expect(w.text()).toContain('Nenhuma dívida encontrada');
     expect(w.text()).toContain('Nova dívida');
+  });
+  it('usa hierarquia Up correta na lista e no detalhe', async () => {
+    vi.mocked(authenticatedFetch)
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response({ items: [], nextCursor: null }));
+    const list = await render();
+    expect(list.get('[aria-label="Voltar"]').attributes('href')).toBe('/mais');
+
+    vi.mocked(authenticatedFetch).mockReset();
+    vi.mocked(authenticatedFetch)
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response(debtDetail));
+    const detail = await render('/debts/debt-1');
+    expect(detail.get('[aria-label="Voltar"]').attributes('href')).toBe('/debts');
+  });
+  it('abre detalhe pela lista e prioriza resumo de saldo, proxima parcela e situacao', async () => {
+    vi.mocked(authenticatedFetch)
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(
+        response({
+          items: [
+            {
+              id: 'debt-1',
+              type: 'FINANCING',
+              creditorName: 'Credor',
+              installmentCount: 2,
+              status: 'ACTIVE',
+              archivedAt: null,
+              projections: debtDetail.projections,
+            },
+          ],
+          nextCursor: null,
+        }),
+      )
+      .mockResolvedValueOnce(response(debtDetail));
+    const w = await render();
+    await w
+      .findAll('button')
+      .find((button) => button.text() === 'Abrir detalhe')!
+      .trigger('click');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(w.text()).toContain('Quanto falta');
+    expect(w.text()).toContain('Próxima parcela');
+    expect(w.text()).toContain('Situação');
+    expect(w.text()).toContain('2 parcela(s) pendente(s)');
+    expect(w.find('.schedule').text()).toContain('Vencimento');
+    expect(w.find('.schedule').text()).toContain('Valor');
   });
   it('usa nomenclatura orientada ao usuário no cronograma da dívida', async () => {
     vi.mocked(authenticatedFetch)
@@ -68,6 +185,34 @@ describe('página de dívidas', () => {
     expect(w.findAll('select').length).toBeGreaterThanOrEqual(4);
     expect(w.text()).toContain('Arquivadas');
     expect(w.text()).toContain('Carregar mais');
+  });
+  it('arquiva somente apos confirmacao', async () => {
+    vi.mocked(authenticatedFetch)
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(
+        response({
+          items: [{ ...debtDetail, status: 'PAID_OFF', projections: debtDetail.projections }],
+          nextCursor: null,
+        }),
+      )
+      .mockResolvedValueOnce(response({}))
+      .mockResolvedValueOnce(response({ items: [], nextCursor: null }));
+    const w = await render();
+
+    await w
+      .findAll('button')
+      .find((button) => button.text() === 'Arquivar')!
+      .trigger('click');
+    expect(w.get('.confirm-dialog').text()).toContain('Credor');
+    expect(
+      vi.mocked(authenticatedFetch).mock.calls.some(([path]) => String(path).endsWith('/archive')),
+    ).toBe(false);
+
+    await w.get('.confirm-dialog .danger').trigger('click');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(
+      vi.mocked(authenticatedFetch).mock.calls.some(([path]) => String(path).endsWith('/archive')),
+    ).toBe(true);
   });
   it('preserva centavos de Decimal(19,2) alto sem converter para Number', async () => {
     vi.mocked(authenticatedFetch)

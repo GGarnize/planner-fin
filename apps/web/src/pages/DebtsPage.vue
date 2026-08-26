@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any, no-undef */
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type {
   FinancialDebtDetail,
@@ -9,8 +9,10 @@ import type {
   PublicFinancialDebt,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
 import PageHeader from '../components/PageHeader.vue';
 import { normalizeMoney } from '../transaction-template';
+import { setModalScrollLock } from '../modal-scroll-lock';
 const route = useRoute(),
   router = useRouter(),
   items = ref<PublicFinancialDebt[]>([]),
@@ -21,7 +23,10 @@ const route = useRoute(),
   error = ref(''),
   nextCursor = ref<string | null>(null),
   showForm = ref(false),
-  editing = ref(false);
+  editing = ref(false),
+  archiving = ref<PublicFinancialDebt | FinancialDebtDetail | null>(null);
+const createDebtButton = ref<HTMLButtonElement | null>(null),
+  createFormPanel = ref<HTMLElement | null>(null);
 const filters = reactive({ status: '', type: '', due: 'all', archived: 'false' });
 const form = reactive<any>({
   type: 'LOAN',
@@ -49,6 +54,19 @@ const money = (v: string) => {
   return `R$ ${match[1]!.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${match[2]}`;
 };
 const activeAccounts = computed(() => accounts.value.filter((a) => !a.archivedAt));
+const debtStatusLabel = (status: string) => (status === 'ACTIVE' ? 'Ativa' : 'Quitada');
+const debtTypeLabel = (type: string) =>
+  ({
+    LOAN: 'Empréstimo',
+    FINANCING: 'Financiamento',
+    NEGOTIATED_DEBT: 'Dívida negociada',
+    OTHER: 'Outra',
+  })[type] ?? type;
+const installmentStatusLabel = (status: string) =>
+  status === 'OVERDUE' ? 'Em atraso' : status === 'PAID' ? 'Pago' : 'Pendente';
+const pendingInstallmentCount = computed(
+  () => detail.value?.installments.filter((item) => item.status === 'PENDING').length ?? 0,
+);
 async function json<T>(path: string, init?: RequestInit) {
   let r: Response;
   try {
@@ -87,6 +105,16 @@ async function loadDetail(id: string) {
   } finally {
     loading.value = false;
   }
+}
+async function loadCurrentRoute() {
+  if (route.params.id) {
+    await loadDetail(String(route.params.id));
+    return;
+  }
+  detail.value = null;
+  editing.value = false;
+  pay.installmentId = '';
+  await load();
 }
 function resize() {
   const n = Math.max(1, Math.min(600, Number(form.installmentCount) || 1));
@@ -159,13 +187,25 @@ async function create() {
     busy.value = false;
   }
 }
+async function openCreateForm() {
+  showForm.value = true;
+  error.value = '';
+  await nextTick();
+  createFormPanel.value?.querySelector<HTMLElement>('input, select, button')?.focus();
+}
+function closeCreateForm() {
+  showForm.value = false;
+  void nextTick(() => createDebtButton.value?.focus());
+}
 async function action(id: string, kind: 'archive' | 'restore') {
   try {
     await json(`/debts/${id}/${kind}`, { method: 'POST' });
     if (detail.value) await loadDetail(id);
     else await load();
+    return true;
   } catch (e) {
     error.value = (e as Error).message;
+    return false;
   }
 }
 function beginEdit() {
@@ -247,13 +287,48 @@ async function payInstallment() {
   }
 }
 onMounted(async () => {
+  window.addEventListener('keydown', onKeydown);
+  window.addEventListener('plannerfin:android-back', onAndroidBack);
   try {
     accounts.value = await json('/accounts');
   } catch {
     accounts.value = [];
   }
-  if (route.params.id) await loadDetail(String(route.params.id));
-  else await load();
+  await loadCurrentRoute();
+});
+watch(
+  () => route.params.id,
+  () => {
+    void loadCurrentRoute();
+  },
+);
+watch(showForm, (active) => setModalScrollLock('debts', active));
+function onKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return;
+  if (showForm.value) {
+    event.preventDefault();
+    closeCreateForm();
+  }
+}
+async function confirmArchive() {
+  if (!archiving.value || busy.value) return;
+  busy.value = true;
+  const id = archiving.value.id;
+  try {
+    if (await action(id, 'archive')) archiving.value = null;
+  } finally {
+    busy.value = false;
+  }
+}
+function onAndroidBack(event: Event) {
+  if (!showForm.value) return;
+  event.preventDefault();
+  closeCreateForm();
+}
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('plannerfin:android-back', onAndroidBack);
+  setModalScrollLock('debts', false);
 });
 </script>
 <template>
@@ -264,7 +339,7 @@ onMounted(async () => {
       :back-to="detail ? '/debts' : '/mais'"
     >
       <template v-if="!detail" #action>
-        <button @click="showForm = !showForm">{{ showForm ? 'Fechar' : 'Nova dívida' }}</button>
+        <button ref="createDebtButton" @click="openCreateForm">Nova dívida</button>
       </template>
     </PageHeader>
     <p v-if="error" role="alert">
@@ -273,10 +348,21 @@ onMounted(async () => {
         Tentar novamente
       </button>
     </p>
-    <p v-if="loading">Carregando dívidas…</p>
+    <p v-if="loading" class="loading-state" aria-live="polite">Carregando dívidas...</p>
     <section v-if="!detail && !loading">
-      <form v-if="showForm" class="panel" @submit.prevent="create">
-        <h2>Novo contrato</h2>
+      <div v-if="showForm" class="debt-form-backdrop" role="presentation" @click.self="closeCreateForm">
+      <form
+        ref="createFormPanel"
+        class="panel debt-form"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-debt-title"
+        @submit.prevent="create"
+      >
+        <div class="form-heading">
+          <h2 id="new-debt-title">Novo contrato</h2>
+          <button type="button" class="secondary" @click="closeCreateForm">Fechar</button>
+        </div>
         <div class="grid">
           <label
             >Tipo<select v-model="form.type">
@@ -351,8 +437,14 @@ onMounted(async () => {
         <p v-if="form.type === 'FINANCING'" class="notice">
           O ativo ou bem financiado e sua despesa não são reconhecidos automaticamente.
         </p>
-        <button :disabled="busy">{{ busy ? 'Salvando…' : 'Cadastrar dívida' }}</button>
+        <div class="form-actions">
+          <button type="button" class="secondary" :disabled="busy" @click="closeCreateForm">
+            Cancelar
+          </button>
+          <button :disabled="busy">{{ busy ? 'Salvando...' : 'Cadastrar dívida' }}</button>
+        </div>
       </form>
+      </div>
       <div class="filters">
         <select v-model="filters.status" @change="load()">
           <option value="">Todos os status</option>
@@ -379,43 +471,63 @@ onMounted(async () => {
         <p>Cadastre um contrato com cronograma explícito para começar.</p>
       </div>
       <article v-for="x in items" :key="x.id" class="debt">
-        <div>
-          <span class="badge" :class="x.status">{{
-            x.status === 'ACTIVE' ? 'Ativa' : 'Quitada'
-          }}</span>
-          <h2>
-            <a @click="router.push(`/debts/${x.id}`)">{{ x.creditorName }}</a>
-          </h2>
-          <p>{{ x.type }} · {{ x.installmentCount }} parcela(s)</p>
+        <div class="debt-main">
+          <span class="badge" :class="x.status">{{ debtStatusLabel(x.status) }}</span>
+          <h2>{{ x.creditorName }}</h2>
+          <p>{{ debtTypeLabel(x.type) }} · {{ x.installmentCount }} parcela(s)</p>
         </div>
-        <div>
-          <small>Saldo devedor</small
-          ><strong>{{ money(x.projections.outstandingPrincipal) }}</strong
-          ><small v-if="x.projections.nextInstallment"
-            >Próxima: {{ x.projections.nextInstallment.dueDate }}
-            <b v-if="x.projections.nextInstallment.projectedStatus === 'OVERDUE'"
-              >· em atraso</b
-            ></small
+        <div class="debt-balance">
+          <small>Saldo devedor</small>
+          <strong>{{ money(x.projections.outstandingPrincipal) }}</strong>
+        </div>
+        <div class="debt-next">
+          <small>Próxima parcela</small>
+          <span v-if="x.projections.nextInstallment">
+            {{ x.projections.nextInstallment.dueDate }}
+            <b v-if="x.projections.nextInstallment.projectedStatus === 'OVERDUE'">Em atraso</b>
+          </span>
+          <span v-else>Nenhuma</span>
+        </div>
+        <div class="debt-actions">
+          <button class="secondary" @click="router.push(`/debts/${x.id}`)">Abrir detalhe</button>
+          <button
+            v-if="x.status === 'PAID_OFF' && !x.archivedAt"
+            class="secondary"
+            @click="archiving = x"
           >
+            Arquivar</button
+          ><button v-if="x.archivedAt" class="secondary" @click="action(x.id, 'restore')">
+            Restaurar
+          </button>
         </div>
-        <button
-          v-if="x.status === 'PAID_OFF' && !x.archivedAt"
-          class="secondary"
-          @click="action(x.id, 'archive')"
-        >
-          Arquivar</button
-        ><button v-if="x.archivedAt" class="secondary" @click="action(x.id, 'restore')">
-          Restaurar
-        </button>
       </article>
       <button v-if="nextCursor" @click="load(true)">Carregar mais</button>
     </section>
     <section v-if="detail && !loading" class="detail">
-      <div class="metrics">
-        <div>
-          <small>Saldo devedor</small
-          ><strong>{{ money(detail.projections.outstandingPrincipal) }}</strong>
+      <div class="detail-summary">
+        <div class="summary-primary">
+          <small>Quanto falta</small>
+          <strong>{{ money(detail.projections.outstandingPrincipal) }}</strong>
+          <span class="badge" :class="detail.status">{{ debtStatusLabel(detail.status) }}</span>
         </div>
+        <div>
+          <small>Próxima parcela</small>
+          <strong>{{ detail.projections.nextInstallment?.dueDate ?? 'Nenhuma' }}</strong>
+          <span v-if="detail.projections.nextInstallment">
+            {{ money(detail.projections.nextInstallment.totalAmount) }}
+          </span>
+        </div>
+        <div>
+          <small>Situação</small>
+          <strong>{{
+            detail.projections.overdueInstallmentCount
+              ? `${detail.projections.overdueInstallmentCount} em atraso`
+              : 'Em dia'
+          }}</strong>
+          <span>{{ pendingInstallmentCount }} parcela(s) pendente(s)</span>
+        </div>
+      </div>
+      <div class="metrics">
         <div>
           <small>Principal pago</small
           ><strong>{{ money(detail.projections.paidPrincipal) }}</strong>
@@ -435,25 +547,18 @@ onMounted(async () => {
           ><strong>{{ money(detail.projections.totalFutureAmount) }}</strong>
         </div>
       </div>
-      <div class="panel">
+      <div class="panel contract-panel">
         <h2>{{ detail.creditorName }}</h2>
-        <p>
-          Status: <b>{{ detail.status }}</b> · início {{ detail.startDate }}
-        </p>
+        <p>{{ debtTypeLabel(detail.type) }} · início {{ detail.startDate }}</p>
         <p v-if="detail.funding">
           Funding: {{ money(detail.funding.amount) }} em {{ detail.funding.fundingDate }}
-        </p>
-        <p>
-          Próxima parcela:
-          <b>{{ detail.projections.nextInstallment?.dueDate ?? 'nenhuma' }}</b> · vencidas:
-          <b>{{ detail.projections.overdueInstallmentCount }}</b>
         </p>
         <div v-if="!editing" class="actions">
           <button v-if="!detail.archivedAt" class="secondary" @click="beginEdit">Editar</button>
           <button
             v-if="detail.status === 'PAID_OFF' && !detail.archivedAt"
             class="secondary"
-            @click="action(detail.id, 'archive')"
+            @click="archiving = detail"
           >
             Arquivar
           </button>
@@ -552,23 +657,31 @@ onMounted(async () => {
       <div class="panel">
         <h2>Parcelas</h2>
         <div v-for="x in detail.installments" :key="x.id" class="schedule">
-          <span
-            >Parcela {{ x.installmentNumber }} · {{ x.dueDate }}
-            <b>{{
-              x.projectedStatus === 'OVERDUE'
-                ? 'Em atraso'
-                : x.projectedStatus === 'PAID'
-                  ? 'Pago'
-                  : 'Pendente'
-            }}</b></span
-          ><strong>{{ money(x.totalAmount) }}</strong
-          ><button
-            v-if="x.status === 'PENDING' && !detail.archivedAt"
-            class="secondary"
-            @click="pay.installmentId = x.id"
-          >
-            Pagar integral</button
-          ><span v-else>{{ x.status === 'PAID' ? 'Pago' : 'Pendente' }}</span>
+          <div>
+            <small>Parcela</small>
+            <strong>{{ x.installmentNumber }}</strong>
+          </div>
+          <div>
+            <small>Vencimento</small>
+            <span>{{ x.dueDate }}</span>
+          </div>
+          <div>
+            <small>Valor</small>
+            <strong>{{ money(x.totalAmount) }}</strong>
+          </div>
+          <div>
+            <small>Status</small>
+            <span class="status-text">{{ installmentStatusLabel(x.projectedStatus) }}</span>
+          </div>
+          <div class="schedule-actions">
+            <button
+              v-if="x.status === 'PENDING' && !detail.archivedAt"
+              class="secondary"
+              @click="pay.installmentId = x.id"
+            >
+              Pagar integral</button
+            ><span v-else>{{ x.status === 'PAID' ? 'Pago' : 'Pendente' }}</span>
+          </div>
           <form v-if="pay.installmentId === x.id" class="pay" @submit.prevent="payInstallment">
             <select v-model="pay.accountId" required>
               <option value="">Conta pagadora</option>
@@ -591,6 +704,15 @@ onMounted(async () => {
         </p>
       </div>
     </section>
+    <ConfirmDialog
+      :open="!!archiving"
+      :title="`Arquivar a dívida de ${archiving?.creditorName}?`"
+      message="Ela deixa de aparecer na lista principal, mas o histórico é preservado."
+      confirm-label="Arquivar"
+      :busy="busy"
+      @confirm="confirmArchive"
+      @cancel="archiving = null"
+    />
   </main>
 </template>
 <style scoped>
@@ -599,28 +721,71 @@ onMounted(async () => {
   padding: 2rem;
   color: var(--color-text);
 }
-.debt,
-.schedule {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
 .panel,
 .debt,
-.empty {
+.empty,
+.detail-summary {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 14px;
+  border-radius: 8px;
   padding: 1.25rem;
   margin: 1rem 0;
   box-shadow: var(--shadow-surface);
 }
+.loading-state {
+  margin: 1rem 0;
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+.debt {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(9rem, 0.8fr) minmax(8rem, 0.8fr) auto;
+  align-items: center;
+  gap: 1rem;
+}
+.debt h2,
+.debt p {
+  margin: 0;
+}
+.debt h2 {
+  margin-top: 0.35rem;
+  font-size: 1.05rem;
+}
+.debt-main,
+.debt-balance,
+.debt-next,
+.debt-actions {
+  min-width: 0;
+}
+.debt-balance,
+.debt-next {
+  display: grid;
+  gap: 0.2rem;
+}
+.debt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
 .grid,
-.metrics {
+.metrics,
+.detail-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1rem;
+}
+.detail-summary {
+  grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr));
+}
+.detail-summary > div,
+.metrics > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+.summary-primary strong {
+  font-size: 1.65rem;
 }
 .installment {
   display: grid;
@@ -638,10 +803,45 @@ onMounted(async () => {
   width: 100%;
 }
 .filters {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 0.75rem;
   margin: 1rem 0;
-  flex-wrap: wrap;
+}
+.debt-form-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+    max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+  background: var(--color-overlay);
+}
+.debt-form {
+  width: min(100%, 46rem);
+  max-height: calc(100dvh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  display: grid;
+  gap: 1rem;
+  overflow: auto;
+}
+.form-heading,
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.form-heading h2 {
+  margin: 0;
+}
+.form-actions {
+  position: sticky;
+  bottom: -1.25rem;
+  margin: 0 -1.25rem -1.25rem;
+  padding: 0.75rem 1.25rem 1.25rem;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
 }
 select,
 textarea {
@@ -653,7 +853,8 @@ textarea {
   color: var(--color-text);
 }
 .debt strong,
-.metrics strong {
+.metrics strong,
+.detail-summary strong {
   display: block;
   font-size: 1.35rem;
 }
@@ -678,12 +879,32 @@ textarea {
   border-radius: 0.5rem;
 }
 .schedule {
+  display: grid;
+  grid-template-columns: 5rem minmax(7rem, 1fr) minmax(7rem, 1fr) minmax(8rem, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
   border-top: 1px solid var(--color-border);
   padding: 1rem 0;
-  flex-wrap: wrap;
+}
+.schedule > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+.schedule small,
+.debt small,
+.metrics small,
+.detail-summary small {
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+.status-text {
+  font-weight: 700;
 }
 .pay {
-  display: flex;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) minmax(9rem, 1fr) auto;
   margin: 0;
   gap: 0.5rem;
 }
@@ -699,17 +920,49 @@ a {
 }
 @media (max-width: 650px) {
   .debt {
+    grid-template-columns: minmax(0, 1fr);
     align-items: stretch;
-    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+  }
+  .debt-actions {
+    justify-content: stretch;
+  }
+  .debt-actions button {
+    flex: 1 1 9rem;
   }
   .installment {
     grid-template-columns: 1fr;
   }
+  .detail-summary,
+  .metrics,
+  .filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .schedule {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+  .schedule-actions,
   .pay {
-    flex-direction: column;
+    grid-column: 1 / -1;
+  }
+  .pay {
+    grid-template-columns: minmax(0, 1fr);
   }
   .debts {
-    padding: 1rem;
+    padding: 0;
+  }
+  .debt-form-backdrop {
+    align-items: end;
+    place-items: end stretch;
+    padding: max(0.75rem, env(safe-area-inset-top)) 0 0;
+  }
+  .debt-form {
+    width: 100%;
+    max-height: calc(100dvh - max(0.75rem, env(safe-area-inset-top)));
+    border-radius: 8px 8px 0 0;
+    margin: 0;
   }
 }
 </style>
