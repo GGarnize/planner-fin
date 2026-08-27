@@ -8,6 +8,7 @@ import type {
   PublicFinancialTransfer,
 } from '@planner-fin/shared';
 import { authenticatedFetch } from '../auth';
+import DateRangeFilter from '../components/DateRangeFilter.vue';
 import PageHeader from '../components/PageHeader.vue';
 import { setModalScrollLock } from '../modal-scroll-lock';
 import { normalizeMoney } from '../transaction-template';
@@ -464,21 +465,16 @@ onBeforeUnmount(() => {
             <option value="completedAt">Conclusão</option>
           </select></label
         >
-        <fieldset class="date-period">
-          <legend>Período</legend>
-          <label v-if="dateFilterType === 'dueDate'"
-            >De<input v-model="filters.dueDateFrom" type="date"
-          /></label>
-          <label v-if="dateFilterType === 'dueDate'"
-            >Até<input v-model="filters.dueDateTo" type="date"
-          /></label>
-          <label v-if="dateFilterType === 'completedAt'"
-            >De<input v-model="filters.completedAtFrom" type="date"
-          /></label>
-          <label v-if="dateFilterType === 'completedAt'"
-            >Até<input v-model="filters.completedAtTo" type="date"
-          /></label>
-        </fieldset>
+        <DateRangeFilter
+          v-if="dateFilterType === 'dueDate'"
+          v-model:from="filters.dueDateFrom"
+          v-model:to="filters.dueDateTo"
+        />
+        <DateRangeFilter
+          v-else
+          v-model:from="filters.completedAtFrom"
+          v-model:to="filters.completedAtTo"
+        />
         <div class="filter-actions">
           <button type="button" @click="load()">Aplicar</button
           ><button
@@ -797,29 +793,21 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 0.75rem;
 }
-.date-period {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
-  margin: 0;
-  padding: 0;
-  border: 0;
+.primary-filters {
+  grid-template-columns: minmax(10rem, 0.8fr) minmax(20rem, 1.6fr) minmax(18rem, 1fr);
+  align-items: end;
 }
-.date-period legend {
-  grid-column: 1 / -1;
-  padding: 0;
-  font-weight: 700;
-}
-.date-filter-type,
-.date-period label {
+.date-filter-type {
   min-width: 0;
 }
 .filter-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
   align-items: end;
-  flex-wrap: wrap;
+}
+.filter-actions .link {
+  grid-column: 1 / -1;
 }
 .filter-badge {
   display: inline-grid;
@@ -942,16 +930,12 @@ textarea {
     align-items: stretch;
     grid-template-columns: minmax(0, 1fr);
   }
-  .date-period {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .actions,
-  .filter-actions {
+  .actions {
     flex-wrap: wrap;
   }
-  .filter-actions button,
   .empty button {
-    flex: 1 1 10rem;
+    width: 100%;
   }
   .modal {
     align-items: end;
@@ -966,6 +950,12 @@ textarea {
   }
   .modal form .actions {
     padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+  }
+}
+
+@media (min-width: 601px) and (max-width: 900px) {
+  .primary-filters {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

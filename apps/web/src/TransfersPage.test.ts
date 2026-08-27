@@ -135,7 +135,7 @@ describe('tela de transferencias', () => {
     expect(w.find('#transfer-secondary-filters').attributes('style')).toContain('display: none');
     expect(w.text()).toContain('Filtrar data por');
     expect(w.text()).toContain('Período');
-    expect(w.findAll('.date-period input[type="date"]')).toHaveLength(2);
+    expect(w.findAll('.date-range-filter input[type="date"]')).toHaveLength(2);
     expect((w.get('.date-filter-type select').element as HTMLSelectElement).value).toBe('dueDate');
     expect(w.text()).not.toContain('Conclusão inicial');
     expect(w.text()).toContain('Mais filtros');
@@ -152,7 +152,7 @@ describe('tela de transferencias', () => {
     mockList();
     const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
     await flushPromises();
-    await w.get('.date-period input[type="date"]').setValue('2026-08-01');
+    await w.get('.date-range-filter input[type="date"]').setValue('2026-08-01');
     await w.get('button[aria-controls="transfer-secondary-filters"]').trigger('click');
     await w.find('#transfer-secondary-filters select').setValue('a');
     await w
@@ -180,7 +180,7 @@ describe('tela de transferencias', () => {
       .trigger('click');
     await flushPromises();
     expect(w.text()).not.toContain('filtros ativos');
-    expect((w.get('.date-period input[type="date"]').element as HTMLInputElement).value).toBe('');
+    expect((w.get('.date-range-filter input[type="date"]').element as HTMLInputElement).value).toBe('');
     expect((w.get('.date-filter-type select').element as HTMLSelectElement).value).toBe('dueDate');
     w.unmount();
   });
@@ -189,20 +189,20 @@ describe('tela de transferencias', () => {
     mockList();
     const w = mount(TransfersPage, { global: { stubs: ['router-link'] } });
     await flushPromises();
-    const dueInputs = w.findAll('.date-period input[type="date"]');
+    const dueInputs = w.findAll('.date-range-filter input[type="date"]');
     await dueInputs[0]!.setValue('2026-08-01');
     await dueInputs[1]!.setValue('2026-08-31');
 
     await w.get('.date-filter-type select').setValue('completedAt');
     await w.vm.$nextTick();
-    expect(w.findAll('.date-period input[type="date"]')).toHaveLength(2);
+    expect(w.findAll('.date-range-filter input[type="date"]')).toHaveLength(2);
     expect(
       vi
         .mocked(authenticatedFetch)
         .mock.calls.some((call) => String(call[0]).includes('dueDateFrom=2026-08-01')),
     ).toBe(false);
 
-    const completedInputs = w.findAll('.date-period input[type="date"]');
+    const completedInputs = w.findAll('.date-range-filter input[type="date"]');
     await completedInputs[0]!.setValue('2026-09-01');
     await completedInputs[1]!.setValue('2026-09-30');
     await w
