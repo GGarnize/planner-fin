@@ -367,6 +367,61 @@ export class NotificationsService {
     return toPublicCapturedNotification(row);
   }
 
+  async restore(userId: string, id: string): Promise<PublicCapturedNotification> {
+    const existing = await this.findOwnCaptured(userId, id);
+    if (PENDING_NOTIFICATION_REVIEW_STATUSES.some((status) => status === existing.status))
+      return toPublicCapturedNotification(existing);
+    if (existing.status !== 'DISMISSED')
+      throw new ConflictException({
+        code: 'NOTIFICATION_NOT_DISMISSED',
+        message: 'Somente notificações descartadas podem ser restauradas.',
+      });
+
+    const classification = classifyNotification({
+      packageName: existing.packageName,
+      title: existing.title,
+      text: existing.text,
+      subText: existing.subText,
+      bigText: existing.bigText,
+    });
+    const restoredStatus = PENDING_NOTIFICATION_REVIEW_STATUSES.some(
+      (status) => status === classification.status,
+    )
+      ? classification.status
+      : 'AMBIGUOUS';
+    await this.prisma.capturedNotification.updateMany({
+      where: { id, userId, status: 'DISMISSED' },
+      data: {
+        status: restoredStatus,
+        classifierVersion: classification.classifierVersion,
+        parsedType: classification.parsedType ?? null,
+        parsedAmount:
+          classification.parsedAmount !== undefined
+            ? new Prisma.Decimal(classification.parsedAmount)
+            : null,
+        parsedDescription: classification.parsedDescription ?? null,
+        parsedCardLast4: classification.parsedCardLast4 ?? null,
+        classificationReasons: classification.reasons,
+        classifiedAt: new Date(),
+        dismissedAt: null,
+      },
+    });
+    return toPublicCapturedNotification(await this.findOwnCaptured(userId, id));
+  }
+
+  async deleteDismissed(userId: string, id: string): Promise<void> {
+    if (!isUuid(id)) throw notFoundNotification();
+    const result = await this.prisma.capturedNotification.deleteMany({
+      where: { id, userId, status: 'DISMISSED' },
+    });
+    if (result.count === 1) return;
+    await this.findOwnCaptured(userId, id);
+    throw new ConflictException({
+      code: 'NOTIFICATION_NOT_DISMISSED',
+      message: 'Somente notificações descartadas podem ser excluídas definitivamente.',
+    });
+  }
+
   async markNonFinancial(userId: string, id: string): Promise<PublicCapturedNotification> {
     if (!isUuid(id)) throw notFoundNotification();
     await this.prisma.capturedNotification.updateMany({
