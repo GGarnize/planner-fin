@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   confirm: vi.fn(),
   dismiss: vi.fn(),
+  restore: vi.fn(),
+  deleteDismissed: vi.fn(),
   markNonFinancial: vi.fn(),
   fetch: vi.fn(),
 }));
@@ -18,6 +20,8 @@ vi.mock('./notifications-api', () => ({
     get: mocks.get,
     confirm: mocks.confirm,
     dismiss: mocks.dismiss,
+    restore: mocks.restore,
+    deleteDismissed: mocks.deleteDismissed,
     markNonFinancial: mocks.markNonFinancial,
   },
 }));
@@ -131,7 +135,7 @@ describe('NotificationsInboxPage — lista atualiza ao voltar de uma ação', ()
     );
     const wrapper = await mountAt(router, '/notifications/inbox/n1');
 
-    const descartar = wrapper.findAll('button').find((b) => b.text() === 'Descartar')!;
+    const descartar = wrapper.findAll('button').find((b) => b.text() === 'Descartar esta captura')!;
     await descartar.trigger('click');
     await flushPromises();
 
@@ -154,7 +158,7 @@ describe('NotificationsInboxPage — lista atualiza ao voltar de uma ação', ()
 
     const marcar = wrapper
       .findAll('button')
-      .find((b) => b.text() === 'Marcar como não financeira')!;
+      .find((b) => b.text() === 'Não é movimentação financeira')!;
     await marcar.trigger('click');
     await flushPromises();
 

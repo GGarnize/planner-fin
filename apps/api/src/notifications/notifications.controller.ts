@@ -104,10 +104,7 @@ export class NotificationsController {
 
   @Get('notifications')
   @Header('Cache-Control', 'no-store')
-  listCaptured(
-    @CurrentAuth() auth: AuthenticatedContext,
-    @Query() query: Record<string, unknown>,
-  ) {
+  listCaptured(@CurrentAuth() auth: AuthenticatedContext, @Query() query: Record<string, unknown>) {
     return this.notifications.listCaptured(auth.userId, query as CapturedNotificationListQuery);
   }
 
@@ -133,6 +130,21 @@ export class NotificationsController {
   @UseGuards(CsrfGuard)
   dismiss(@CurrentAuth() auth: AuthenticatedContext, @Param('id') id: string) {
     return this.notifications.dismiss(auth.userId, id);
+  }
+
+  @Post('notifications/:id/restore')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(CsrfGuard)
+  restore(@CurrentAuth() auth: AuthenticatedContext, @Param('id') id: string) {
+    return this.notifications.restore(auth.userId, id);
+  }
+
+  @Delete('notifications/:id')
+  @Header('Cache-Control', 'no-store')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(CsrfGuard)
+  async deleteDismissed(@CurrentAuth() auth: AuthenticatedContext, @Param('id') id: string) {
+    await this.notifications.deleteDismissed(auth.userId, id);
   }
 
   @Post('notifications/:id/mark-non-financial')

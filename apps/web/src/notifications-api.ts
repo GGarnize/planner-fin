@@ -15,6 +15,7 @@ const messages: Record<string, string> = {
   CATEGORY_TYPE_MISMATCH: 'A categoria não corresponde à natureza do lançamento.',
   NOTIFICATION_ALREADY_CONFIRMED: 'Esta notificação já foi confirmada em um lançamento.',
   NOTIFICATION_ALREADY_DISMISSED: 'Esta notificação já foi descartada.',
+  NOTIFICATION_NOT_DISMISSED: 'Somente notificações descartadas podem usar esta ação.',
   PAYMENT_SOURCE_TYPE_MISMATCH: 'Entrada deve ser confirmada em uma conta.',
   RATE_LIMITED: 'Muitas tentativas. Aguarde um pouco e tente novamente.',
 };
@@ -67,6 +68,12 @@ export const notificationsApi = {
   },
   dismiss(id: string) {
     return request<PublicCapturedNotification>(`/notifications/${id}/dismiss`, json('POST', {}));
+  },
+  restore(id: string) {
+    return request<PublicCapturedNotification>(`/notifications/${id}/restore`, json('POST', {}));
+  },
+  deleteDismissed(id: string) {
+    return request<void>(`/notifications/${id}`, { method: 'DELETE' });
   },
   markNonFinancial(id: string) {
     return request<PublicCapturedNotification>(

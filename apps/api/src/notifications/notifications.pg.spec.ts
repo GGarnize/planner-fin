@@ -692,6 +692,127 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
     expect(await prisma.financialTransaction.count({ where: { userId: userA } })).toBe(0);
   });
 
+  it('restaura descartada reclassificando o bruto sem perder conteudo', async () => {
+    const svc = service(prisma);
+    await seedAccountAndCategory(prisma, userA);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
+    const [captured] = (await svc.listCaptured(userA, {})).data;
+    const original = await svc.getCaptured(userA, captured!.id);
+    await svc.dismiss(userA, captured!.id);
+
+    const restored = await svc.restore(userA, captured!.id);
+    const restoredAgain = await svc.restore(userA, captured!.id);
+
+    expect(restored).toMatchObject({
+      status: 'FINANCIAL_CANDIDATE',
+      title: original.title,
+      text: original.text,
+      subText: original.subText,
+      bigText: original.bigText,
+      dismissedAt: null,
+    });
+    expect(restoredAgain.status).toBe('FINANCIAL_CANDIDATE');
+    expect((await svc.listCaptured(userA, {})).data.map((row) => row.id)).toContain(captured!.id);
+    expect(
+      (
+        await svc.confirm(userA, captured!.id, {
+          accountId,
+          categoryId: expenseCategoryId,
+          type: 'EXPENSE',
+          amount: '42.90',
+          description: 'Compra restaurada',
+          date: '2026-08-13',
+        })
+      ).status,
+    ).toBe('CONFIRMED');
+  });
+
+  it('restauracao de classificacao nao financeira volta como revisavel', async () => {
+    const svc = service(prisma);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [{ ...item(), text: 'Aproveite nossa promoção exclusiva sem movimentação' }],
+    });
+    const [captured] = (await svc.listCaptured(userA, { status: 'NON_FINANCIAL' })).data;
+    await svc.dismiss(userA, captured!.id);
+
+    const restored = await svc.restore(userA, captured!.id);
+
+    expect(restored.status).toBe('AMBIGUOUS');
+    expect((await svc.listCaptured(userA, {})).data.map((row) => row.id)).toContain(captured!.id);
+    expect((await svc.markNonFinancial(userA, captured!.id)).status).toBe('NON_FINANCIAL');
+  });
+
+  it('exclui definitivamente somente notificacao descartada do proprio owner', async () => {
+    const svc = service(prisma);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
+    const [captured] = (await svc.listCaptured(userA, {})).data;
+    await svc.dismiss(userA, captured!.id);
+
+    await expect(svc.deleteDismissed(userB, captured!.id)).rejects.toMatchObject({
+      response: { code: 'NOT_FOUND' },
+    });
+    await svc.deleteDismissed(userA, captured!.id);
+    expect(
+      await prisma.capturedNotification.findUnique({ where: { id: captured!.id } }),
+    ).toBeNull();
+  });
+
+  it('impede exclusao definitiva de notificacao confirmada', async () => {
+    const svc = service(prisma);
+    await seedAccountAndCategory(prisma, userA);
+    const device = await svc.bind(userA, {
+      deviceId,
+      captureEnabled: true,
+      monitoredPackages: [packageName],
+    });
+    await svc.ingest(userA, keyA, {
+      deviceId,
+      ownerBindingId: device.ownerBindingId,
+      items: [item()],
+    });
+    const [captured] = (await svc.listCaptured(userA, {})).data;
+    await svc.confirm(userA, captured!.id, {
+      accountId,
+      categoryId: expenseCategoryId,
+      type: 'EXPENSE',
+      amount: '42.90',
+      description: 'Padaria exemplo',
+      date: '2026-08-13',
+    });
+
+    await expect(svc.deleteDismissed(userA, captured!.id)).rejects.toMatchObject({
+      response: { code: 'NOTIFICATION_NOT_DISMISSED' },
+    });
+    expect(
+      await prisma.capturedNotification.findUnique({ where: { id: captured!.id } }),
+    ).not.toBeNull();
+  });
+
   it('apaga historico nao confirmado preservando notificacoes confirmadas', async () => {
     const svc = service(prisma);
     await seedAccountAndCategory(prisma, userA);
@@ -749,6 +870,9 @@ describePg('captura de notificacoes com PostgreSQL real', () => {
       response: { code: 'NOT_FOUND' },
     });
     await expect(svc.dismiss(userB, captured!.id)).rejects.toMatchObject({
+      response: { code: 'NOT_FOUND' },
+    });
+    await expect(svc.restore(userB, captured!.id)).rejects.toMatchObject({
       response: { code: 'NOT_FOUND' },
     });
   });
