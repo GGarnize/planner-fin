@@ -80,12 +80,27 @@ for (const viewport of [
     await expect(page.getByRole('button', { name: 'Nova transferência' })).toBeVisible();
     await expect(page.locator('#transfer-secondary-filters')).toBeHidden();
     await expect(page.getByLabel('Filtrar data por')).toHaveValue('dueDate');
-    await expect(page.locator('.date-period input[type="date"]')).toHaveCount(2);
+    await expect(page.locator('.date-range-filter input[type="date"]')).toHaveCount(2);
     await expect(page.getByLabel('Conclusão inicial')).toHaveCount(0);
     await expectNoHorizontalOverflow(page, viewport.width);
 
-    await page.locator('.date-period input[type="date"]').nth(0).fill('2026-09-01');
-    await page.locator('.date-period input[type="date"]').nth(1).fill('2026-09-30');
+    const dateInputs = page.locator('.date-range-filter input[type="date"]');
+    const fromBox = await dateInputs.nth(0).boundingBox();
+    const toBox = await dateInputs.nth(1).boundingBox();
+    expect(fromBox).not.toBeNull();
+    expect(toBox).not.toBeNull();
+    expect(Math.abs(fromBox!.y - toBox!.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(fromBox!.width - toBox!.width)).toBeLessThanOrEqual(1);
+
+    const applyBox = await page.getByRole('button', { name: 'Aplicar' }).boundingBox();
+    const moreBox = await page.getByRole('button', { name: /Mais filtros/ }).boundingBox();
+    expect(applyBox).not.toBeNull();
+    expect(moreBox).not.toBeNull();
+    expect(Math.abs(applyBox!.y - moreBox!.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(applyBox!.width - moreBox!.width)).toBeLessThanOrEqual(1);
+
+    await dateInputs.nth(0).fill('2026-09-01');
+    await dateInputs.nth(1).fill('2026-09-30');
     await page.getByRole('button', { name: /Mais filtros/ }).click();
     await expect(page.locator('#transfer-secondary-filters')).toBeVisible();
     await page.locator('#transfer-secondary-filters select').first().selectOption('a');
@@ -100,9 +115,9 @@ for (const viewport of [
     await expect(page.getByRole('button', { name: /Mais filtros/ })).toContainText('1');
 
     await page.getByLabel('Filtrar data por').selectOption('completedAt');
-    await expect(page.locator('.date-period input[type="date"]')).toHaveCount(2);
-    await page.locator('.date-period input[type="date"]').nth(0).fill('2026-10-01');
-    await page.locator('.date-period input[type="date"]').nth(1).fill('2026-10-31');
+    await expect(page.locator('.date-range-filter input[type="date"]')).toHaveCount(2);
+    await page.locator('.date-range-filter input[type="date"]').nth(0).fill('2026-10-01');
+    await page.locator('.date-range-filter input[type="date"]').nth(1).fill('2026-10-31');
     const completedRequest = page.waitForRequest(
       (candidate) =>
         candidate.url().includes('/api/transfers?') &&
@@ -121,8 +136,8 @@ for (const viewport of [
       .click();
     await expect(page.getByText('filtros ativos')).toHaveCount(0);
     await expect(page.getByLabel('Filtrar data por')).toHaveValue('dueDate');
-    await expect(page.locator('.date-period input[type="date"]').nth(0)).toHaveValue('');
-    await expect(page.locator('.date-period input[type="date"]').nth(1)).toHaveValue('');
+    await expect(page.locator('.date-range-filter input[type="date"]').nth(0)).toHaveValue('');
+    await expect(page.locator('.date-range-filter input[type="date"]').nth(1)).toHaveValue('');
     await expectNoHorizontalOverflow(page, viewport.width);
 
     await page.getByRole('button', { name: 'Nova transferência' }).click();

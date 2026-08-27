@@ -15,6 +15,7 @@ import { safeApiErrorMessage } from '../api-error';
 import { setModalScrollLock } from '../modal-scroll-lock';
 import KebabMenu, { type KebabMenuAction } from '../components/KebabMenu.vue';
 import CategoryIcon from '../components/CategoryIcon.vue';
+import DateRangeFilter from '../components/DateRangeFilter.vue';
 import { normalizeMoney } from '../transaction-template';
 const route = inject(routeLocationKey, { query: {} } as RouteLocationNormalizedLoaded);
 const router = inject(routerKey, null);
@@ -509,9 +510,14 @@ function onPopState() {
         <option value="">Todos os estados</option>
         <option value="PENDING">Pendente</option>
         <option value="PAID">Pago</option></select
-      ><label>Vencimento inicial<input v-model="filters.dueDateFrom" type="date" /></label
-      ><label>Vencimento final<input v-model="filters.dueDateTo" type="date" /></label
-      ><button @click="applyFilters">Aplicar</button
+      ><DateRangeFilter
+        v-model:from="filters.dueDateFrom"
+        v-model:to="filters.dueDateTo"
+        class="filter-date-range"
+        label="Período"
+        from-label="De"
+        to-label="Até"
+      /><button @click="applyFilters">Aplicar</button
       ><button class="secondary" @click="clearFilters">Limpar</button>
     </section>
     <p v-if="filters.accountId || filters.status || filters.paidAtFrom || filters.paidAtTo" class="hint">
@@ -727,6 +733,9 @@ function onPopState() {
   align-items: center;
   margin: 0.85rem 0 0.65rem;
 }
+.filter-date-range {
+  grid-column: span 2;
+}
 .list {
   display: grid;
   gap: 0.9rem;
@@ -911,6 +920,9 @@ textarea {
   .filters {
     margin: 0.5rem 0 1rem;
     grid-template-columns: 1fr;
+  }
+  .filter-date-range {
+    grid-column: 1;
   }
   .filter-summary {
     margin: 0.75rem 0 0.5rem;

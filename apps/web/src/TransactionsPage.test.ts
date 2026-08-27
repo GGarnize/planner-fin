@@ -231,6 +231,43 @@ describe('tela de lançamentos (API mockada)', () => {
     expect(String(firstListCall[0])).toContain('dueDateTo=2026-08-31');
   });
 
+  it('usa o padrao unico de periodo sem alterar aplicar e limpar filtros', async () => {
+    mockPage();
+    const wrapper = await mountPage();
+    await wrapper.get('.filter-summary button').trigger('click');
+
+    const period = wrapper.get('.date-range-filter');
+    expect(period.get('legend').text()).toBe('Período');
+    expect(period.findAll('label').map((label) => label.text())).toEqual(['De', 'Até']);
+    const inputs = period.findAll('input[type="date"]');
+    expect(inputs.map((input) => (input.element as HTMLInputElement).value)).toEqual([
+      '2026-08-01',
+      '2026-08-31',
+    ]);
+
+    await inputs[0]!.setValue('2026-09-01');
+    await inputs[1]!.setValue('2026-09-30');
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Aplicar')!
+      .trigger('click');
+    await flushPromises();
+    const appliedUrl = vi
+      .mocked(authenticatedFetch)
+      .mock.calls.map(([path]) => String(path))
+      .find((path) => path.includes('dueDateFrom=2026-09-01'))!;
+    expect(appliedUrl).toContain('dueDateTo=2026-09-30');
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Limpar filtros')!
+      .trigger('click');
+    await flushPromises();
+    expect(
+      period.findAll('input').map((input) => (input.element as HTMLInputElement).value),
+    ).toEqual(['', '']);
+  });
+
   it('agrupa visualmente por hoje, futuros e anteriores sem considerar status', async () => {
     const { entry: todayPaid } = makeTx({
       id: '55555555-5555-4555-8555-555555555555',
